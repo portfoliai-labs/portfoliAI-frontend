@@ -1,13 +1,38 @@
-import { ShieldCheck, FileText, Zap, BookOpen, BarChart3, TrendingDown, Lock } from "lucide-react";
+"use client";
 
-export default function Home() {
+import { ShieldCheck, FileText, Zap, BookOpen, BarChart3, TrendingDown, Lock, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
+
+// Estraiamo il contenuto principale in un componente per poter usare l'hook useGoogleLogin
+function LandingContent() {
+  const router = useRouter();
+
+  const login = useGoogleLogin({
+    onSuccess: (tokenResponse) => {
+      // 1. Salviamo il token (simulando una sessione attiva)
+      localStorage.setItem('auth_token', tokenResponse.access_token);
+      
+      // 2. Redirect alla pagina protetta
+      router.push('/dashboard');
+    },
+    onError: () => {
+      alert("Errore durante il login con Google.");
+    }
+  });
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       
       {/* HEADER */}
       <header className="p-6 max-w-6xl mx-auto flex justify-between items-center">
         <div className="text-2xl font-bold tracking-tighter text-blue-900">PortfoliAI</div>
-        <nav className="text-sm font-medium text-slate-500">Coming Soon</nav>
+        <button 
+          onClick={() => login()}
+          className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors"
+        >
+          Accedi
+        </button>
       </header>
 
       {/* HERO SECTION */}
@@ -15,16 +40,25 @@ export default function Home() {
         <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-slate-900 mb-6">
           Clear, comprehensive <br className="hidden md:block" /> portfolio analysis in seconds.
         </h1>
-        <p className="text-lg md:text-xl text-slate-600 mb-16 max-w-2xl mx-auto">
+        <p className="text-lg md:text-xl text-slate-600 mb-10 max-w-2xl mx-auto">
           Upload your investment data. Our engine generates an in-depth financial report covering historical performance, cash flow, and risk metrics in total privacy.
         </p>
 
+        {/* CALL TO ACTION BUTTON */}
+        <div className="mb-16 flex justify-center">
+          <button 
+            onClick={() => login()}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg shadow-blue-200 transition-all hover:scale-105"
+          >
+            Sign in with Google to Start
+            <ArrowRight className="h-5 w-5" />
+          </button>
+        </div>
+
         {/* SHOWCASE AREA - Document Report Mockup */}
         <div className="relative max-w-5xl mx-auto">
-          {/* Subtle glow effect */}
           <div className="absolute inset-0 bg-blue-600 blur-[120px] opacity-15 -z-10 rounded-full"></div>
           
-          {/* Document Preview Container */}
           <div className="bg-slate-200/50 p-4 rounded-3xl border border-slate-200/60 shadow-2xl flex flex-col md:flex-row gap-4 items-stretch">
             
             {/* Table of Contents (Left Page) */}
@@ -45,7 +79,6 @@ export default function Home() {
                   <span className="text-blue-600 font-bold">2.</span> 
                   <span>Financial Overview & Cash Flow</span>
                 </li>
-                {/* Capitolo 3 Corretto con layout verticale per i sottocapitoli */}
                 <li className="flex items-start gap-3 bg-blue-50 p-3 rounded-lg -ml-2 text-blue-900">
                   <span className="text-blue-600 font-bold">3.</span> 
                   <div className="flex-1">
@@ -72,7 +105,7 @@ export default function Home() {
               
               <div className="space-y-5 text-sm leading-relaxed text-slate-600">
                 <p>
-                  The portfolio's structure demonstrates sensitivity to concentrated, region-specific regulatory events with global contagion effects. The volatility spike was initiated by regulatory announcements targeting specific sectors, directly impacting the portfolio's broad ETFs.
+                  The portfolio's structure demonstrates sensitivity to concentrated, region-specific regulatory events with global contagion effects.
                 </p>
                 <p>
                   The event's impact was amplified as the scope included cryptocurrency, causing a sharp decline in the portfolio's Bitcoin holding. This episode highlights a structural vulnerability to policy risks that can simultaneously affect multiple, seemingly distinct asset classes within the portfolio.
@@ -82,7 +115,6 @@ export default function Home() {
                 <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 my-6 font-sans">
                   <h4 className="text-xs font-bold text-slate-800 uppercase mb-3">Realized Risk Tracking</h4>
                   
-                  {/* Fake Chart bars */}
                   <div className="flex items-end gap-1 h-16 mb-2">
                     <div className="w-1/6 bg-blue-200 h-[20%] rounded-t-sm"></div>
                     <div className="w-1/6 bg-blue-200 h-[35%] rounded-t-sm"></div>
@@ -93,7 +125,7 @@ export default function Home() {
                   </div>
                   
                   <p className="text-xs text-slate-500 mt-2 italic">
-                    This chart tracks realized risk over a moving 21-trading-day window. High spikes indicate periods of significant market stress or uncertainty.
+                    This chart tracks realized risk over a moving 21-trading-day window.
                   </p>
                 </div>
               </div>
@@ -115,17 +147,17 @@ export default function Home() {
             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-2xl">
               <BarChart3 className="h-8 w-8 text-blue-400 mb-6" />
               <h3 className="font-bold text-xl mb-3 text-slate-50">Deep Portfolio Analysis</h3>
-              <p className="text-slate-400 leading-relaxed text-sm">Visualize your exact asset allocation, category-level breakdowns, and historical ROI. See how different assets contribute to your overall performance.</p>
+              <p className="text-slate-400 leading-relaxed text-sm">Visualize your exact asset allocation, category-level breakdowns, and historical ROI.</p>
             </div>
             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-2xl">
               <TrendingDown className="h-8 w-8 text-amber-400 mb-6" />
               <h3 className="font-bold text-xl mb-3 text-slate-50">Risk Tracking</h3>
-              <p className="text-slate-400 leading-relaxed text-sm">Understand your exposure to volatility. The report tracks realized risk over moving windows, highlighting periods of market stress and correlation events.</p>
+              <p className="text-slate-400 leading-relaxed text-sm">Understand your exposure to volatility. The report tracks realized risk over moving windows.</p>
             </div>
             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-2xl">
               <Lock className="h-8 w-8 text-emerald-400 mb-6" />
               <h3 className="font-bold text-xl mb-3 text-slate-50">100% Private & Secure</h3>
-              <p className="text-slate-400 leading-relaxed text-sm">Upload a simple data export. Your files are processed securely in memory to generate the report and are immediately destroyed. No databases, no tracking.</p>
+              <p className="text-slate-400 leading-relaxed text-sm">Upload a simple data export. Your files are processed securely in memory and immediately destroyed.</p>
             </div>
           </div>
         </div>
@@ -137,5 +169,16 @@ export default function Home() {
       </footer>
 
     </div>
+  );
+}
+
+// Wrap del componente con il Provider di Google
+export default function Home() {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+  return (
+    <GoogleOAuthProvider clientId={clientId}>
+      <LandingContent />
+    </GoogleOAuthProvider>
   );
 }

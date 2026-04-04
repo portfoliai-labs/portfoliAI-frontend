@@ -1,11 +1,8 @@
-"use client"; // Obbligatorio in Next.js per usare hook e window
+"use client";
 
 import React, { useState } from 'react';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
-import { Zap, ShieldCheck, AlertCircle } from 'lucide-react';
-
-// Sostituisci con il tuo vero Client ID da Google Cloud Console
-const GOOGLE_CLIENT_ID = "IL_TUO_CLIENT_ID.apps.googleusercontent.com";
+import { Zap, ShieldCheck } from 'lucide-react';
 
 function AuthContent() {
   const [status, setStatus] = useState('Ready to authenticate');
@@ -23,7 +20,6 @@ function AuthContent() {
         setStatus('Success! Closing window...');
 
         if (window.opener) {
-          // Comunica con l'estensione o la pagina madre
           window.opener.postMessage({ 
             type: 'AUTH_SUCCESS', 
             payload: { apiKey: mockApiKey } 
@@ -78,8 +74,23 @@ function AuthContent() {
 }
 
 export default function AuthProxyPage() {
+  // Richiama la variabile d'ambiente creata nel file .env.local
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // Fallback UI per il Developer se si dimentica di impostare la variabile
+  if (!clientId) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-center p-6">
+        <div className="bg-rose-50 text-rose-600 p-4 rounded-xl border border-rose-200">
+          <strong>Errore di configurazione:</strong> <br />
+          Manca la variabile <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> nel file <code>.env.local</code>.
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    <GoogleOAuthProvider clientId={clientId}>
       <AuthContent />
     </GoogleOAuthProvider>
   );
