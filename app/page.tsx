@@ -179,7 +179,6 @@ export default function Home() {
   return (
     <GoogleOAuthProvider clientId={clientId}>
       <LandingContent />
-      
     </GoogleOAuthProvider>
   );
 }
