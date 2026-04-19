@@ -24,22 +24,19 @@ function AuthContent() {
       setIsError(false);
       
       try {
-        // Backend call simulation
-        // Here you will send tokenResponse.access_token to your Python backend
-        const mockApiKey = "wf_sk_" + Math.random().toString(36).substring(7) + Math.random().toString(36).substring(7);
+        // tokenResponse.access_token is the real Google token (usually starts with ya29...)
+        const realGoogleToken = tokenResponse.access_token;
         
         if (source === 'addon') {
-          // Source is Wealthfolio: display the key on the screen
-          setGeneratedKey(mockApiKey);
-          setStatus('Success! Copy your Access Key.');
+          setGeneratedKey(realGoogleToken);
+          setStatus('Success! Copy your Access Token.');
         } else {
-          // Source is the main website: redirect to the dashboard
           setStatus('Success! Redirecting to dashboard...');
           router.push('/dashboard');
         }
 
       } catch (error) {
-        setStatus('Failed to generate API Key.');
+        setStatus('Failed to process authentication.');
         setIsError(true);
       }
     },
