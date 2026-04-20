@@ -27,12 +27,6 @@ function LandingContent() {
       {/* HEADER */}
       <header className="p-6 max-w-6xl mx-auto flex justify-between items-center">
         <div className="text-2xl font-bold tracking-tighter text-blue-900">PortfoliAI</div>
-        <button 
-          onClick={() => login()}
-          className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors"
-        >
-          Accedi
-        </button>
       </header>
 
       {/* HERO SECTION */}
