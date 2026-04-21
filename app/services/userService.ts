@@ -1,4 +1,5 @@
 // services/userService.ts
+import type { User, UserProfile, UserInvestorProfile } from "../models/User";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -10,29 +11,46 @@ const getAuthHeaders = () => {
   };
 };
 
-/**
- * Helper function to handle fetch responses and throw meaningful errors
- */
-async function handleResponse(response: Response) {
+async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Error ${response.status}: ${response.statusText}`);
+    throw new Error(errorData.detail || `Error ${response.status}`);
   }
   return response.json();
 }
 
 export const userService = {
-  async getUserProfile() {
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/profile/`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-      });
-      const data = await handleResponse(response);
-      return Array.isArray(data) ? data : [];
-    } catch (error) {
-      console.error("Service: getAllDocuments failed", error);
-      throw error;
-    }
+  /**
+   * SIGNIN: Restituisce l'oggetto User base
+   */
+  async verifyToken(): Promise<User> {
+    const response = await fetch(`${API_BASE_URL}/auth/verify-token`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<User>(response);
+  },
+
+  /**
+   * GET PROFILE: Restituisce UserProfile (User + InvestorProfile)
+   */
+  async getUserProfile(): Promise<UserProfile> {
+    const response = await fetch(`${API_BASE_URL}/users/profile`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<UserProfile>(response);
+  },
+
+  /**
+   * UPDATE PROFILE
+   */
+  async updateInvestorProfile(profileData: Partial<UserInvestorProfile>): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/users/profile`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(profileData),
+    });
+    return handleResponse<void>(response);
   }
 };

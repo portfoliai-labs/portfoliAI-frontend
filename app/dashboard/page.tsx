@@ -7,6 +7,8 @@ import { Sidebar } from "../components/dashboard/Sidebar";
 import { FileUploader } from "../components/dashboard/FileUploader";
 import { SettingsSection } from "../components/dashboard/SettingsSection";
 import { ReportsList } from "../components/dashboard/ReportsList";
+import { DashboardOverview } from "../components/dashboard/DashboardOverview"
+import { SubscriptionSection } from "../components/dashboard/SubscriptionSection"
 
 export default function DashboardPage() {
   const { isAuthorized, handleLogout } = useProtectedRoute();
@@ -16,10 +18,18 @@ export default function DashboardPage() {
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'upload': return <FileUploader />;
-      case 'settings': return <SettingsSection />;
-      case 'reports': return <ReportsList />;
-      default: return <FileUploader />;
+      case 'dashboard': 
+        return <DashboardOverview />;
+      case 'upload': 
+        return <FileUploader />;
+      case 'reports': 
+        return <ReportsList />;
+      case 'settings': 
+        return <SettingsSection />;
+      case 'subscription':
+        return <SubscriptionSection />;
+      default: 
+        return <DashboardOverview />;
     }
   };
 
