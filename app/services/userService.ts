@@ -3,6 +3,16 @@ import type { User, UserProfile, UserInvestorProfile } from "../models/User";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
+
 const getAuthHeaders = () => {
   const token = typeof window !== 'undefined' ? localStorage.getItem("auth_token") : null;
   return {
@@ -11,10 +21,12 @@ const getAuthHeaders = () => {
   };
 };
 
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Error ${response.status}`);
+    // USIAMO ApiError invece di Error
+    throw new ApiError(response.status, errorData.detail || `Error ${response.status}`);
   }
   return response.json();
 }
@@ -42,10 +54,19 @@ export const userService = {
     return handleResponse<UserProfile>(response);
   },
 
+  async createUserProfile(profileData: any): Promise<UserProfile> {
+    const response = await fetch(`${API_BASE_URL}/users/profile`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(profileData),
+    });
+    return handleResponse<UserProfile>(response);
+  },
+
   /**
    * UPDATE PROFILE
    */
-  async updateInvestorProfile(profileData: Partial<UserInvestorProfile>): Promise<void> {
+  async updateUserProfile(profileData: Partial<UserProfile>): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/users/profile`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
