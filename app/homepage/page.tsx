@@ -12,6 +12,8 @@ import StepCard from "../components/homepage/StepCard";
 import PricePlanCard from "../components/homepage/PricePlanCard";
 import FaqItem from "../components/homepage/FaqItem";
 import RealPricesReport from "../components/homepage/RealPricesReport";
+import Report3DShowcase from "../components/homepage/Report3DShowcase";
+
 
 // ==========================================
 // 1. DATA SECTIONS (TRANSLATED)
@@ -135,6 +137,8 @@ export default function HomePage() {
           <RealPricesReport />
         </motion.div>
       </main>
+
+      <Report3DShowcase />
 
       {/* FEATURES SECTION (WITH ID) */}
       <section id="features" className="bg-slate-900 border-t border-slate-800 py-32 scroll-mt-20">
