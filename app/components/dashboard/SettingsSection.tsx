@@ -6,6 +6,7 @@ import {
   Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote 
 } from "lucide-react";
 import { userService } from "../../services/userService";
+import { UserInvestorProfile } from "../../models/User";
 
 export function SettingsSection() {
   const [loading, setLoading] = useState(true);
@@ -67,10 +68,16 @@ export function SettingsSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await userService.updateInvestorProfile({
+      const investorProfileUpdate: UserInvestorProfile = {
+        estimated_wealth: formData.estimated_wealth ? parseFloat(formData.estimated_wealth) : null,
+        annual_income: formData.annual_income ? parseFloat(formData.annual_income) : null,
+        financial_goals: formData.financial_goals || null,
+        risk_tolerance: formData.risk_tolerance || null,
+        currency: formData.currency || null,
+      };
+      await userService.updateUserProfile({
         ...formData,
-        estimated_wealth: parseFloat(formData.estimated_wealth),
-        annual_income: parseFloat(formData.annual_income),
+        investor_profile: investorProfileUpdate
       });
       setMessage({ type: "success", text: "Profilo aggiornato con successo" });
     } catch (err) {
