@@ -1,97 +1,121 @@
 "use client";
 
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { BarChart3, PieChart, CalendarDays, Hand } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  BarChart3, PieChart, Hand, 
+  TrendingUp, ArrowUpRight 
+} from "lucide-react";
+import {
+  LineChart, Line, PieChart as RePieChart, Pie,
+  ResponsiveContainer, Tooltip, CartesianGrid
+} from 'recharts';
+
+// --- DATA FOR CHARTS ---
+const lineData = [
+  { m: 'J', v: 400 }, { m: 'F', v: 300 }, { m: 'M', v: 500 },
+  { m: 'A', v: 450 }, { m: 'M', v: 700 }, { m: 'J', v: 600 }
+];
+
+const pieData = [
+  { name: 'Stocks', value: 65, fill: '#06b6d4' },
+  { name: 'Bonds', value: 25, fill: '#3b82f6' },
+  { name: 'Cash', value: 10, fill: '#1e293b' },
+];
 
 export default function Report3DShowcase() {
-  // Funzione helper per i colori della heatmap
-  const getHeatmapColor = (yearIndex: number, monthIndex: number) => {
-    const pattern = [
-      "bg-emerald-500", "bg-emerald-700/60", "bg-rose-500", "bg-emerald-900/40",
-      "bg-emerald-600/50", "bg-rose-700/60", "bg-emerald-500", "bg-emerald-800/40",
-      "bg-rose-900/40", "bg-emerald-500", "bg-emerald-700/60", "bg-rose-600/50"
-    ];
-    return pattern[(yearIndex + monthIndex) % pattern.length];
-  };
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Definiamo il contenuto delle 3 "carte" del report
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Abbiamo separato il testo (che va a sinistra) dal contenuto visivo (che va nella carta)
   const initialCards = [
     {
-      id: "heatmap",
-      className: "bg-slate-900 border-slate-700 shadow-2xl",
-      content: (
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4 text-slate-400">
-            <CalendarDays className="w-5 h-5" />
-            <span className="text-sm font-semibold tracking-wider uppercase">Chapter 4.2 - Performance & ROI</span>
+      id: "performance",
+      chapter: "Chapter 4.2",
+      title: "Performance & ROI",
+      description: "Track your historical returns and understand your exposure to market volatility. The AI calculates your true net growth by factoring in all hidden fees and spreads.",
+      icon: <TrendingUp className="w-6 h-6 text-cyan-400" />,
+      visual: (
+        <div className="flex flex-col h-full gap-4">
+          <div className="flex-1 w-full min-h-[200px] bg-slate-900/50 rounded-2xl p-4 border border-slate-800 flex flex-col">
+            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Growth Trajectory</span>
+            <div className="flex-1 w-full min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lineData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', fontSize: '10px' }} />
+                  <Line type="monotone" dataKey="v" stroke="#06b6d4" strokeWidth={3} dot={{ r: 3, fill: '#0f172a', strokeWidth: 2 }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <h3 className="text-2xl font-bold text-white mb-2">Annual Returns & Heatmap</h3>
-          <p className="text-sm text-slate-500 mb-8">A detailed breakdown of performance by year and month. The color scale highlights volatility and seasonal trends.</p>
-          
-          <div className="grid grid-cols-13 gap-1">
-            <div className="col-span-1"></div> 
-            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(m => (
-              <div key={m} className="text-[10px] text-slate-500 text-center">{m}</div>
-            ))}
-            {[2024, 2025, 2026].map((year, yIdx) => (
-              <React.Fragment key={year}>
-                <div className="text-xs text-slate-400 font-bold flex items-center">{year}</div>
-                {[...Array(12)].map((_, mIdx) => (
-                  <div key={mIdx} className={`h-8 rounded-sm ${getHeatmapColor(yIdx, mIdx)}`}></div>
-                ))}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      )
-    },
-    {
-      id: "asset",
-      className: "bg-slate-800 border-slate-600 shadow-2xl",
-      content: (
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-3 mb-6 border-b border-slate-700 pb-4 text-slate-300">
-            <PieChart className="w-5 h-5" />
-            <span className="text-sm font-semibold tracking-wider uppercase">Chapter 4.1 - Portfolio Composition</span>
-          </div>
-          <h3 className="text-2xl font-bold text-white mb-2">Asset Allocation</h3>
-          <p className="text-sm text-slate-400 mb-8">Analysis of concentration and capital distribution by investment category.</p>
-          
-          <div className="flex items-center justify-center gap-10 mt-10">
-            <div className="w-48 h-48 rounded-full border-[16px] border-cyan-500 border-r-blue-500 border-b-emerald-400 border-l-cyan-900 shadow-inner rotate-45"></div>
-            <div className="space-y-4 w-1/2">
-               {['Stocks (65%)', 'Bonds (22%)', 'Crypto (8%)', 'Cash (5%)'].map((item, i) => (
-                 <div key={i} className="flex items-center gap-3">
-                   <div className={`w-3 h-3 rounded-full ${i===0 ? 'bg-cyan-500' : i===1 ? 'bg-blue-500' : i===2 ? 'bg-emerald-400' : 'bg-cyan-900'}`}></div>
-                   <span className="text-sm text-white font-medium">{item}</span>
-                 </div>
-               ))}
+          <div className="grid grid-cols-2 gap-3 h-28">
+            <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 flex flex-col justify-center">
+              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Yearly ROI</span>
+              <div className="text-emerald-400 font-bold text-xl mt-1">+14.2%</div>
+            </div>
+            <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 flex flex-col justify-center">
+              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Volatility</span>
+              <div className="text-white font-bold text-xl mt-1">Low</div>
             </div>
           </div>
         </div>
       )
     },
     {
-      id: "cover",
-      className: "bg-slate-950 border-cyan-800 shadow-[0_0_60px_rgba(6,182,212,0.15)]",
-      content: (
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4 text-cyan-500">
-            <BarChart3 className="w-5 h-5" />
-            <span className="text-sm font-semibold tracking-wider uppercase">Chapter 1 - Overview</span>
+      id: "allocation",
+      chapter: "Chapter 4.1",
+      title: "Asset Allocation",
+      description: "A granular look at how your capital is distributed. Ensure your portfolio is perfectly balanced for your risk profile across stocks, bonds, and alternative assets.",
+      icon: <PieChart className="w-6 h-6 text-cyan-400" />,
+      visual: (
+        <div className="flex flex-col h-full gap-6">
+          <div className="flex-1 w-full min-h-[200px] flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <RePieChart>
+                <Pie data={pieData} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value" stroke="none" />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', fontSize: '10px' }} />
+              </RePieChart>
+            </ResponsiveContainer>
           </div>
-          <h3 className="text-4xl font-extrabold text-white mb-2 leading-tight">Investment Portfolio Report</h3>
-          <p className="text-base text-slate-400 mb-10 max-w-lg">This report provides a comprehensive overview and analysis of the investment portfolio, covering historical transactions, current holdings, and risk metrics.</p>
-          
-          <div className="grid grid-cols-2 gap-4 mt-auto">
-             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-               <span className="text-xs text-slate-500 font-bold uppercase">Total Invested Capital</span>
-               <div className="text-2xl font-bold text-white mt-1">€ 42,150.00</div>
+          <div className="space-y-3 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
+            {pieData.map(item => (
+              <div key={item.name} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full shadow-inner" style={{ backgroundColor: item.fill }} />
+                  <span className="text-sm text-white font-medium">{item.name}</span>
+                </div>
+                <div className="text-sm font-bold text-slate-300">{item.value}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    },
+    {
+      id: "overview",
+      chapter: "Chapter 1",
+      title: "Executive Summary",
+      description: "Get a bird's-eye view of your entire financial health. We clean and categorize thousands of rows of broker data to give you this simple, clear starting point.",
+      icon: <BarChart3 className="w-6 h-6 text-cyan-400" />,
+      visual: (
+        <div className="flex flex-col h-full items-center justify-center text-center gap-8 py-8">
+          <div className="w-20 h-20 bg-cyan-900/30 rounded-full flex items-center justify-center border border-cyan-800 mb-4">
+             <BarChart3 className="w-10 h-10 text-cyan-400" />
+          </div>
+          <div className="w-full space-y-4">
+             <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-3xl">
+               <span className="text-xs text-slate-500 uppercase font-bold tracking-wider block mb-2">Total Value</span>
+               <div className="text-4xl font-black text-white">€ 48,320<span className="text-2xl text-slate-600">.50</span></div>
              </div>
-             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-               <span className="text-xs text-slate-500 font-bold uppercase">Current Value</span>
-               <div className="text-2xl font-bold text-cyan-400 mt-1">€ 48,320.50</div>
+             <div className="bg-cyan-950/30 border border-cyan-800/50 p-6 rounded-3xl">
+               <span className="text-xs text-cyan-500 uppercase font-bold tracking-wider block mb-2">Net Growth</span>
+               <div className="text-3xl font-black text-cyan-400 flex items-center justify-center gap-2">
+                 <ArrowUpRight className="w-6 h-6" /> 12.4%
+               </div>
              </div>
           </div>
         </div>
@@ -99,95 +123,115 @@ export default function Report3DShowcase() {
     }
   ];
 
-  // Stato che gestisce l'ordine delle carte. L'ultima carta nell'array è quella visibile in cima.
   const [cards, setCards] = useState(initialCards);
 
-  // Funzione per spostare la carta in cima alla fine del mazzo
+  // La carta in cima è sempre l'ultima dell'array
+  const topCard = cards[cards.length - 1];
+
   const handleDragEnd = (event: any, info: any) => {
-    // Se la carta è stata trascinata per più di 100px a destra/sinistra o su/giù
     if (Math.abs(info.offset.x) > 100 || Math.abs(info.offset.y) > 100) {
-      setCards((prevCards) => {
-        const newCards = [...prevCards];
-        const topCard = newCards.pop(); // Rimuove l'ultima carta (quella in cima)
-        if (topCard) newCards.unshift(topCard); // La inserisce all'inizio (in fondo al mazzo)
+      setCards((prev) => {
+        const newCards = [...prev];
+        const top = newCards.pop();
+        if (top) newCards.unshift(top);
         return newCards;
       });
     }
   };
 
+  if (!isMounted) return null;
+
   return (
-    <section className="py-32 bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center">
-      
-      <div className="text-center mb-16 z-10 relative px-6">
-        <motion.h2 
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          className="text-3xl md:text-5xl font-bold text-white mb-6"
-        >
-          Look inside the report
-        </motion.h2>
-        <motion.p 
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ delay: 0.1 }}
-          className="text-slate-400 max-w-2xl mx-auto text-lg mb-8"
-        >
-          A granular breakdown of your portfolio, from asset allocation to historical monthly heatmaps.
-        </motion.p>
+    <section className="py-32 bg-slate-950 w-full overflow-hidden">
+      <div className="max-w-6xl mx-auto px-6 flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
         
-        {/* Suggerimento visivo per il drag */}
-        <motion.div 
-          initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.5 }} viewport={{ once: true }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-full text-cyan-400 text-sm font-semibold border border-cyan-900/50 animate-pulse"
-        >
-          <Hand className="w-4 h-4" /> Try dragging the top card
-        </motion.div>
-      </div>
-
-      {/* CONTAINER CARTE. Usa whileInView per l'animazione di entrata dell'intero blocco */}
-      <motion.div 
-        initial={{ opacity: 0, y: 100 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-100px" }}
-        className="relative w-full max-w-4xl h-[550px] flex justify-center items-start mt-4 perspective-[2000px]"
-      >
-        {cards.map((card, index) => {
-          // Calcoliamo se la carta è in cima, in mezzo o in fondo
-          const isTop = index === cards.length - 1;
-          const isMiddle = index === cards.length - 2;
+        {/* ==========================================
+            COLONNA SINISTRA: TESTO DINAMICO
+            ========================================== */}
+        <div className="w-full lg:w-1/2 flex flex-col pt-10 lg:pt-0 text-center lg:text-left">
           
-          // Definiamo stili e posizioni in base al livello nel mazzo
-          const animateProps = isTop
-            ? { opacity: 1, y: 0, scale: 1.05, rotateZ: -2, zIndex: 30 }
-            : isMiddle
-            ? { opacity: 1, y: 30, scale: 0.95, rotateZ: 4, zIndex: 20 }
-            : { opacity: 1, y: 60, scale: 0.85, rotateZ: -8, zIndex: 10 };
+          <div className="inline-flex items-center justify-center lg:justify-start gap-2 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-6">
+            <span className="w-8 h-px bg-cyan-800"></span>
+            Inside the Report
+          </div>
 
-          return (
-            <motion.div
-              key={card.id}
-              layout // Gestisce automaticamente l'animazione fluida quando cambia l'ordine
-              initial={false}
-              animate={animateProps}
-              transition={{ type: "spring", stiffness: 250, damping: 25 }}
-              
-              // Impostazioni di Drag (attive solo per la carta in cima)
-              drag={isTop} 
-              dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} // Fa tornare indietro la carta se non supera la soglia
-              dragElastic={0.6} // Rende il trascinamento "gommoso"
-              onDragEnd={isTop ? handleDragEnd : undefined}
-              whileDrag={{ scale: 1.1, cursor: "grabbing" }}
-              
-              className={`absolute w-[90%] md:w-[700px] h-[480px] rounded-2xl p-8 border overflow-hidden ${card.className} ${isTop ? "cursor-grab" : "cursor-auto"}`}
-            >
-              {card.content}
-            </motion.div>
-          );
-        })}
-      </motion.div>
+          {/* AnimatePresence gestisce il crossfade del testo quando cambi carta */}
+          <div className="min-h-[250px] flex flex-col justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={topCard.id}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="flex items-center justify-center lg:justify-start gap-3 mb-4">
+                  {topCard.icon}
+                  <span className="text-sm font-semibold text-slate-400 tracking-wider uppercase">{topCard.chapter}</span>
+                </div>
+                <h3 className="text-4xl md:text-5xl font-extrabold text-white mb-6 leading-tight">
+                  {topCard.title}
+                </h3>
+                <p className="text-lg text-slate-400 leading-relaxed">
+                  {topCard.description}
+                </p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
+          <motion.div 
+            initial={{ opacity: 0 }} whileInView={{ opacity: 1 }}
+            className="mt-12 inline-flex items-center justify-center lg:justify-start gap-3 text-sm text-slate-500 font-medium"
+          >
+            <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center animate-pulse">
+              <Hand className="w-4 h-4 text-cyan-500" />
+            </div>
+            Swipe the card to explore
+          </motion.div>
+
+        </div>
+
+        {/* ==========================================
+            COLONNA DESTRA: 3D STACK
+            ========================================== */}
+        <div className="w-full lg:w-1/2 h-[600px] relative perspective-[2000px] flex justify-center items-center">
+          {cards.map((card, index) => {
+            const isTop = index === cards.length - 1;
+            const isMiddle = index === cards.length - 2;
+            
+            return (
+              <motion.div
+                key={card.id}
+                layout
+                animate={{
+                  opacity: 1,
+                  // Offset verso l'alto e a destra per un effetto mazzo asimmetrico
+                  y: isTop ? 0 : isMiddle ? -20 : -40, 
+                  x: isTop ? 0 : isMiddle ? 15 : 30,
+                  scale: isTop ? 1 : isMiddle ? 0.95 : 0.90,
+                  rotateZ: isTop ? 0 : isMiddle ? 3 : 6,
+                  zIndex: index * 10,
+                }}
+                transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                drag={isTop}
+                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                onDragEnd={handleDragEnd}
+                whileDrag={{ scale: 1.05, rotateZ: -2, cursor: "grabbing" }}
+                
+                // Misure compatte: w-[340px] a w-[400px], h-[500px]. Nessun rischio di taglio.
+                className={`absolute inset-0 m-auto w-[340px] sm:w-[400px] h-[520px] rounded-[2rem] p-6 border flex flex-col ${
+                  isTop ? "bg-slate-950 border-cyan-800 shadow-[0_0_50px_rgba(6,182,212,0.2)] cursor-grab" : 
+                  isMiddle ? "bg-slate-900 border-slate-700 shadow-2xl" : "bg-slate-800 border-slate-700 shadow-xl"
+                }`}
+              >
+                {/* Visual Content Only */}
+                {card.visual}
+              </motion.div>
+            );
+          })}
+        </div>
+
+      </div>
     </section>
   );
 }
