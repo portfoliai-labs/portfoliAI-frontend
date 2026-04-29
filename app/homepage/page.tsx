@@ -9,9 +9,9 @@ import {
 import { useAuthFlow } from "@/app/hooks/useAuthFlow"; 
 import FeatureCard from "../components/homepage/FeatureCard";
 import StepCard from "../components/homepage/StepCard";
-import PricePlanCard from "../components/homepage/PricePlanCard";
-import FaqItem from "../components/homepage/FaqItem";
 import Report3DShowcase from "../components/homepage/Report3DShowcase";
+import PricingSection from "./PricingSection";
+import FaqSection from "./FaqSection";
 
 
 // ==========================================
@@ -30,11 +30,6 @@ const stepsData = [
   { number: 1, icon: UploadCloud, title: "Upload", description: "Export data from your broker and upload the CSV/Excel file." },
   { number: 2, icon: Settings2, title: "Process", description: "The AI engine cleans, categorizes, and analyzes your transactions." },
   { number: 3, icon: DownloadCloud, title: "Get Insights", description: "Download your detailed, ready-to-use PDF report." },
-];
-
-const pricingData = [
-  { title: "Starter", price: "Free", features: ["1 Report per month", "Basic portfolio analysis", "Standard CSV formats"], ctaText: "Start for Free", popular: false },
-  { title: "Pro", price: "€15", features: ["Unlimited reports", "Risk & volatility analysis", "Advanced fee breakdown", "Priority support"], ctaText: "Upgrade to Pro", popular: true },
 ];
 
 const faqData = [
@@ -138,43 +133,10 @@ export default function HomePage() {
       </section>
 
       {/* PRICING SECTION (WITH ID) */}
-      <section id="pricing" className="py-32 bg-slate-900 border-t border-b border-slate-800 scroll-mt-20">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <motion.h2 
-             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }}
-             className="text-3xl md:text-4xl font-bold text-white mb-16"
-          >
-            Simple, transparent pricing
-          </motion.h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-             {pricingData.map((p, i) => <PricePlanCard key={i} index={i} {...p} login={login} />)}
-          </div>
-        </div>
-      </section>
+      <PricingSection />
 
       {/* FAQ SECTION (WITH ID) */}
-      <section id="faq" className="py-32 bg-slate-950 scroll-mt-20">
-        <div className="max-w-3xl mx-auto px-6">
-          <motion.h2 
-            initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }}
-            className="text-3xl md:text-4xl font-bold text-white mb-10 text-center"
-          >
-            Frequently Asked Questions
-          </motion.h2>
-          <div className="space-y-4">
-            {faqData.map((faq, index) => (
-              <FaqItem 
-                key={index} 
-                index={index}
-                question={faq.question} 
-                answer={faq.answer} 
-                isOpen={openFaqIndex === index}
-                onToggle={() => toggleFaq(index)}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
+      <FaqSection />
 
       {/* FOOTER */}
       <footer className="bg-slate-950 border-t border-slate-900 text-slate-500 py-12 text-center text-sm">

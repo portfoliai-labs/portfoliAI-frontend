@@ -1,5 +1,5 @@
 // services/userService.ts
-import type { User, UserProfile, UserInvestorProfile } from "../models/User";
+import type { User, UserProfile } from "../models/User";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
