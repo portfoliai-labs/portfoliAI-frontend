@@ -8,7 +8,7 @@ import { FileUploader } from "../components/dashboard/FileUploader";
 import { SettingsSection } from "../components/dashboard/SettingsSection";
 import { ReportsList } from "../components/dashboard/ReportsList";
 import { DashboardOverview } from "../components/dashboard/DashboardOverview"
-import { SubscriptionSection } from "../components/dashboard/SubscriptionSection"
+import SubscriptionSection from "../components/dashboard/SubscriptionSection"
 
 export default function DashboardPage() {
   const { isAuthorized, handleLogout } = useProtectedRoute();

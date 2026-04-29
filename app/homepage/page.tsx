@@ -10,7 +10,7 @@ import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 import FeatureCard from "../components/homepage/FeatureCard";
 import StepCard from "../components/homepage/StepCard";
 import Report3DShowcase from "../components/homepage/Report3DShowcase";
-import PricingSection from "./PricingSection";
+import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "./FaqSection";
 
 
@@ -133,7 +133,7 @@ export default function HomePage() {
       </section>
 
       {/* PRICING SECTION (WITH ID) */}
-      <PricingSection />
+      <SubscriptionSection />
 
       {/* FAQ SECTION (WITH ID) */}
       <FaqSection />
