@@ -161,8 +161,8 @@ export default function Report3DShowcase(): React.JSX.Element {
       visual: (
         <div className="flex flex-col h-full gap-3">
           <div className="w-full flex items-center justify-center py-2">
-            <RePieChart width={270} height={150}>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={5} dataKey="value" stroke="none">
+            <RePieChart width={250} height={150}>
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={60} paddingAngle={5} dataKey="value" stroke="none">
                 {pieData.map((entry: PieDataItem, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.fill} />
                 ))}
@@ -267,17 +267,16 @@ export default function Report3DShowcase(): React.JSX.Element {
   };
 
   return (
-    <section className="py-32 bg-slate-950 w-full overflow-hidden font-sans">
-      <div className="max-w-6xl mx-auto px-6 flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+    <section className="py-12 lg:py-32 bg-slate-950 w-full overflow-hidden font-sans">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col lg:flex-row items-center gap-8 lg:gap-24">
         
-        {/* COLONNA SINISTRA */}
         <div className="w-full lg:w-1/2 flex flex-col text-center lg:text-left">
           <div className="inline-flex items-center justify-center lg:justify-start gap-2 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-6">
             <span className="w-8 h-px bg-cyan-800"></span>
             Intelligence Report
           </div>
 
-          <div className="min-h-[300px] flex flex-col justify-center">
+          <div className="min-h-[220px] lg:min-h-[300px] flex flex-col justify-center">
             <AnimatePresence mode="wait">
               <motion.div
                 key={topCard.id}
@@ -292,7 +291,7 @@ export default function Report3DShowcase(): React.JSX.Element {
                   </div>
                   <span className="text-sm font-semibold text-slate-500 tracking-wider uppercase">{topCard.chapter}</span>
                 </div>
-                <h3 className="text-4xl md:text-5xl font-extrabold text-white mb-6 leading-tight">
+                <h3 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white mb-4 sm:mb-6 leading-tight">
                   {topCard.title}
                 </h3>
                 <p className="text-lg text-slate-400 leading-relaxed max-w-lg">
@@ -302,7 +301,7 @@ export default function Report3DShowcase(): React.JSX.Element {
             </AnimatePresence>
           </div>
 
-          <div className="mt-12 flex items-center justify-center lg:justify-start gap-3 text-sm text-slate-500">
+          <div className="mt-6 lg:mt-12 flex items-center justify-center lg:justify-start gap-3 text-sm text-slate-500">
             <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center animate-pulse">
               <Hand className="w-4 h-4 text-cyan-500" />
             </div>
@@ -310,8 +309,7 @@ export default function Report3DShowcase(): React.JSX.Element {
           </div>
         </div>
 
-        {/* COLONNA DESTRA */}
-        <div className="w-full lg:w-1/2 h-[650px] relative perspective-[2000px] flex justify-center items-center">
+        <div className="w-full lg:w-1/2 h-[580px] lg:h-[650px] relative perspective-[2000px] flex justify-center items-center">
           {cards.map((card: CardData, index: number) => {
             const isTop: boolean = index === cards.length - 1;
             const isMiddle: boolean = index === cards.length - 2;
@@ -323,8 +321,8 @@ export default function Report3DShowcase(): React.JSX.Element {
                 layout
                 animate={{
                   opacity: isTop ? 1 : isMiddle ? 0.8 : isBottom ? 0.4 : 0,
-                  y: isTop ? 0 : isMiddle ? -25 : -50, 
-                  x: isTop ? 0 : isMiddle ? 20 : 40,
+                  y: isTop ? 0 : isMiddle ? -15 : -30, 
+                  x: isTop ? 0 : isMiddle ? 10 : 20,
                   scale: isTop ? 1 : isMiddle ? 0.94 : 0.88,
                   rotateZ: isTop ? 0 : isMiddle ? 2 : 4,
                   zIndex: index,
@@ -334,7 +332,7 @@ export default function Report3DShowcase(): React.JSX.Element {
                 dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
                 onDragEnd={handleDragEnd}
                 whileDrag={{ scale: 1.02, cursor: "grabbing" }}
-                className={`absolute inset-0 m-auto w-[340px] sm:w-[380px] h-[580px] rounded-[2.5rem] p-8 border flex flex-col transition-colors duration-500 ${
+                className={`absolute inset-0 m-auto w-[310px] sm:w-[340px] md:w-[380px] h-[540px] sm:h-[580px] rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border flex flex-col transition-colors duration-500 ${
                   isTop ? "bg-slate-950 border-cyan-500/50 shadow-[0_0_60px_rgba(6,182,212,0.15)] cursor-grab" : 
                   "bg-slate-900 border-slate-800 shadow-2xl overflow-hidden"
                 }`}
