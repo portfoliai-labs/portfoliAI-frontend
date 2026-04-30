@@ -44,7 +44,8 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: Dashboar
   });
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white/70 backdrop-blur-2xl border-b border-slate-200/50 px-4 md:px-8 py-4 flex justify-between items-center transition-all">
+    // FIX: Changed z-50 to z-[60] to ensure the header stays above the mobile overlay
+    <header className="sticky top-0 z-[60] w-full bg-white/70 backdrop-blur-2xl border-b border-slate-200/50 px-4 md:px-8 py-4 flex justify-between items-center transition-all">
       {/* LEFT SECTION: Hamburger & Branding */}
       <div className="flex items-center gap-3 md:gap-4">
         {/* Mobile Hamburger Button */}

@@ -10,7 +10,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-export function Sidebar({ activeSection, setActiveSection, isOpen = true, onClose }: SidebarProps) {
+export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Upload Documents', icon: UploadCloud },
