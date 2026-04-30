@@ -156,8 +156,7 @@ export function ReportsList() {
               <input 
                 type="text" 
                 placeholder="Search by name..."
-                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 transition-all shadow-sm"
-                value={searchTerm}
+                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 transition-all shadow-sm text-slate-900"                value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>

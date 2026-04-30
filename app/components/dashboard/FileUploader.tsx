@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { 
   UploadCloud, Loader2, AlertCircle, Send, 
-  FileText, Trash2
+  FileText, Trash2, CheckCircle2, X
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -36,8 +36,17 @@ export function FileUploader() {
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "preview" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showToast, setShowToast] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Effetto per nascondere automaticamente il toast dopo 5 secondi
+  useEffect(() => {
+    if (showToast) {
+      const timer = setTimeout(() => setShowToast(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showToast]);
 
   const activeFile = useMemo(() => 
     files.find(f => f.id === activeFileId) || null, 
@@ -111,17 +120,44 @@ export function FileUploader() {
       const allTransactions = files.flatMap(f => f.previewData);
       await reportService.processReport(allTransactions, "Multiple_Files_Upload");
       setStatus("processing");
+      setShowToast(true);
       setFiles([]);
     } catch (error: unknown) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
+      setShowToast(true);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 animate-in fade-in duration-500 pb-12">
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 animate-in fade-in duration-500 pb-12 relative">
+      
+      {/* NOTIFICA TOAST (Visualizzata in base allo stato) */}
+      {showToast && (
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${
+          status === "error" ? "bg-rose-500 text-white" : "bg-slate-900 text-white"
+        }`}>
+          {status === "error" ? (
+            <AlertCircle className="h-5 w-5 text-rose-200" />
+          ) : (
+            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+          )}
+          <div className="flex flex-col">
+            <span className="text-sm font-bold">
+              {status === "error" ? "Analysis Failed" : "Analysis Started Successfully"}
+            </span>
+            <span className="text-xs opacity-80">
+              {status === "error" ? errorMessage : "Your files are being processed. Check the archive shortly."}
+            </span>
+          </div>
+          <button onClick={() => setShowToast(false)} className="ml-4 p-1 hover:bg-white/20 rounded-lg transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* LEFT COLUMN: File List & Upload */}
       <div className="xl:col-span-1 space-y-4">
         <div 
