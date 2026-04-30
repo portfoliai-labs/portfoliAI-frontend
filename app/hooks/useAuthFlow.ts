@@ -17,7 +17,7 @@ export function useAuthFlow() {
   const router = useRouter();
   const [status, setStatus] = useState<string>('Ready to authenticate');
   const [isError, setIsError] = useState<boolean>(false);
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [generatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
   const handleCopy = async (): Promise<void> => {

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { 
   BarChart3, TrendingDown, Lock, 
@@ -9,7 +8,7 @@ import {
 import { useAuthFlow } from "@/app/hooks/useAuthFlow"; 
 import FeatureCard from "../components/homepage/FeatureCard";
 import StepCard from "../components/homepage/StepCard";
-import Report3DShowcase from "../components/homepage/Report3DShowcase";
+import dynamic from 'next/dynamic';
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "./FaqSection";
 
@@ -32,22 +31,21 @@ const stepsData = [
   { number: 3, icon: DownloadCloud, title: "Get Insights", description: "Download your detailed, ready-to-use PDF report." },
 ];
 
-const faqData = [
-  { question: "Which brokers are supported?", answer: "We support CSV/Excel formats from most major brokers (e.g., Degiro, Interactive Brokers, Fineco). The AI automatically adapts to column formats." },
-  { question: "Is my financial data secure?", answer: "Absolutely. We do not store your transaction data. The file is processed in RAM and discarded as soon as the report is generated." },
-  { question: "What exactly is in the PDF report?", answer: "The report includes: capital overview, historical cash flows, cost analysis, portfolio composition, ROI analysis, and volatility metrics." },
-];
+
+const Report3DShowcase = dynamic(
+  () => import('../components/homepage/Report3DShowcase'), 
+  { 
+    ssr: false,
+    loading: () => <div className="py-32 bg-slate-950 w-full min-h-[700px]" /> // Il tuo skeleton di caricamento
+  }
+);
 
 // ==========================================
 // 2. MAIN PAGE
 // ==========================================
 export default function HomePage() {
   const { login } = useAuthFlow();
-  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
-  const toggleFaq = (index: number) => {
-    setOpenFaqIndex(openFaqIndex === index ? null : index);
-  };
 
   return (
     // Added scroll-smooth for native smooth scrolling to anchor links
