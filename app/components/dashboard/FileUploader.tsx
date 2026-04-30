@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo } from "react";
 import { 
   UploadCloud, Loader2, AlertCircle, Send, 
-  CheckCircle2, FileText, Trash2, ChevronRight 
+  FileText, Trash2
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -19,7 +19,6 @@ import {
   RawRow,
 } from "../../lib/parser/brokerParser";
 
-
 interface UploadedFileState {
   id: string;
   fileName: string;
@@ -31,7 +30,6 @@ interface UploadedFileState {
   missingFields: string[];
 }
 
-
 export function FileUploader() {
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
@@ -41,24 +39,15 @@ export function FileUploader() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get the currently selected file object
   const activeFile = useMemo(() => 
     files.find(f => f.id === activeFileId) || null, 
   [files, activeFileId]);
 
-  // Global validation: all files must be valid to proceed
   const allFilesValid = useMemo(() => 
     files.length > 0 && files.every(f => f.isValid), 
   [files]);
 
-  /**
-   * Core logic: Standardizes raw data using specific mapping and broker formatters
-   */
-  const processFileData = (
-    rawData: RawRow[], 
-    mapping: Partial<Record<keyof StandardTransaction, string>>, 
-    brokerId: string
-  ) => {
+  const processFileData = (rawData: RawRow[], mapping: Partial<Record<keyof StandardTransaction, string>>, brokerId: string) => {
     const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId));
     const { isValid, missingFields } = validateMapping(previewData);
     return { previewData, isValid, missingFields };
@@ -72,14 +61,7 @@ export function FileUploader() {
     const { previewData, isValid, missingFields } = processFileData(data, initialMapping, broker);
 
     const newFile: UploadedFileState = {
-      id,
-      fileName,
-      rawData: data,
-      previewData,
-      manualMap: initialMapping,
-      detectedBroker: broker,
-      isValid,
-      missingFields: missingFields.map(String)
+      id, fileName, rawData: data, previewData, manualMap: initialMapping, detectedBroker: broker, isValid, missingFields: missingFields.map(String)
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -89,20 +71,11 @@ export function FileUploader() {
 
   const handleMappingChange = (stdField: keyof StandardTransaction, csvHeader: string) => {
     if (!activeFile) return;
-
     const newMapping = { ...activeFile.manualMap, [stdField]: csvHeader };
-    const { previewData, isValid, missingFields } = processFileData(
-      activeFile.rawData, 
-      newMapping, 
-      activeFile.detectedBroker
-    );
+    const { previewData, isValid, missingFields } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
 
     setFiles(prev => prev.map(f => f.id === activeFile.id ? {
-      ...f,
-      manualMap: newMapping,
-      previewData,
-      isValid,
-      missingFields: missingFields.map(String)
+      ...f, manualMap: newMapping, previewData, isValid, missingFields: missingFields.map(String)
     } : f));
   };
 
@@ -118,11 +91,7 @@ export function FileUploader() {
 
     for (const file of Array.from(uploadedFiles)) {
       if (file.name.toLowerCase().endsWith(".csv")) {
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => onParseComplete(results.data as RawRow[], file.name),
-        });
+        Papa.parse(file, { header: true, skipEmptyLines: true, complete: (results) => onParseComplete(results.data as RawRow[], file.name) });
       } else {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -139,7 +108,6 @@ export function FileUploader() {
     if (!allFilesValid) return;
     try {
       setLoading(true);
-      // Combine all preview data from all files into a single array for the backend
       const allTransactions = files.flatMap(f => f.previewData);
       await reportService.processReport(allTransactions, "Multiple_Files_Upload");
       setStatus("processing");
@@ -153,15 +121,18 @@ export function FileUploader() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 animate-in fade-in duration-500 pb-12">
       {/* LEFT COLUMN: File List & Upload */}
-      <div className="lg:col-span-1 space-y-4">
+      <div className="xl:col-span-1 space-y-4">
         <div 
           onClick={() => fileInputRef.current?.click()}
-          className="p-6 border-2 border-dashed border-slate-200 rounded-3xl bg-white hover:bg-slate-50 cursor-pointer transition-all text-center"
+          className="p-8 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all text-center group"
         >
-          <UploadCloud className="h-8 w-8 mx-auto text-slate-400 mb-2" />
-          <span className="text-sm font-bold text-slate-600">Add Files</span>
+          <div className="bg-slate-100 w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-100 transition-colors">
+            <UploadCloud className="h-6 w-6 text-slate-500 group-hover:text-blue-600 transition-colors" />
+          </div>
+          <span className="text-sm font-bold text-slate-700">Browse Files</span>
+          <p className="text-xs text-slate-400 mt-1">CSV or Excel formats</p>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
         </div>
 
@@ -170,15 +141,15 @@ export function FileUploader() {
             <div 
               key={file.id}
               onClick={() => setActiveFileId(file.id)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                activeFileId === file.id ? "border-blue-500 bg-blue-50/50" : "border-slate-100 bg-white hover:border-slate-300"
+              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between shadow-sm ${
+                activeFileId === file.id ? "border-blue-500 bg-blue-50/30 ring-4 ring-blue-500/10" : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className={`h-5 w-5 shrink-0 ${file.isValid ? "text-emerald-500" : "text-amber-500"}`} />
-                <span className="text-xs font-bold text-slate-700 truncate">{file.fileName}</span>
+                <FileText className={`h-5 w-5 shrink-0 ${file.isValid ? "text-slate-700" : "text-amber-500"}`} />
+                <span className="text-sm font-semibold text-slate-700 truncate">{file.fileName}</span>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); removeFile(file.id); }} className="text-slate-400 hover:text-rose-500">
+              <button onClick={(e) => { e.stopPropagation(); removeFile(file.id); }} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
@@ -189,55 +160,55 @@ export function FileUploader() {
           <button 
             disabled={!allFilesValid || loading}
             onClick={handleConfirmUpload}
-            className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all ${
-              allFilesValid ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"
+            className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md ${
+              allFilesValid ? "bg-slate-900 text-white hover:bg-blue-600 shadow-slate-200" : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
             }`}
           >
             {loading ? <Loader2 className="animate-spin h-4 w-4" /> : <Send className="h-4 w-4" />}
-            Analyze {files.length} Files
+            Analyze {files.length} {files.length === 1 ? 'File' : 'Files'}
           </button>
         )}
       </div>
 
       {/* RIGHT COLUMN: Mapping & Preview for Active File */}
-      <div className="lg:col-span-3">
+      <div className="xl:col-span-3">
         {activeFile ? (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center justify-between">
+          <div className="space-y-4 md:space-y-6">
+            <div className="bg-white p-5 md:p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-xl font-black text-slate-900">{activeFile.fileName}</h3>
-                <p className="text-sm text-slate-500">Broker: <span className="text-blue-600 font-bold">{activeFile.detectedBroker}</span></p>
+                <h3 className="text-lg md:text-xl font-black text-slate-900 truncate max-w-[200px] sm:max-w-md">{activeFile.fileName}</h3>
+                <p className="text-sm text-slate-500 mt-1">Detected Broker: <span className="px-2 py-1 bg-slate-100 rounded-md text-slate-700 font-bold ml-1">{activeFile.detectedBroker}</span></p>
               </div>
               {!activeFile.isValid && (
-                <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2 rounded-xl border border-amber-100">
+                <div className="flex items-center gap-2 text-amber-700 bg-amber-50 px-4 py-2.5 rounded-xl border border-amber-200/50 shrink-0">
                   <AlertCircle className="h-4 w-4" />
-                  <span className="text-xs font-bold">Fix mapping to continue</span>
+                  <span className="text-xs font-bold">Fix mapping required</span>
                 </div>
               )}
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+            <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                    <tr className="bg-slate-50 border-b border-slate-200">
                       {ALL_FIELDS.map((field) => {
                         const isRequired = REQUIRED_FIELDS.includes(field);
                         const hasValue = !!activeFile.previewData[0]?.[field];
                         return (
-                          <th key={field} className="px-6 py-6 min-w-[200px]">
-                            <div className="flex flex-col gap-2">
-                              <span className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-1">
-                                {field} {isRequired && <span className="text-rose-500">*</span>}
+                          <th key={field} className="px-5 py-5 min-w-[180px]">
+                            <div className="flex flex-col gap-2.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                                {field} {isRequired && <span className="text-rose-500 text-xs">*</span>}
                               </span>
                               <select 
                                 value={activeFile.manualMap[field] || ""}
                                 onChange={(e) => handleMappingChange(field, e.target.value)}
-                                className={`text-xs bg-white border rounded-lg p-2 font-bold outline-none focus:ring-2 focus:ring-blue-500 ${
-                                  !hasValue && isRequired ? 'border-amber-400 text-amber-700' : 'border-slate-200 text-slate-700'
+                                className={`text-xs bg-white border rounded-xl p-2.5 font-semibold outline-none transition-all focus:ring-4 ${
+                                  !hasValue && isRequired ? 'border-amber-300 focus:ring-amber-50 bg-amber-50/30' : 'border-slate-200 focus:ring-slate-50 focus:border-slate-300'
                                 }`}
                               >
-                                <option value="">-- Ignore --</option>
+                                <option value="" className="text-slate-400">-- Ignore --</option>
                                 {Object.keys(activeFile.rawData[0] || {}).map(header => (
                                   <option key={header} value={header}>{header}</option>
                                 ))}
@@ -248,12 +219,12 @@ export function FileUploader() {
                       })}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {activeFile.previewData.slice(0, 5).map((row, i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                         {ALL_FIELDS.map((field) => (
-                          <td key={field} className="px-6 py-4 text-xs font-medium text-slate-600">
-                            {row[field] ? String(row[field]) : "-"}
+                          <td key={field} className="px-5 py-4 text-sm font-medium text-slate-600 truncate max-w-[180px]">
+                            {row[field] ? String(row[field]) : <span className="text-slate-300">-</span>}
                           </td>
                         ))}
                       </tr>
@@ -264,11 +235,12 @@ export function FileUploader() {
             </div>
           </div>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-[2.5rem] bg-slate-50/50 p-20 text-center">
-            <div className="p-6 bg-white rounded-3xl shadow-sm mb-4">
-               <UploadCloud className="h-12 w-12 text-slate-300" />
+          <div className="h-full min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed border-slate-200/80 rounded-[2.5rem] bg-slate-50/50 p-10 text-center">
+            <div className="p-5 bg-white rounded-2xl shadow-sm border border-slate-100 mb-4">
+               <FileText className="h-8 w-8 text-slate-300" />
             </div>
-            <p className="text-slate-500 font-bold">Select a file from the list or upload new ones</p>
+            <p className="text-slate-600 font-semibold text-lg">No file selected</p>
+            <p className="text-slate-400 text-sm mt-1">Upload a file or select one from the sidebar to map its data.</p>
           </div>
         )}
       </div>
