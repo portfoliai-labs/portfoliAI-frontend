@@ -3,7 +3,7 @@
 export interface StandardTransaction {
   date: string;
   name: string;
-  isin: string;
+  id: string;
   ticker: string;
   operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
   amount: number;
@@ -18,7 +18,7 @@ export interface StandardTransaction {
 export type RawRow = Record<string, unknown>;
 
 export const ALL_FIELDS: (keyof StandardTransaction)[] = [
-  "date", "name", "isin", "ticker", "operation", "amount", 
+  "date", "name", "id", "ticker", "operation", "amount", 
   "price", "currency", "tradeAmount", "fees", "broker"
 ];
 
@@ -57,7 +57,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
     columns: {
       date: "Operazione",
       name: "Titolo",
-      isin: "Isin",
+      id: "Isin",
       operation: "Segno",
       amount: "Quantita",
       price: "Prezzo",
@@ -115,9 +115,9 @@ export const standardizeRow = (
       ? formatters.name(getVal('name'), row) 
       : String(getVal('name') ?? ''),
       
-    isin: formatters.isin 
-      ? formatters.isin(getVal('isin'), row) 
-      : String(getVal('isin') ?? ''),
+    id: formatters.id 
+      ? formatters.id(getVal('id'), row) 
+      : String(getVal('id') ?? ''),
       
     ticker: formatters.ticker 
       ? formatters.ticker(getVal('ticker'), row) 
