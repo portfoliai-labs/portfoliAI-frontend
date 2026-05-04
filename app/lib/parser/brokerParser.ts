@@ -7,7 +7,7 @@ export type RawRow = Record<string, unknown>;
 
 export const ALL_FIELDS: (keyof StandardTransaction)[] = [
   "date", "name", "id", "ticker", "operation", "amount", 
-  "price", "currency", "tradeAmount", "fees", "broker"
+  "price", "currency", "trade_amount", "fees", "broker"
 ];
 
 export const REQUIRED_FIELDS: (keyof StandardTransaction)[] = [
@@ -50,7 +50,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
       amount: "Quantita",
       price: "Prezzo",
       currency: "Divisa",
-      tradeAmount: "Controvalore",
+      trade_amount: "Controvalore",
       fees: "Commissioni amministrato",
     },
     formatters: {
@@ -61,7 +61,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         if (str === 'S') return 'sell';
         return 'dividend';
       },
-      fees: (val: unknown): number => Math.abs(parseNumber(val)),
+      fees: (val: unknown): number => Math.abs(Number(val)),
       broker: (): string => "Fineco"
     }
   }
@@ -117,23 +117,23 @@ export const standardizeRow = (
       
     amount: formatters.amount 
       ? formatters.amount(getVal('amount'), row) 
-      : getVal('amount'),
+      : Number(getVal('amount')),
       
     price: formatters.price 
       ? formatters.price(getVal('price'), row) 
-      : getVal('price'),
+      : Number(getVal('price')),
       
     currency: formatters.currency 
       ? formatters.currency(getVal('currency'), row) 
       : String(getVal('currency') ?? ''),
       
-    trade_amount: formatters.tradeAmount 
-      ? formatters.tradeAmount(getVal('tradeAmount'), row) 
-      : getVal('tradeAmount'),
+    trade_amount: formatters.trade_amount 
+      ? formatters.trade_amount(getVal('trade_amount'), row) 
+      : Number(getVal('trade_amount')),
       
     fees: formatters.fees 
       ? formatters.fees(getVal('fees'), row) 
-      : getVal('fees'),
+      : Number(getVal('fees')),
 
     broker: formatters.broker
       ? formatters.broker(getVal('broker'), row)

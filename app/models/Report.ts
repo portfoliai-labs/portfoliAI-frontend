@@ -9,7 +9,7 @@ export interface StandardTransaction {
   amount: number;
   price: number;
   currency: string;
-  tradeAmount: number;
+  trade_amount: number;
   fees: number;
   broker: string;
 }
