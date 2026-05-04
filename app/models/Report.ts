@@ -1,4 +1,19 @@
 
+
+export interface StandardTransaction {
+  date: string;
+  name: string;
+  id: string;
+  ticker: string;
+  operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
+  amount: number;
+  price: number;
+  currency: string;
+  tradeAmount: number;
+  fees: number;
+  broker: string;
+}
+
 interface Report {
   document_id: string;
   name: string;

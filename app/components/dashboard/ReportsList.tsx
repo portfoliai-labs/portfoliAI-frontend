@@ -9,9 +9,14 @@ import { reportService } from "../../services/reportService";
 import { Report } from "../../models/Report";
 
 // --- INTERFACES ---
+
+/**
+ * Props for the individual Report Card component
+ */
 interface ReportCardProps {
   report: Report;
-  onDownload: (url: string, fileName: string) => void;
+  // Triggered when the user wants to fetch the presigned URL and download
+  onDownload: (docId: string, fileName: string) => void;
   onRemoveTag: (docId: string, tagName: string) => void;
   onAddTag: (docId: string) => void;
   taggingDocId: string | null;
@@ -25,13 +30,18 @@ export function ReportsList() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
-  // UI States
+  // UI & Filtering States
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
+  
+  // Tagging Logic States
   const [taggingDocId, setTaggingDocId] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState<string>("");
 
+  /**
+   * Fetches all documents from the backend on component mount
+   */
   const loadReports = async () => {
     try {
       setLoading(true);
@@ -51,20 +61,38 @@ export function ReportsList() {
   }, []);
 
   // --- ACTIONS ---
-  const handleDownload = async (url: string, fileName: string) => {
+
+  /**
+   * 1. Calls the service to get a secure Presigned URL from Cloudflare R2
+   * 2. Fetches the file as a Blob to trigger a clean browser download
+   */
+  const handleDownload = async (docId: string, fileName: string) => {
     try {
+      // Step 1: Request the short-lived signed URL from the backend
+      const { url } = await reportService.downloadReport(docId);
+
+      // Step 2: Fetch the file data
       const response = await fetch(url);
+      if (!response.ok) throw new Error("Could not fetch file data from storage");
+      
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Step 3: Create a temporary anchor element to trigger download
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+      const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+      link.download = cleanFileName;
+      
       document.body.appendChild(link);
       link.click();
+      
+      // Cleanup DOM and Memory
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
-    } catch (err) { 
-      window.open(url, '_blank'); 
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Download failed";
+      alert(`Error: ${msg}`);
     }
   };
 
@@ -95,13 +123,11 @@ export function ReportsList() {
     }
   };
 
-  // --- LOGIC ---
-  const allTags = useMemo(() => {
-    const tagsSet = new Set<string>();
-    reports.forEach(r => r.tags?.forEach(t => tagsSet.add(t)));
-    return Array.from(tagsSet);
-  }, [reports]);
+  // --- FILTERING & GROUPING LOGIC ---
 
+  /**
+   * Filters the reports based on the search input and selected tag
+   */
   const filteredList = useMemo(() => {
     return reports.filter(r => {
       const matchesSearch = r.name?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -110,7 +136,9 @@ export function ReportsList() {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [reports, searchTerm, selectedTag]);
 
-  // Grouping logic for "Grouped" view
+  /**
+   * Groups filtered reports by their tags for the "Grouped View"
+   */
   const groupedReports = useMemo(() => {
     const groups: Record<string, Report[]> = {};
     filteredList.forEach(report => {
@@ -136,7 +164,7 @@ export function ReportsList() {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-12">
       
-      {/* Error Alert */}
+      {/* Error Feedback */}
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
           <AlertCircle className="h-5 w-5 shrink-0" />
@@ -144,7 +172,7 @@ export function ReportsList() {
         </div>
       )}
 
-      {/* Top Bar: Title, Search & View Toggle */}
+      {/* Header & Controls */}
       <div className="flex flex-col xl:flex-row justify-between gap-6 xl:items-end">
         <div className="w-full xl:w-auto">
           <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Reports Archive</h2>
@@ -156,14 +184,15 @@ export function ReportsList() {
               <input 
                 type="text" 
                 placeholder="Search by name..."
-                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 transition-all shadow-sm text-slate-900"                value={searchTerm}
+                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 transition-all shadow-sm text-slate-900"
+                value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
         </div>
 
-        {/* View Mode Toggle */}
+        {/* View Switcher */}
         <div className="flex bg-slate-100/80 p-1.5 rounded-xl border border-slate-200 shrink-0 w-full md:w-auto">
           <button 
             onClick={() => setViewMode("list")}
@@ -184,7 +213,7 @@ export function ReportsList() {
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main List Rendering */}
       <div className="space-y-8">
         {reports.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-white border border-slate-200 border-dashed rounded-[2rem]">
@@ -193,7 +222,6 @@ export function ReportsList() {
             <p className="text-slate-500 mt-1">Upload files and generate a report to see it here.</p>
           </div>
         ) : viewMode === "list" ? (
-          /* --- LIST VIEW --- */
           <div className="grid gap-4">
             {filteredList.map(report => (
               <ReportCard 
@@ -210,7 +238,6 @@ export function ReportsList() {
             ))}
           </div>
         ) : (
-          /* --- GROUPED VIEW --- */
           Object.entries(groupedReports).map(([tag, docs]) => (
             <div key={`group-${tag}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">
               <div className="flex items-center gap-3 px-2">
@@ -246,7 +273,9 @@ export function ReportsList() {
   );
 }
 
-// Sub-component typed correctly without 'any'
+/**
+ * ReportCard: UI component for each document item
+ */
 function ReportCard({ 
   report, 
   onDownload, 
@@ -260,7 +289,7 @@ function ReportCard({
   return (
     <div className="group flex flex-col md:flex-row md:items-center justify-between p-5 md:p-6 bg-white border border-slate-200/80 rounded-[2rem] hover:shadow-xl hover:shadow-slate-200/50 hover:border-blue-200 transition-all duration-300 gap-5 md:gap-0">
       
-      {/* Icon & Details Section */}
+      {/* Visual Identity & Name */}
       <div className="flex items-start md:items-center gap-4 md:gap-6 w-full md:w-auto">
         <div className="bg-slate-50/80 text-slate-400 group-hover:bg-blue-600 group-hover:text-white p-4 md:p-5 rounded-2xl md:rounded-3xl transition-colors duration-300 shrink-0">
           <FileText className="h-6 w-6 md:h-8 md:w-8" />
@@ -271,6 +300,7 @@ function ReportCard({
             {report.name || "Untitled Report"}
           </h3>
           
+          {/* Tags List */}
           <div className="flex flex-wrap gap-2 mt-2 items-center">
             {report.tags?.map((tag: string, index: number) => (
               <span key={`${report.document_id}-${tag}-${index}`} className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100">
@@ -282,6 +312,7 @@ function ReportCard({
               </span>
             ))}
             
+            {/* Inline Add Tag Input */}
             {taggingDocId === report.document_id ? (
               <div className="flex items-center gap-1.5 animate-in fade-in zoom-in duration-200">
                 <input 
@@ -311,7 +342,7 @@ function ReportCard({
         </div>
       </div>
 
-      {/* Actions Section */}
+      {/* Primary Actions */}
       <div className="flex gap-2 md:gap-3 w-full md:w-auto mt-2 md:mt-0">
         <button 
           onClick={() => window.open(report.url, '_blank')} 
@@ -320,7 +351,8 @@ function ReportCard({
           <Eye className="h-4 w-4" />
         </button>
         <button 
-          onClick={() => onDownload(report.url, report.name)} 
+          // Trigger the secure download workflow
+          onClick={() => onDownload(report.document_id, report.name)} 
           className="flex-1 md:flex-none flex justify-center items-center gap-2 px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl hover:bg-blue-600 shadow-md shadow-slate-200 hover:shadow-blue-200 transition-all"
         >
           <Download className="h-4 w-4" /> 

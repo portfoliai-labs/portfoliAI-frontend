@@ -1,18 +1,6 @@
 // src/lib/parsers/brokerParser.ts
+import { StandardTransaction } from "../../models/Report";
 
-export interface StandardTransaction {
-  date: string;
-  name: string;
-  id: string;
-  ticker: string;
-  operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
-  amount: number;
-  price: number;
-  currency: string;
-  tradeAmount: number;
-  fees: number;
-  broker: string;
-}
 
 // Represents a raw row from CSV/Excel before processing
 export type RawRow = Record<string, unknown>;
@@ -41,7 +29,7 @@ export interface BrokerConfig {
 /**
  * Helper to parse European/Italian formatted numbers into valid floats.
  */
-export const parseNumber = (val: unknown): number => {
+/*export const parseNumber = (val: unknown): number => {
   if (val === undefined || val === null || val === '') return 0;
   if (typeof val === 'number') return val;
   
@@ -50,7 +38,7 @@ export const parseNumber = (val: unknown): number => {
     .replace(',', '.'); // Replace decimal comma with dot
     
   return parseFloat(cleanVal) || 0;
-};
+};*/
 
 export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   FINECO: {
@@ -129,23 +117,23 @@ export const standardizeRow = (
       
     amount: formatters.amount 
       ? formatters.amount(getVal('amount'), row) 
-      : Math.abs(parseNumber(getVal('amount'))),
+      : getVal('amount'),
       
     price: formatters.price 
       ? formatters.price(getVal('price'), row) 
-      : parseNumber(getVal('price')),
+      : getVal('price'),
       
     currency: formatters.currency 
       ? formatters.currency(getVal('currency'), row) 
       : String(getVal('currency') ?? ''),
       
-    tradeAmount: formatters.tradeAmount 
+    trade_amount: formatters.tradeAmount 
       ? formatters.tradeAmount(getVal('tradeAmount'), row) 
-      : parseNumber(getVal('tradeAmount')),
+      : getVal('tradeAmount'),
       
     fees: formatters.fees 
       ? formatters.fees(getVal('fees'), row) 
-      : parseNumber(getVal('fees')),
+      : getVal('fees'),
 
     broker: formatters.broker
       ? formatters.broker(getVal('broker'), row)

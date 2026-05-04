@@ -24,7 +24,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
 
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Mobile Overlay: visible only when sidebar is open on mobile devices */}
       {isOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 lg:hidden"
@@ -32,15 +32,25 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* 
+        Sidebar Container:
+        - Used 'fixed' instead of 'sticky' to prevent the sidebar from detaching when the page scrolls.
+        - Set height to 'h-[calc(100vh-73px)]' to perfectly fit between header and screen bottom.
+      */}
       <aside className={`
-        fixed lg:sticky top-[73px] left-0 h-[calc(100vh-73px)] z-50 lg:z-0
-        w-72 bg-slate-50/80 backdrop-blur-xl border-r border-slate-200/50 p-5 flex flex-col
+        fixed top-[73px] left-0 z-50
+        w-72 bg-slate-50/80 backdrop-blur-xl border-r border-slate-200/50 
+        flex flex-col h-[calc(100vh-73px)]
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
         
-        <nav className="flex flex-col gap-1.5 flex-1">
+        {/* 
+          Main Navigation:
+          - 'flex-1' allows this section to grow and fill available space.
+          - 'overflow-y-auto' enables internal scrolling if menu items exceed the height.
+        */}
+        <nav className="flex flex-col gap-1.5 p-5 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
             const isActive = activeSection === item.id;
             return (
@@ -63,8 +73,14 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           })}
         </nav>
 
-        <div className="mt-auto pb-4">
+        {/* 
+          Subscription Section (Footer):
+          - Removed 'mt-auto' from here and wrapped in a fixed-padding div.
+          - This ensures the Pro Version card stays pinned to the bottom regardless of scroll.
+        */}
+        <div className="p-5 border-t border-slate-200/50 bg-slate-50/50">
           <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-5 rounded-[1.5rem] border border-slate-700 text-white relative overflow-hidden group shadow-lg">
+            {/* Background glow effect */}
             <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/20 blur-2xl rounded-full" />
             
             <div className="relative z-10">

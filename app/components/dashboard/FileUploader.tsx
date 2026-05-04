@@ -15,9 +15,10 @@ import {
   REQUIRED_FIELDS, 
   validateMapping,
   standardizeRow,
-  StandardTransaction,
   RawRow,
 } from "../../lib/parser/brokerParser";
+import { StandardTransaction } from "../../models/Report";
+
 
 interface UploadedFileState {
   id: string;
@@ -111,6 +112,9 @@ export function FileUploader() {
         reader.readAsArrayBuffer(file);
       }
     }
+
+    if (fileInputRef.current) 
+      fileInputRef.current.value = "";
   };
 
   const handleConfirmUpload = async () => {
