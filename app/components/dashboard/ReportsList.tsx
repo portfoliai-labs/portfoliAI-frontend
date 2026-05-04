@@ -69,8 +69,12 @@ export function ReportsList() {
   const handleDownload = async (docId: string, fileName: string) => {
     try {
       // Step 1: Request the short-lived signed URL from the backend
-      const { url } = await reportService.downloadReport(docId);
+      const url = await reportService.downloadReport(docId);
 
+      if (!url || typeof url !== 'string') {
+        throw new Error("Invalid URL received from server");
+      }
+      
       // Step 2: Fetch the file data
       const response = await fetch(url);
       if (!response.ok) throw new Error("Could not fetch file data from storage");
