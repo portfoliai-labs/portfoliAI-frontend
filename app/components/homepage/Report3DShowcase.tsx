@@ -61,6 +61,7 @@ const topAssets: Asset[] = [
   { name: "S&P 500 ETF", roi: "+12.4%", weight: "45%", status: 'positive' },
   { name: "BTC/EUR", roi: "+42.1%", weight: "10%", status: 'positive' },
   { name: "Global Bonds", roi: "-2.1%", weight: "25%", status: 'negative' },
+  { name: "GOLD", roi: "+17%", weight: "20%", status: "positive"}
 ];
 
 const platformCosts: Asset[] = [
@@ -103,7 +104,7 @@ export default function Report3DShowcase(): React.JSX.Element {
       id: "risk",
       chapter: "Chapter 4.3",
       title: "Risk & Volatility",
-      description: "Evaluation of portfolio risk and downside exposure.",
+      description: "Focusing on the defensive side of your strategy, this analysis examines your exposure to market turbulence and the overall stability of your investments. It carefully tracks your portfolio's realized risk over a moving 21-trading-day window, visually highlighting the sudden spikes that correlate with periods of significant market stress and uncertainty. By contrasting these high-pressure moments with periods of calm, this chapter helps you understand exactly how resilient your portfolio is when facing unexpected market shocks.",
       icon: <ShieldCheck className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
@@ -125,7 +126,7 @@ export default function Report3DShowcase(): React.JSX.Element {
             </LineChart>
           </div>
           <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
-            <strong>AI Insight:</strong> High spikes indicate periods of significant market stress. Volatility is currently lower than the reference benchmark, showing resilience against sector-specific shocks.
+            High spikes indicate periods of significant market stress. Volatility is currently lower than the reference benchmark, showing resilience against sector-specific shocks.
           </div>
         </div>
       )
@@ -134,7 +135,7 @@ export default function Report3DShowcase(): React.JSX.Element {
       id: "performance",
       chapter: "Chapter 4.2",
       title: "Performance & ROI",
-      description: "Return analysis over time and performance trends.",
+      description: "Acting as the core analytical framework for your returns, this chapter focuses on the historical sustainability and growth trends of your investments. It traces the exact trajectory of your Return on Investment over time, utilizing detailed charts and monthly heatmaps to clearly map out phases of growth, stagnation, or decline. Furthermore, by comparing your portfolio's cumulative returns directly against industry benchmarks, it paints a vivid picture of how well your strategy is actually performing in the broader market.",
       icon: <Activity className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
@@ -145,9 +146,9 @@ export default function Report3DShowcase(): React.JSX.Element {
               <Line type="monotone" dataKey="v" stroke="#10b981" strokeWidth={3} dot={false} />
             </LineChart>
           </div>
-          <MiniTable assets={topAssets} col2="Unrealized P/L" col3="Weight" />
+          <MiniTable assets={topAssets} col2="Roi" col3="Weight" />
           <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
-            <strong>AI Insight:</strong> Net ROI is outperforming the S&P 500 by 2.1% this quarter. The trajectory visualizes the moment the investment recovered initial costs, transitioning into net profit.
+            Net ROI is outperforming the S&P 500 by 2.1% this quarter. The trajectory visualizes the moment the investment recovered initial costs, transitioning into net profit.
           </div>
         </div>
       )
@@ -156,7 +157,7 @@ export default function Report3DShowcase(): React.JSX.Element {
       id: "allocation",
       chapter: "Chapter 4.1",
       title: "Portfolio Composition",
-      description: "Current holdings and concentration analysis.",
+      description: "This part of the report evaluates the efficiency of your capital allocation by providing a detailed look at exactly how your investments are structured. It offers a granular breakdown of your current holdings, detailing the exact market value, unrealized profit or loss, and the overall weight of each asset within your portfolio. By exploring this composition, you gain a clear, strategic view of where your money is concentrated, making it easier to spot imbalances and plan your future rebalancing moves.",
       icon: <PieChart className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
@@ -181,7 +182,7 @@ export default function Report3DShowcase(): React.JSX.Element {
             ))}
           </div>
           <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
-            <strong>AI Insight:</strong> Portfolio is currently overweight in Equities. Increasing fixed income exposure would better align with your moderate risk target.
+            Portfolio is currently overweight in Equities. Increasing fixed income exposure would better align with your moderate risk target.
           </div>
         </div>
       )
@@ -190,7 +191,7 @@ export default function Report3DShowcase(): React.JSX.Element {
       id: "costs",
       chapter: "Chapter 3",
       title: "Cost Analysis & Fees",
-      description: "In-depth analysis of direct commissions and implicit trading spreads.",
+      description: "To truly understand your net performance, this section dives deep into the expenses incurred while managing your portfolio. It peels back the layers on both the explicit costs—such as trading commissions and platform fees—and the hidden, implicit costs like bid-ask spreads. By breaking down these expenses across different brokers and asset categories, and tracking their cumulative impact over time, this analysis empowers you to clearly identify your most and least cost-efficient trading platforms.",
       icon: <Receipt className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
@@ -206,8 +207,70 @@ export default function Report3DShowcase(): React.JSX.Element {
           </div>
           <MiniTable assets={platformCosts} col2="Total Costs" col3="% of Total" />
           <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
-            <strong>AI Insight:</strong> This breakdown highlights the cost efficiency of each broker. Reducing transaction frequency on small ETF orders could optimize the Cost-to-Value Ratio.
+            This breakdown highlights the cost efficiency of each broker. Reducing transaction frequency on small ETF orders could optimize the Cost-to-Value Ratio.
           </div>
+        </div>
+      )
+    },
+    {
+      id: "cashflow",
+      chapter: "Chapter 2",
+      title: "Financial Overview & Cash Flow",
+      description: "Diving into the mechanics of your wealth accumulation, this chapter offers a detailed exploration of your historical purchases, sales, and the overall evolution of your cash flow. By mapping out your precise capital allocation and tracking realized profits across various assets, it provides a highly transparent view of your past trading activity. Furthermore, by visualizing your buy and sell patterns over time, this analysis allows you to understand exactly how your capital has been deployed and where your most significant financial moves have occurred.",
+      icon: <Activity className="w-6 h-6 text-cyan-400" />, // Tip: puoi importare "ArrowRightLeft" da lucide-react per un'icona più specifica
+      visual: (
+        <div className="flex flex-col h-full gap-3">
+          
+          <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+            <div className="flex justify-between items-end mb-2">
+              <span className="text-[10px] text-slate-500 uppercase font-bold">Net Realized P/L</span>
+              <span className="text-xl font-bold text-emerald-400">€ 4,250.00</span>
+            </div>
+            <div className="flex justify-between text-[10px] font-medium text-slate-400 border-t border-slate-800 pt-2 mt-1">
+              <span>Total Purchases: <span className="text-white">€ 15,300</span></span>
+              <span>Total Sales: <span className="text-white">€ 8,400</span></span>
+            </div>
+          </div>
+
+          <div className="w-full flex flex-col justify-center bg-slate-900/50 rounded-2xl p-4 border border-slate-800 flex-1">
+            <span className="text-[10px] text-slate-500 mb-4 uppercase font-bold text-center">Capital Flow (Buy vs Sell)</span>
+            
+            <div className="flex flex-col gap-3 w-full">
+               <div className="flex items-center text-[10px] text-slate-300 w-full">
+                  <span className="w-16 text-right mr-3 font-medium">Equities</span>
+                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
+                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '20%'}}></div></div>
+                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '80%'}}></div></div>
+                  </div>
+               </div>
+               
+               <div className="flex items-center text-[10px] text-slate-300 w-full">
+                  <span className="w-16 text-right mr-3 font-medium">Crypto</span>
+                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
+                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '60%'}}></div></div>
+                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '30%'}}></div></div>
+                  </div>
+               </div>
+
+               <div className="flex items-center text-[10px] text-slate-300 w-full">
+                  <span className="w-16 text-right mr-3 font-medium">Bonds</span>
+                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
+                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '10%'}}></div></div>
+                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '45%'}}></div></div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex justify-center gap-4 mt-5 text-[9px] text-slate-500 uppercase font-bold">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-rose-500/80 rounded-full"></span> Sales</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-emerald-500/80 rounded-full"></span> Purchases</span>
+            </div>
+          </div>
+
+          <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
+            Strong accumulation in Equities over the selected period. Profit-taking (sales) in Crypto has successfully secured significant realized gains.
+          </div>
+
         </div>
       )
     },
@@ -215,7 +278,7 @@ export default function Report3DShowcase(): React.JSX.Element {
       id: "overview",
       chapter: "Chapter 1",
       title: "Overview",
-      description: "A high-level snapshot of the portfolio, including total invested capital and current value.",
+      description: "This chapter serves as your portfolio's high-level snapshot, designed to give you an immediate and clear sense of your financial standing over the selected period. It weaves together the most critical metrics into one accessible narrative, contrasting your total invested capital against your current market value to reveal unrealized profits, losses, and your overall Return on Investment. By visualizing your portfolio's value over time, this summary provides the perfect starting point to understand the broader trajectory of your wealth",
       icon: <Wallet className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
@@ -248,7 +311,7 @@ export default function Report3DShowcase(): React.JSX.Element {
           </div>
         </div>
       )
-    }
+    },
   ];
 
   const [cards, setCards] = useState<CardData[]>(initialCards);
@@ -271,10 +334,6 @@ export default function Report3DShowcase(): React.JSX.Element {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col lg:flex-row items-center gap-8 lg:gap-24">
         
         <div className="w-full lg:w-1/2 flex flex-col text-center lg:text-left">
-          <div className="inline-flex items-center justify-center lg:justify-start gap-2 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-6">
-            <span className="w-8 h-px bg-cyan-800"></span>
-            Intelligence Report
-          </div>
 
           <div className="min-h-[220px] lg:min-h-[300px] flex flex-col justify-center">
             <AnimatePresence mode="wait">
