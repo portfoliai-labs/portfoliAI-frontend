@@ -10,7 +10,7 @@ import FeatureCard from "../components/homepage/FeatureCard";
 import StepCard from "../components/homepage/StepCard";
 import dynamic from 'next/dynamic';
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
-import FaqSection from "./FaqSection";
+import FaqSection from "../components/homepage/FaqSection";
 
 
 // ==========================================

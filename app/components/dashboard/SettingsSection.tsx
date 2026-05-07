@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 import { userService } from "../../services/userService";
 import { UserInvestorProfile } from "../../models/User";
+import { useUser } from "../../context/UserContext"
 
 export function SettingsSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const { refreshUser } = useUser();
   
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
@@ -74,12 +76,23 @@ export function SettingsSection() {
         risk_tolerance: formData.risk_tolerance || null,
         currency: formData.currency || null,
       };
+
+      // 1. Perform the update on the server
       await userService.updateUserProfile({
         ...formData,
         investor_profile: investorProfileUpdate
       });
+
+      // 2. Clear the local cache to avoid stale data
+      localStorage.removeItem("user_profile");
+
+      // 3. Force the Context to fetch fresh data from the server
+      // This will automatically update the 'user' state in the whole app
+      await refreshUser();
+
       setMessage({ type: "success", text: "Profile updated successfully" });
     } catch (err) {
+      console.error("Update error:", err);
       setMessage({ type: "error", text: "Error saving profile" });
     } finally {
       setSaving(false);

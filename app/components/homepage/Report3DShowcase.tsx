@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   LineChart, Line, PieChart as RePieChart, Pie,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   CartesianGrid, Cell
 } from 'recharts';
 
@@ -67,6 +68,22 @@ const topAssets: Asset[] = [
 const platformCosts: Asset[] = [
   { name: "Interactive Brokers", roi: "€ 152", weight: "62%", status: 'negative' },
   { name: "Binance", roi: "€ 45", weight: "18%", status: 'negative' },
+];
+
+const cashFlowChartData = [
+  { period: 'Q3 23', ETF: 4500, CRYPTO: 0 },
+  { period: 'Q4 23', ETF: 6500, CRYPTO: 500 },
+  { period: 'Q1 24', ETF: 800, CRYPTO: -100 },
+  { period: 'Q2 24', ETF: 2600, CRYPTO: 1600 },
+  { period: 'Q3 24', ETF: 1000, CRYPTO: -1500 },
+  { period: 'Q4 24', ETF: 4500, CRYPTO: 2500 },
+];
+
+const historyTableData = [
+  { name: "Bitcoin EUR", cat: "CRYPTO", qty: "0.07", pnl: "+€ 511.92", pnlClass: "text-emerald-400" },
+  { name: "Ethereum EUR", cat: "CRYPTO", qty: "0.17", pnl: "+€ 65.79", pnlClass: "text-emerald-400" },
+  { name: "S&P 500 ETF", cat: "ETF", qty: "190", pnl: "€ 0.00", pnlClass: "text-slate-500" },
+  { name: "Global Bonds", cat: "ETF", qty: "0", pnl: "+€ 9.01", pnlClass: "text-emerald-400" },
 ];
 
 // --- COMPONENTI UI ATOMICI ---
@@ -217,58 +234,56 @@ export default function Report3DShowcase(): React.JSX.Element {
       chapter: "Chapter 2",
       title: "Financial Overview & Cash Flow",
       description: "Diving into the mechanics of your wealth accumulation, this chapter offers a detailed exploration of your historical purchases, sales, and the overall evolution of your cash flow. By mapping out your precise capital allocation and tracking realized profits across various assets, it provides a highly transparent view of your past trading activity. Furthermore, by visualizing your buy and sell patterns over time, this analysis allows you to understand exactly how your capital has been deployed and where your most significant financial moves have occurred.",
-      icon: <Activity className="w-6 h-6 text-cyan-400" />, // Tip: puoi importare "ArrowRightLeft" da lucide-react per un'icona più specifica
+      icon: <Activity className="w-6 h-6 text-cyan-400" />,
       visual: (
         <div className="flex flex-col h-full gap-3">
           
-          <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Net Realized P/L</span>
-              <span className="text-xl font-bold text-emerald-400">€ 4,250.00</span>
+          <div className="w-full bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden flex-shrink-0">
+            <div className="bg-slate-800/80 px-3 py-2 border-b border-slate-700 flex justify-between items-center">
+              <span className="text-[9px] text-slate-300 uppercase font-bold tracking-wider">Historical Transactions</span>
+              <span className="text-[10px] text-emerald-400 font-bold">Total P/L: +€ 586.72</span>
             </div>
-            <div className="flex justify-between text-[10px] font-medium text-slate-400 border-t border-slate-800 pt-2 mt-1">
-              <span>Total Purchases: <span className="text-white">€ 15,300</span></span>
-              <span>Total Sales: <span className="text-white">€ 8,400</span></span>
-            </div>
+            <table className="w-full text-left text-[9px]">
+              <thead className="text-slate-500 uppercase border-b border-slate-800">
+                <tr>
+                  <th className="px-3 py-1.5 font-semibold">Asset</th>
+                  <th className="px-2 py-1.5 font-semibold">Category</th>
+                  <th className="px-2 py-1.5 font-semibold text-right">Qty</th>
+                  <th className="px-3 py-1.5 font-semibold text-right">P/L (€)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {historyTableData.map((row, idx) => (
+                  <tr key={idx} className="text-slate-300 hover:bg-slate-800/30 transition-colors">
+                    <td className="px-3 py-1.5 font-medium truncate max-w-[100px]">{row.name}</td>
+                    <td className="px-2 py-1.5 text-slate-400">{row.cat}</td>
+                    <td className="px-2 py-1.5 text-right">{row.qty}</td>
+                    <td className={`px-3 py-1.5 text-right font-bold ${row.pnlClass}`}>{row.pnl}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          <div className="w-full flex flex-col justify-center bg-slate-900/50 rounded-2xl p-4 border border-slate-800 flex-1">
-            <span className="text-[10px] text-slate-500 mb-4 uppercase font-bold text-center">Capital Flow (Buy vs Sell)</span>
-            
-            <div className="flex flex-col gap-3 w-full">
-               <div className="flex items-center text-[10px] text-slate-300 w-full">
-                  <span className="w-16 text-right mr-3 font-medium">Equities</span>
-                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
-                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '20%'}}></div></div>
-                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '80%'}}></div></div>
-                  </div>
-               </div>
-               
-               <div className="flex items-center text-[10px] text-slate-300 w-full">
-                  <span className="w-16 text-right mr-3 font-medium">Crypto</span>
-                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
-                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '60%'}}></div></div>
-                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '30%'}}></div></div>
-                  </div>
-               </div>
-
-               <div className="flex items-center text-[10px] text-slate-300 w-full">
-                  <span className="w-16 text-right mr-3 font-medium">Bonds</span>
-                  <div className="flex-1 grid grid-cols-2 gap-1 items-center">
-                      <div className="flex justify-end"><div className="h-3 bg-rose-500/80 rounded-l" style={{width: '10%'}}></div></div>
-                      <div className="flex justify-start"><div className="h-3 bg-emerald-500/80 rounded-r" style={{width: '45%'}}></div></div>
-                  </div>
-               </div>
-            </div>
-
-            <div className="flex justify-center gap-4 mt-5 text-[9px] text-slate-500 uppercase font-bold">
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-rose-500/80 rounded-full"></span> Sales</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-emerald-500/80 rounded-full"></span> Purchases</span>
-            </div>
+          <div className="w-full flex flex-col items-center justify-center bg-slate-900/50 rounded-2xl p-3 border border-slate-800 flex-1 min-h-[160px]">
+            <span className="text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-wider">Buy/Sell per Category</span>
+            <BarChart width={260} height={130} data={cashFlowChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+              <XAxis dataKey="period" tick={{fontSize: 8, fill: '#64748b'}} axisLine={false} tickLine={false} />
+              <YAxis tick={{fontSize: 8, fill: '#64748b'}} axisLine={false} tickLine={false} />
+              <Tooltip 
+                contentStyle={{backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '10px', color: '#f8fafc'}} 
+                itemStyle={{fontSize: '10px', fontWeight: 'bold'}} 
+                cursor={{fill: '#1e293b', opacity: 0.4}}
+              />
+              <Legend wrapperStyle={{fontSize: '9px', paddingTop: '4px'}} iconSize={8} />
+              <Bar dataKey="CRYPTO" stackId="a" fill="#fca5a5" name="CRYPTOCURRENCY" />
+              <Bar dataKey="ETF" stackId="a" fill="#f1f5f9" name="ETF" />
+            </BarChart>
           </div>
 
-          <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug">
-            Strong accumulation in Equities over the selected period. Profit-taking (sales) in Crypto has successfully secured significant realized gains.
+          <div className="mt-auto bg-cyan-950/30 p-3 rounded-lg border border-cyan-900/30 text-[11px] text-slate-300 leading-snug shadow-inner">
+            Strong accumulation in ETFs over the selected period. Profit-taking (sales) in Crypto has successfully secured significant realized gains.
           </div>
 
         </div>

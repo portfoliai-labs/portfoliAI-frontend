@@ -26,4 +26,12 @@ interface UserProfile extends User {
   investor_profile: UserInvestorProfile | null;
 }
 
-export type { User, UserProfile, UserInvestorProfile };
+interface UserMetrics {
+  user_id: string;
+  report_generated: number;
+  report_in_error: number;
+  report_in_progress: number;
+};
+
+
+export type { User, UserProfile, UserInvestorProfile, UserMetrics };

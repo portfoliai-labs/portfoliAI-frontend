@@ -1,4 +1,4 @@
-"use client";
+// app/components/dashboard/DashboardOverview.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -8,26 +8,17 @@ import {
   Lightbulb, 
   CheckCircle2, 
   Clock, 
-  CreditCard 
+  AlertCircle 
 } from "lucide-react";
 
-/**
- * TYPES DEFINITION
- */
-interface UserStats {
-  subscriptionStatus: "Basic" | "Pro" | "Enterprise";
-  generatedReports: number;
-  inProgressReports: number;
-}
+import { userService } from "../../services/userService";
+import type { UserMetrics } from "../../models/User";
 
 interface AISuggestion {
   id: number;
   text: string;
 }
 
-/**
- * MOCK DATA
- */
 const SUGGESTIONS: AISuggestion[] = [
   { id: 1, text: "Remember to set your financial goals in the settings page." },
   { id: 2, text: "Upgrade to Pro to access the latest GPT-4o analysis models." },
@@ -37,37 +28,24 @@ const SUGGESTIONS: AISuggestion[] = [
 ];
 
 export default function DashboardOverview() {
-  const [stats, setStats] = useState<UserStats | null>(null);
+  const [metrics, setMetrics] = useState<UserMetrics | null>(null);
   const [currentSuggestion, setCurrentSuggestion] = useState<AISuggestion | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    /**
-     * MOCK API CALLS
-     * Simulating data fetching from the backend
-     */
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        // Simulate network delay
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        
-        setStats({
-          subscriptionStatus: "Pro",
-          generatedReports: 24,
-          inProgressReports: 2
-        });
-
-        // Pick a random suggestion
+        const data = await userService.getUserMetrics();
+        setMetrics(data);
         const randomIdx = Math.floor(Math.random() * SUGGESTIONS.length);
         setCurrentSuggestion(SUGGESTIONS[randomIdx]);
       } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
+        console.error("Failed to fetch dashboard metrics:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchDashboardData();
   }, []);
 
@@ -80,9 +58,10 @@ export default function DashboardOverview() {
   }
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-700">
+    <div className="px-0 py-6 space-y-8">
+      
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard Overview</h1>
           <p className="text-slate-500 font-medium">Track your portfolio performance and AI insights.</p>
@@ -104,49 +83,31 @@ export default function DashboardOverview() {
 
       {/* STATS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Subscription Status Card */}
-        <StatCard 
-          title="Subscription"
-          value={stats?.subscriptionStatus || "N/A"}
-          icon={<CreditCard className="h-5 w-5 text-blue-600" />}
-          description="Your current active plan"
-          color="blue"
-        />
-
-        {/* Reports Generated Card */}
         <StatCard 
           title="Reports Generated"
-          value={stats?.generatedReports?.toString() || "0"}
+          value={metrics?.report_generated?.toString() || "0"}
           icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />}
           description="Total successfully analyzed"
           color="emerald"
         />
 
-        {/* In Progress Card */}
         <StatCard 
           title="Processing"
-          value={stats?.inProgressReports?.toString() || "0"}
+          value={metrics?.report_in_progress?.toString() || "0"}
           icon={<Clock className="h-5 w-5 text-violet-600" />}
-          description="Reports currently being analyzed"
+          description="Reports currently active"
           color="violet"
+        />
+
+        <StatCard 
+          title="Errors"
+          value={metrics?.report_in_error?.toString() || "0"}
+          icon={<AlertCircle className="h-5 w-5 text-red-600" />}
+          description="Reports with analysis errors"
+          color="red"
         />
       </div>
 
-      {/* MAIN CONTENT PLACEHOLDER */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="h-64 bg-white border border-slate-200 rounded-[2rem] p-8 flex items-center justify-center border-dashed">
-          <div className="text-center">
-            <BarChart3 className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-400 font-bold">Chart data will be available soon.</p>
-          </div>
-        </div>
-        <div className="h-64 bg-white border border-slate-200 rounded-[2rem] p-8 flex items-center justify-center border-dashed">
-          <div className="text-center">
-            <Layers className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-400 font-bold">Asset allocation details incoming.</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -159,14 +120,15 @@ interface StatCardProps {
   value: string;
   icon: React.ReactNode;
   description: string;
-  color: "blue" | "emerald" | "violet";
+  color: "blue" | "emerald" | "violet" | "red";
 }
 
 function StatCard({ title, value, icon, description, color }: StatCardProps) {
   const colorMap = {
     blue: "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
-    violet: "bg-violet-50 text-violet-600 border-violet-100"
+    violet: "bg-violet-50 text-violet-600 border-violet-100",
+    red: "bg-red-50 text-red-600 border-red-100"
   };
 
   return (
