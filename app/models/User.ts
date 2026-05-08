@@ -1,6 +1,7 @@
 
-
 // models/User.ts
+
+type UserRole = 'investor' | 'consultant';
 
 interface User {
   id: number;
@@ -11,6 +12,7 @@ interface User {
   profile_picture: string | null;
   language: string;
   created_at: string;
+  role?: UserRole;
 }
 
 interface UserInvestorProfile {
@@ -21,9 +23,17 @@ interface UserInvestorProfile {
   currency: string | null;
 }
 
-// UserProfile estende User: eredita tutti i campi sopra + aggiunge il profilo
+interface ConsultantProfile {
+  clients_count: number | null;
+  total_aum: number | null;
+  years_of_experience: number | null;
+  specialization: string | null;
+  currency: string | null;
+}
+
 interface UserProfile extends User {
   investor_profile: UserInvestorProfile | null;
+  consultant_profile?: ConsultantProfile | null;
 }
 
 interface UserMetrics {
@@ -31,7 +41,6 @@ interface UserMetrics {
   report_generated: number;
   report_in_error: number;
   report_in_progress: number;
-};
+}
 
-
-export type { User, UserProfile, UserInvestorProfile, UserMetrics };
+export type { User, UserProfile, UserInvestorProfile, UserMetrics, ConsultantProfile, UserRole };

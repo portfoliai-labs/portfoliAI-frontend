@@ -1,20 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  Globe, ShieldAlert, Wallet, Coins, Save, 
-  Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote 
+import {
+  Globe, ShieldAlert, Wallet, Coins, Save,
+  Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote
 } from "lucide-react";
 import { userService } from "../../services/userService";
 import { UserInvestorProfile } from "../../models/User";
-import { useUser } from "../../context/UserContext"
+import { useUser } from "../../context/UserContext";
 
 export function SettingsSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const { refreshUser } = useUser();
-  
+
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
   const [isRiskOpen, setIsRiskOpen] = useState(false);
@@ -77,17 +77,12 @@ export function SettingsSection() {
         currency: formData.currency || null,
       };
 
-      // 1. Perform the update on the server
       await userService.updateUserProfile({
         ...formData,
         investor_profile: investorProfileUpdate
       });
 
-      // 2. Clear the local cache to avoid stale data
       localStorage.removeItem("user_profile");
-
-      // 3. Force the Context to fetch fresh data from the server
-      // This will automatically update the 'user' state in the whole app
       await refreshUser();
 
       setMessage({ type: "success", text: "Profile updated successfully" });
@@ -100,19 +95,33 @@ export function SettingsSection() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" /></div>;
+  if (loading) return (
+    <div className="flex justify-center py-20">
+      <Loader2 className="animate-spin text-[#C49A3C]" />
+    </div>
+  );
+
+  const inputClass = "w-full p-3.5 bg-white border border-[rgba(196,154,60,0.25)] rounded-xl font-medium text-[#1c1917] outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all";
+  const dropdownBtnClass = "w-full flex items-center justify-between p-3.5 bg-white border border-[rgba(196,154,60,0.25)] rounded-xl font-medium text-[#1c1917] hover:border-[#C49A3C] transition-all focus:ring-4 focus:ring-[#C49A3C]/10";
 
   return (
     <div className="space-y-6 md:space-y-8 pb-12 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Settings</h2>
-          <p className="text-sm md:text-base text-slate-500 font-medium">Manage your preferences and financial profile</p>
+          <h2
+            className="text-2xl md:text-3xl font-bold text-[#1c1917] tracking-tight"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            Settings
+          </h2>
+          <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
+            Manage your preferences and financial profile
+          </p>
         </div>
-        <button 
+        <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center justify-center gap-2 px-6 py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-slate-200 disabled:opacity-50 w-full md:w-auto"
+          className="flex items-center justify-center gap-2 px-6 py-3.5 bg-[#1c1917] text-white rounded-xl font-bold hover:bg-[#C49A3C] transition-colors shadow-sm disabled:opacity-50 w-full md:w-auto"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? "Saving..." : "Save Changes"}
@@ -120,30 +129,26 @@ export function SettingsSection() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Basic Preferences */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200/60 shadow-sm space-y-6">
+
+        {/* Preferences */}
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
           <SectionHeader icon={<Globe className="w-5 h-5" />} title="Preferences" />
-          
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Language Selector */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Language</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Language</label>
               <div className="relative">
-                <button 
-                  onClick={() => setIsLangOpen(!isLangOpen)}
-                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-white hover:border-blue-300 transition-all focus:ring-4 focus:ring-blue-50"
-                >
+                <button onClick={() => setIsLangOpen(!isLangOpen)} className={dropdownBtnClass}>
                   <span className="flex items-center gap-2">
-                    <span className="text-lg leading-none">{languages.find(l => l.code === formData.language)?.flag}</span> 
+                    <span className="text-lg leading-none">{languages.find(l => l.code === formData.language)?.flag}</span>
                     {languages.find(l => l.code === formData.language)?.label}
                   </span>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 text-[#a8a29e] transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {isLangOpen && (
-                  <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl overflow-hidden">
+                  <div className="absolute z-10 w-full mt-2 bg-white border border-[rgba(196,154,60,0.2)] rounded-xl shadow-xl overflow-hidden">
                     {languages.map(l => (
-                      <button key={l.code} onClick={() => { setFormData({...formData, language: l.code}); setIsLangOpen(false); }} className="w-full p-3.5 text-left font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2">
+                      <button key={l.code} onClick={() => { setFormData({ ...formData, language: l.code }); setIsLangOpen(false); }} className="w-full p-3.5 text-left font-medium hover:bg-[#F7F5EF] text-[#1c1917] flex items-center gap-2">
                         <span className="text-lg leading-none">{l.flag}</span> {l.label}
                       </button>
                     ))}
@@ -152,23 +157,19 @@ export function SettingsSection() {
               </div>
             </div>
 
-            {/* Currency Selector */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Currency</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Currency</label>
               <div className="relative">
-                <button 
-                  onClick={() => setIsCurrencyOpen(!isCurrencyOpen)}
-                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-white hover:border-blue-300 transition-all focus:ring-4 focus:ring-blue-50"
-                >
+                <button onClick={() => setIsCurrencyOpen(!isCurrencyOpen)} className={dropdownBtnClass}>
                   <span className="flex items-center gap-2">
-                    <Banknote className="w-4 h-4 text-slate-400" /> {formData.currency}
+                    <Banknote className="w-4 h-4 text-[#a8a29e]" /> {formData.currency}
                   </span>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isCurrencyOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 text-[#a8a29e] transition-transform ${isCurrencyOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {isCurrencyOpen && (
-                  <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl overflow-hidden">
+                  <div className="absolute z-10 w-full mt-2 bg-white border border-[rgba(196,154,60,0.2)] rounded-xl shadow-xl overflow-hidden">
                     {currencies.map(c => (
-                      <button key={c.code} onClick={() => { setFormData({...formData, currency: c.code}); setIsCurrencyOpen(false); }} className="w-full p-3.5 text-left font-medium hover:bg-slate-50 text-slate-700">
+                      <button key={c.code} onClick={() => { setFormData({ ...formData, currency: c.code }); setIsCurrencyOpen(false); }} className="w-full p-3.5 text-left font-medium hover:bg-[#F7F5EF] text-[#1c1917]">
                         {c.label}
                       </button>
                     ))}
@@ -180,24 +181,21 @@ export function SettingsSection() {
         </div>
 
         {/* Risk Profile */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200/60 shadow-sm space-y-6">
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
           <SectionHeader icon={<ShieldAlert className="w-5 h-5" />} title="Risk Profile" />
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Risk Tolerance</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Risk Tolerance</label>
             <div className="relative">
-              <button 
-                onClick={() => setIsRiskOpen(!isRiskOpen)}
-                className="w-full flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 hover:bg-white hover:border-blue-300 transition-all focus:ring-4 focus:ring-blue-50"
-              >
+              <button onClick={() => setIsRiskOpen(!isRiskOpen)} className={dropdownBtnClass}>
                 <span className={riskLevels.find(r => r.code === formData.risk_tolerance)?.color}>
                   {riskLevels.find(r => r.code === formData.risk_tolerance)?.label}
                 </span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isRiskOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-4 h-4 text-[#a8a29e] transition-transform ${isRiskOpen ? 'rotate-180' : ''}`} />
               </button>
               {isRiskOpen && (
-                <div className="absolute z-10 w-full mt-2 bg-white border border-slate-100 rounded-xl shadow-xl overflow-hidden">
+                <div className="absolute z-10 w-full mt-2 bg-white border border-[rgba(196,154,60,0.2)] rounded-xl shadow-xl overflow-hidden">
                   {riskLevels.map(r => (
-                    <button key={r.code} onClick={() => { setFormData({...formData, risk_tolerance: r.code}); setIsRiskOpen(false); }} className={`w-full p-3.5 text-left font-bold hover:bg-slate-50 ${r.color}`}>
+                    <button key={r.code} onClick={() => { setFormData({ ...formData, risk_tolerance: r.code }); setIsRiskOpen(false); }} className={`w-full p-3.5 text-left font-bold hover:bg-[#F7F5EF] ${r.color}`}>
                       {r.label}
                     </button>
                   ))}
@@ -208,35 +206,57 @@ export function SettingsSection() {
         </div>
 
         {/* Financial Data */}
-        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200/60 shadow-sm space-y-6 md:space-y-8">
+        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6 md:space-y-8">
           <SectionHeader icon={<Wallet className="w-5 h-5" />} title="Financial Data" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Estimated Wealth ({formData.currency})</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
+                Estimated Wealth ({formData.currency})
+              </label>
               <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Coins className="w-5 h-5" /></div>
-                <input type="text" className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all" value={formData.estimated_wealth} onChange={(e) => setFormData({...formData, estimated_wealth: e.target.value.replace(/[^0-9.]/g, '')})}/>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Coins className="w-5 h-5" /></div>
+                <input
+                  type="text"
+                  className={`${inputClass} pl-12`}
+                  value={formData.estimated_wealth}
+                  onChange={(e) => setFormData({ ...formData, estimated_wealth: e.target.value.replace(/[^0-9.]/g, '') })}
+                />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Annual Income ({formData.currency})</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
+                Annual Income ({formData.currency})
+              </label>
               <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Banknote className="w-5 h-5" /></div>
-                <input type="text" className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all" value={formData.annual_income} onChange={(e) => setFormData({...formData, annual_income: e.target.value.replace(/[^0-9.]/g, '')})}/>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Banknote className="w-5 h-5" /></div>
+                <input
+                  type="text"
+                  className={`${inputClass} pl-12`}
+                  value={formData.annual_income}
+                  onChange={(e) => setFormData({ ...formData, annual_income: e.target.value.replace(/[^0-9.]/g, '') })}
+                />
               </div>
             </div>
             <div className="md:col-span-2 space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Financial Goals</label>
-              <textarea rows={4} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all resize-none" placeholder="What are you trying to achieve?" value={formData.financial_goals} onChange={(e) => setFormData({...formData, financial_goals: e.target.value})}/>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Financial Goals</label>
+              <textarea
+                rows={4}
+                className={`${inputClass} resize-none`}
+                placeholder="What are you trying to achieve?"
+                value={formData.financial_goals}
+                onChange={(e) => setFormData({ ...formData, financial_goals: e.target.value })}
+              />
             </div>
           </div>
         </div>
       </div>
-      
-      {/* Toast Notification */}
+
       {message && (
-        <div className={`fixed bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 px-6 md:px-8 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 z-50 ${message.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-500 text-white'}`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5" />}
+        <div className={`fixed bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 px-6 md:px-8 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 z-50 ${message.type === 'success' ? 'bg-[#1c1917] text-white' : 'bg-rose-500 text-white'}`}>
+          {message.type === 'success'
+            ? <CheckCircle2 className="w-5 h-5 text-[#C49A3C]" />
+            : <AlertCircle className="w-5 h-5" />
+          }
           <span className="font-semibold text-sm md:text-base">{message.text}</span>
         </div>
       )}
@@ -246,9 +266,9 @@ export function SettingsSection() {
 
 function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-      <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">{icon}</div>
-      <span className="font-bold text-sm text-slate-800">{title}</span>
+    <div className="flex items-center gap-3 border-b border-[rgba(196,154,60,0.15)] pb-4">
+      <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">{icon}</div>
+      <span className="font-bold text-sm text-[#1c1917]">{title}</span>
     </div>
   );
 }

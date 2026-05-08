@@ -17,10 +17,8 @@ import { Loader2 } from "lucide-react";
  * It consumes UserContext to manage profile data and global loading states.
  */
 export default function DashboardPage() {
-  // Consume data and methods from UserContext
   const { user, loading, logout } = useUser();
   
-  // Local state for navigation and UI interaction
   const [activeSection, setActiveSection] = useState<string>('upload');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
@@ -45,13 +43,12 @@ export default function DashboardPage() {
     }
   }, [activeSection]);
 
-  // Loading state: Show a centered spinner while UserProvider fetches the profile
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-          <p className="text-slate-500 font-medium animate-pulse">Loading your dashboard...</p>
+          <Loader2 className="w-10 h-10 animate-spin text-[#C49A3C]" />
+          <p className="text-[#78716c] font-medium animate-pulse">Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -62,35 +59,25 @@ export default function DashboardPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-white flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      
-      {/* DashboardHeader: 
-        Handles mobile menu toggling and exposes the logout functionality from context.
-      */}
-      <DashboardHeader 
-        onLogout={logout} 
+    <div className="min-h-screen bg-[#F7F5EF] flex flex-col selection:bg-[#C49A3C]/20 selection:text-[#1c1917]">
+      <DashboardHeader
+        onLogout={logout}
         isMenuOpen={isSidebarOpen}
         onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
-      
+
       <div className="flex flex-1 overflow-hidden">
-        
-        {/* Sidebar:
-          Manages navigation between dashboard sections.
-        */}
-        <Sidebar 
-          activeSection={activeSection} 
-          setActiveSection={setActiveSection} 
+        <Sidebar
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
+          role={user?.role}
         />
-        
-        <main className="flex-1 overflow-y-auto lg:ml-72 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-50/50 via-white to-white p-4 md:p-12 transition-all duration-300">
-          <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
-            
-            {/* Display the active component based on sidebar selection */}
-            {renderContent}
 
+        <main className="flex-1 overflow-y-auto lg:ml-72 bg-[#F7F5EF] p-4 md:p-12 transition-all duration-300">
+          <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {renderContent}
           </div>
         </main>
       </div>
