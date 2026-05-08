@@ -1,21 +1,21 @@
-
 // models/User.ts
+// Aligned with backend DTOs in app/api/dto/routes_user.py
 
-type UserRole = 'investor' | 'consultant';
+// Matches UserRoles enum from backend
+type UserRole = 'USER' | 'ADVISOR';
 
-interface User {
-  id: number;
+// Matches UserProfileResponse DTO (GET /users/profile, POST /users/profile response)
+interface UserProfile {
   uuid: string;
   email: string;
-  first_name: string;
-  last_name: string;
-  profile_picture: string | null;
-  language: string;
+  role: UserRole;
   created_at: string;
-  role?: UserRole;
-}
-
-interface UserInvestorProfile {
+  updated_at: string | null;
+  language: string;
+  profile_picture: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  // Investor profile fields (null until set via PATCH /users/profile)
   estimated_wealth: number | null;
   annual_income: number | null;
   financial_goals: string | null;
@@ -23,24 +23,29 @@ interface UserInvestorProfile {
   currency: string | null;
 }
 
-interface ConsultantProfile {
-  clients_count: number | null;
-  total_aum: number | null;
-  years_of_experience: number | null;
-  specialization: string | null;
-  currency: string | null;
+// Matches ProfileCreatePayload DTO (POST /users/profile)
+interface ProfileCreatePayload {
+  first_name: string;
+  last_name: string;
+  language: string;
+  role: UserRole;
 }
 
-interface UserProfile extends User {
-  investor_profile: UserInvestorProfile | null;
-  consultant_profile?: ConsultantProfile | null;
+// Matches ProfileUpdatePayload DTO (PATCH /users/profile) — investor financial data
+interface ProfileUpdatePayload {
+  estimated_wealth?: number | null;
+  annual_income?: number | null;
+  financial_goals?: string | null;
+  risk_tolerance?: string | null;
+  currency?: string | null;
+  language?: string | null;
 }
 
+// Matches UserMetricsResponse DTO (GET /users/metrics)
 interface UserMetrics {
-  user_id: string;
   report_generated: number;
   report_in_error: number;
   report_in_progress: number;
 }
 
-export type { User, UserProfile, UserInvestorProfile, UserMetrics, ConsultantProfile, UserRole };
+export type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, UserRole };

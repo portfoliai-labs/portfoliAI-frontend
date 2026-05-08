@@ -5,8 +5,9 @@ import { useState, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ArrowLeft, Check, Loader2, Rocket, User, Briefcase } from "lucide-react";
 import { userService } from "../../services/userService";
+import { advisorService } from "../../services/advisorService";
 import { useUser } from "../../context/UserContext";
-import { UserRole } from "../../models/User";
+import type { UserRole } from "../../models/User";
 
 import { StepPersonal } from "../../components/onboarding/StepPersonal";
 import { StepFinancial } from "../../components/onboarding/StepFinancial";
@@ -95,8 +96,8 @@ function OnboardingWizard() {
     language: "it",
   });
 
-  const handleRoleSelect = (selected: UserRole) => {
-    setRole(selected);
+  const handleRoleSelect = (selected: 'investor' | 'advisor') => {
+    setRole(selected === 'investor' ? 'USER' : 'ADVISOR');
     setStep(1);
   };
 
@@ -115,30 +116,36 @@ function OnboardingWizard() {
   const handleSubmit = useCallback(async () => {
     setLoading(true);
     try {
-      const basePayload = {
-        first_name: formData.first_name,
-        last_name: formData.last_name,
-        language: role === 'consultant' ? formData.language : "en",
-        role,
-      };
-
-      if (role === 'investor') {
+      if (role === 'USER') {
+        // Step 1: create profile with role USER
         await userService.createUserProfile({
-          ...basePayload,
-          currency: formData.currency,
-          estimated_wealth: parseFloat(formData.estimated_wealth) || 0,
-          annual_income: parseFloat(formData.annual_income) || 0,
-          risk_tolerance: formData.risk_tolerance,
-          financial_goals: formData.financial_goals,
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          language: "en",
+          role: 'USER',
+        });
+        // Step 2: set investor financial profile
+        await userService.updateUserProfile({
+          currency: formData.currency || null,
+          estimated_wealth: parseFloat(formData.estimated_wealth) || null,
+          annual_income: parseFloat(formData.annual_income) || null,
+          risk_tolerance: formData.risk_tolerance || null,
+          financial_goals: formData.financial_goals || null,
         });
       } else {
+        // Step 1: create profile with role ADVISOR
         await userService.createUserProfile({
-          ...basePayload,
-          currency: formData.currency,
-          clients_count: parseFloat(formData.clients_count) || 0,
-          total_aum: parseFloat(formData.total_aum) || 0,
-          years_of_experience: parseFloat(formData.years_of_experience) || 0,
-          specialization: formData.specialization,
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          language: formData.language || "it",
+          role: 'ADVISOR',
+        });
+        // Step 2: set advisor profile data
+        await advisorService.updateAdvisorProfile({
+          clients_count: parseInt(formData.clients_count) || null,
+          aum: parseFloat(formData.total_aum) || null,
+          years_experience: parseInt(formData.years_of_experience) || null,
+          specialization: formData.specialization || null,
         });
       }
 
@@ -191,7 +198,7 @@ function OnboardingWizard() {
               title="Consulente Finanziario"
               description="Gestisci più clienti, carica le loro operazioni e personalizza l'analisi per ciascuno."
               dark
-              onClick={() => handleRoleSelect('consultant')}
+              onClick={() => handleRoleSelect('advisor')}
             />
           </div>
         </div>
@@ -201,7 +208,7 @@ function OnboardingWizard() {
 
   // — Steps 1–3 —
   const renderStep = () => {
-    if (role === 'investor') {
+    if (role === 'USER') {
       if (step === 1) return <StepPersonal formData={formData} setFormData={setFormData} />;
       if (step === 2) return <StepFinancial formData={formData} setFormData={setFormData} />;
       if (step === 3) return <StepGoals formData={formData} setFormData={setFormData} />;

@@ -6,7 +6,6 @@ import {
   Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote
 } from "lucide-react";
 import { userService } from "../../services/userService";
-import { UserInvestorProfile } from "../../models/User";
 import { useUser } from "../../context/UserContext";
 
 export function SettingsSection() {
@@ -51,11 +50,11 @@ export function SettingsSection() {
         const user = await userService.getUserProfile();
         setFormData({
           language: user.language || "en",
-          currency: user.investor_profile?.currency || "USD",
-          estimated_wealth: String(user.investor_profile?.estimated_wealth || 0),
-          annual_income: String(user.investor_profile?.annual_income || 0),
-          financial_goals: user.investor_profile?.financial_goals || "",
-          risk_tolerance: user.investor_profile?.risk_tolerance || "medium",
+          currency: user.currency || "USD",
+          estimated_wealth: String(user.estimated_wealth || 0),
+          annual_income: String(user.annual_income || 0),
+          financial_goals: user.financial_goals || "",
+          risk_tolerance: user.risk_tolerance || "medium",
         });
       } catch (err) {
         console.error(err);
@@ -69,17 +68,13 @@ export function SettingsSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const investorProfileUpdate: UserInvestorProfile = {
+      await userService.updateUserProfile({
+        language: formData.language,
+        currency: formData.currency || null,
         estimated_wealth: formData.estimated_wealth ? parseFloat(formData.estimated_wealth) : null,
         annual_income: formData.annual_income ? parseFloat(formData.annual_income) : null,
         financial_goals: formData.financial_goals || null,
         risk_tolerance: formData.risk_tolerance || null,
-        currency: formData.currency || null,
-      };
-
-      await userService.updateUserProfile({
-        ...formData,
-        investor_profile: investorProfileUpdate
       });
 
       localStorage.removeItem("user_profile");

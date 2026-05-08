@@ -6,15 +6,15 @@ import {
   Loader2, AlertCircle, X, Eye, Plus, Check, Rows, LayoutGrid 
 } from "lucide-react";
 import { reportService } from "../../services/reportService";
-import { Report } from "../../models/Report";
+import type { Document } from "../../models/Report";
 
 // --- INTERFACES ---
 
 /**
- * Props for the individual Report Card component
+ * Props for the individual Document Card component
  */
-interface ReportCardProps {
-  report: Report;
+interface DocumentCardProps {
+  report: Document;
   // Triggered when the user wants to fetch the presigned URL and download
   onDownload: (docId: string, fileName: string) => void;
   onRemoveTag: (docId: string, tagName: string) => void;
@@ -26,7 +26,7 @@ interface ReportCardProps {
 }
 
 export function ReportsList() {
-  const [reports, setReports] = useState<Report[]>([]);
+  const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -42,12 +42,12 @@ export function ReportsList() {
   /**
    * Fetches all documents from the backend on component mount
    */
-  const loadReports = async () => {
+  const loadDocuments = async () => {
     try {
       setLoading(true);
       setError(null);
       const data = await reportService.getAllDocuments();
-      setReports(Array.isArray(data) ? data : []);
+      setDocuments(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to sync with server";
       setError(errorMessage);
@@ -57,7 +57,7 @@ export function ReportsList() {
   };
 
   useEffect(() => { 
-    loadReports(); 
+    loadDocuments(); 
   }, []);
 
   // --- ACTIONS ---
@@ -69,12 +69,10 @@ export function ReportsList() {
   const handleDownload = async (docId: string, fileName: string) => {
     try {
       // Step 1: Request the short-lived signed URL from the backend
-      const url = await reportService.downloadReport(docId);
+      const { url } = await reportService.downloadReport(docId);
 
-      if (!url || typeof url !== 'string') {
-        throw new Error("Invalid URL received from server");
-      }
-      
+      if (!url) throw new Error("Invalid URL received from server");
+
       // Step 2: Fetch the file data
       const response = await fetch(url);
       if (!response.ok) throw new Error("Could not fetch file data from storage");
@@ -104,7 +102,7 @@ export function ReportsList() {
     if (!newTagName.trim()) return;
     try {
       await reportService.addTag(docId, newTagName.trim());
-      setReports(prev => prev.map(r => 
+      setDocuments(prev => prev.map(r => 
         r.document_id === docId ? { ...r, tags: [...(r.tags || []), newTagName.trim()] } : r
       ));
       setNewTagName("");
@@ -118,8 +116,8 @@ export function ReportsList() {
   const handleRemoveTag = async (docId: string, tagName: string) => {
     try {
       await reportService.removeTag(docId, tagName);
-      setReports(prev => prev.map(r => 
-        r.document_id === docId ? { ...r, tags: r.tags.filter(t => t !== tagName) } : r
+      setDocuments(prev => prev.map(r => 
+        r.document_id === docId ? { ...r, tags: (r.tags ?? []).filter((t: string) => t !== tagName) } : r
       ));
     } catch (err: unknown) { 
       const errorMessage = err instanceof Error ? err.message : "Error removing tag";
@@ -137,19 +135,19 @@ export function ReportsList() {
       const matchesSearch = r.name?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesTag = selectedTag ? r.tags?.includes(selectedTag) : true;
       return matchesSearch && matchesTag;
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [reports, searchTerm, selectedTag]);
 
   /**
    * Groups filtered reports by their tags for the "Grouped View"
    */
-  const groupedReports = useMemo(() => {
-    const groups: Record<string, Report[]> = {};
+  const groupedDocuments = useMemo(() => {
+    const groups: Record<string, Document[]> = {};
     filteredList.forEach(report => {
       if (!report.tags || report.tags.length === 0) {
         groups["Untagged"] = [...(groups["Untagged"] || []), report];
       } else {
-        report.tags.forEach(tag => {
+        report.tags.forEach((tag: string) => {
           groups[tag] = [...(groups[tag] || []), report];
         });
       }
@@ -179,7 +177,7 @@ export function ReportsList() {
       {/* Header & Controls */}
       <div className="flex flex-col xl:flex-row justify-between gap-6 xl:items-end">
         <div className="w-full xl:w-auto">
-          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Reports Archive</h2>
+          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Documents Archive</h2>
           <p className="text-sm md:text-base text-slate-500 font-medium mt-1">Manage, download, and organize your generated analyses.</p>
           
           <div className="flex items-center gap-4 mt-4">
@@ -228,7 +226,7 @@ export function ReportsList() {
         ) : viewMode === "list" ? (
           <div className="grid gap-4">
             {filteredList.map(report => (
-              <ReportCard 
+              <DocumentCard 
                 key={report.document_id} 
                 report={report} 
                 onDownload={handleDownload} 
@@ -242,7 +240,7 @@ export function ReportsList() {
             ))}
           </div>
         ) : (
-          Object.entries(groupedReports).map(([tag, docs]) => (
+          Object.entries(groupedDocuments).map(([tag, docs]) => (
             <div key={`group-${tag}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">
               <div className="flex items-center gap-3 px-2">
                 <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
@@ -256,7 +254,7 @@ export function ReportsList() {
               </div>
               <div className="grid gap-4">
                 {docs.map(report => (
-                  <ReportCard 
+                  <DocumentCard 
                     key={`grouped-${tag}-${report.document_id}`} 
                     report={report} 
                     onDownload={handleDownload} 
@@ -278,9 +276,9 @@ export function ReportsList() {
 }
 
 /**
- * ReportCard: UI component for each document item
+ * DocumentCard: UI component for each document item
  */
-function ReportCard({ 
+function DocumentCard({ 
   report, 
   onDownload, 
   onRemoveTag, 
@@ -289,7 +287,7 @@ function ReportCard({
   setTaggingDocId, 
   newTagName, 
   setNewTagName 
-}: ReportCardProps) {
+}: DocumentCardProps) {
   return (
     <div className="group flex flex-col md:flex-row md:items-center justify-between p-5 md:p-6 bg-white border border-slate-200/80 rounded-[2rem] hover:shadow-xl hover:shadow-slate-200/50 hover:border-blue-200 transition-all duration-300 gap-5 md:gap-0">
       
@@ -301,7 +299,7 @@ function ReportCard({
         
         <div className="flex-1 min-w-0">
           <h3 className="font-black text-lg md:text-xl text-slate-900 group-hover:text-blue-600 transition-colors truncate">
-            {report.name || "Untitled Report"}
+            {report.name || "Untitled Document"}
           </h3>
           
           {/* Tags List */}
@@ -349,7 +347,7 @@ function ReportCard({
       {/* Primary Actions */}
       <div className="flex gap-2 md:gap-3 w-full md:w-auto mt-2 md:mt-0">
         <button 
-          onClick={() => window.open(report.url, '_blank')} 
+          onClick={() => onDownload(report.document_id, report.name)}
           className="flex-1 md:flex-none flex justify-center items-center px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200 rounded-xl hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all"
         >
           <Eye className="h-4 w-4" />

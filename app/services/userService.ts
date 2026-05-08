@@ -1,35 +1,29 @@
 // services/userService.ts
-import type { UserProfile, UserMetrics } from "../models/User";
+import type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics } from "../models/User";
 import { apiFetch } from "./apiClient";
 
-
 export const userService = {
-  /**
-   * GET PROFILE: Restituisce UserProfile (User + InvestorProfile)
-   */
   async getUserProfile(): Promise<UserProfile> {
     return apiFetch<UserProfile>('/users/profile');
   },
 
-  async createUserProfile(profileData: any): Promise<UserProfile> {
+  // POST /users/profile — creates the user with basic info + role only
+  async createUserProfile(payload: ProfileCreatePayload): Promise<UserProfile> {
     return apiFetch<UserProfile>('/users/profile', {
       method: 'POST',
-      body: JSON.stringify(profileData),
+      body: JSON.stringify(payload),
     });
   },
 
-  /**
-   * UPDATE PROFILE
-   */
-  async updateUserProfile(profileData: Partial<UserProfile>): Promise<void> {
+  // PATCH /users/profile — sets investor financial data after profile creation
+  async updateUserProfile(payload: ProfileUpdatePayload): Promise<void> {
     return apiFetch<void>('/users/profile', {
       method: 'PATCH',
-      body: JSON.stringify(profileData),
+      body: JSON.stringify(payload),
     });
   },
 
   async getUserMetrics(): Promise<UserMetrics> {
     return apiFetch<UserMetrics>('/users/metrics');
-  }
-
+  },
 };

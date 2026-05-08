@@ -8,7 +8,11 @@ import { Sidebar } from "../../components/dashboard/Sidebar";
 import { FileUploader } from "../../components/dashboard/FileUploader";
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { ReportsList } from "../../components/dashboard/ReportsList";
+import { ClientsSection } from "../../components/dashboard/ClientsSection";
+import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
+import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsList";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
+import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
 import SubscriptionSection from "../../components/dashboard/SubscriptionSection";
 import { Loader2 } from "lucide-react";
 
@@ -19,21 +23,23 @@ import { Loader2 } from "lucide-react";
 export default function DashboardPage() {
   const { user, loading, logout } = useUser();
   
-  const [activeSection, setActiveSection] = useState<string>('upload');
+  const [activeSection, setActiveSection] = useState<string>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
-  /**
-   * Component switcher based on the active sidebar section.
-   * Uses useMemo for a slight performance optimization during re-renders.
-   */
+  const isAdvisor = user?.role === 'ADVISOR';
+
   const renderContent = useMemo(() => {
     switch (activeSection) {
       case 'overview':
-        return <DashboardOverview />;
+        return isAdvisor
+          ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
+          : <DashboardOverview />;
+      case 'clients':
+        return <ClientsSection />;
       case 'upload':
-        return <FileUploader />;
+        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
-        return <ReportsList />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
       case 'settings':
         return <SettingsSection />;
       case 'subscription':
@@ -41,7 +47,7 @@ export default function DashboardPage() {
       default:
         return <DashboardOverview />;
     }
-  }, [activeSection]);
+  }, [activeSection, isAdvisor]);
 
   if (loading) {
     return (
