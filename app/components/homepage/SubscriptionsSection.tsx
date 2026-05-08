@@ -1,38 +1,206 @@
 import { motion } from 'framer-motion';
-import PricePlanCard from '../common/PricePlanCard';
-import {SUBSCRIPTIONS} from '../../constants/subscriptions'
+import { Check } from 'lucide-react';
+import { SUBSCRIPTIONS } from '../../constants/subscriptions';
 
-const SubscriptionSection = () => {
+// ─── TYPES ─────────────────────────────────────────────────────────────────────
+// Mirrors whatever shape your SUBSCRIPTIONS constant exports.
+// Adjust field names here if yours differ.
+interface PlanData {
+  name: string;
+  price: string | number;
+  period?: string;
+  features: string[];
+  isFeatured?: boolean;
+  isComingSoon?: boolean;
+  ctaLabel?: string;
+}
+
+// ─── SINGLE PLAN CARD ──────────────────────────────────────────────────────────
+const PlanCard = ({
+  plan,
+  index,
+}: {
+  plan: PlanData;
+  index: number;
+}) => {
+  const isLast = index === 2;
+  const featured = plan.isFeatured ?? false;
+  const comingSoon = plan.isComingSoon ?? false;
 
   return (
-    <section id="pricing" className="py-32 bg-slate-950 border-t border-b border-slate-800 scroll-mt-20">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <motion.h2 
-             initial={{ opacity: 0, y: 20 }} 
-             whileInView={{ opacity: 1, y: 0 }} 
-             viewport={{ once: true, margin: "-100px" }}
-             className="text-3xl md:text-5xl font-bold text-white mb-4"
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.45, delay: index * 0.08 }}
+      className="relative flex flex-col p-8"
+      style={{
+        background: featured ? '#1c1917' : 'transparent',
+        borderRight: !isLast ? '1px solid #e7e5e0' : 'none',
+      }}
+    >
+      {/* "Most popular" badge */}
+      {featured && (
+        <div
+          className="absolute top-0 right-6 text-[9px] font-semibold tracking-[0.1em] uppercase px-3 py-1 rounded-b-[3px]"
+          style={{ background: '#C49A3C', color: '#1c1917' }}
+        >
+          Most Popular
+        </div>
+      )}
+
+      {/* Coming soon overlay */}
+      {comingSoon && (
+        <div
+          className="absolute inset-0 flex items-center justify-center rounded-[inherit] z-10"
+          style={{ background: 'rgba(247,245,239,0.6)', backdropFilter: 'blur(2px)' }}
+        >
+          <span
+            className="text-[11px] font-semibold tracking-[0.14em] uppercase border px-4 py-2 rounded-full"
+            style={{ color: '#8A6A28', borderColor: 'rgba(196,154,60,0.4)', background: '#FAF8F2' }}
           >
-            Simple, transparent pricing
+            Coming Soon
+          </span>
+        </div>
+      )}
+
+      {/* Plan name */}
+      <div
+        className="text-[11px] font-medium tracking-[0.12em] uppercase mb-3"
+        style={{ color: featured ? 'rgba(255,255,255,0.35)' : '#78716c' }}
+      >
+        {plan.name}
+      </div>
+
+      {/* Price */}
+      <div
+        className="text-[44px] font-bold leading-none mb-1 tracking-tight"
+        style={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          color: featured ? '#fff' : '#1c1917',
+        }}
+      >
+        {typeof plan.price === 'number' ? `€ ${plan.price}` : plan.price}
+      </div>
+
+      {/* Period */}
+      <div
+        className="text-[12px] mb-6"
+        style={{ color: featured ? 'rgba(255,255,255,0.25)' : '#a8a29e' }}
+      >
+        {plan.period ?? 'per month'}
+      </div>
+
+      {/* Divider */}
+      <div
+        className="h-px mb-6"
+        style={{ background: featured ? 'rgba(255,255,255,0.08)' : '#e7e5e0' }}
+      />
+
+      {/* Features */}
+      <ul className="flex flex-col gap-3 flex-1 mb-8">
+        {plan.features.map((f: string) => (
+          <li key={f} className="flex items-start gap-2.5">
+            <Check
+              className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
+              style={{ color: featured ? '#C49A3C' : '#C49A3C', opacity: comingSoon ? 0.5 : 1 }}
+              strokeWidth={2.5}
+            />
+            <span
+              className="text-[13px] leading-snug"
+              style={{ color: featured ? 'rgba(255,255,255,0.45)' : '#78716c' }}
+            >
+              {f}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {/* CTA */}
+      <button
+        disabled={comingSoon}
+        className="w-full py-3 text-[12px] font-semibold tracking-[0.06em] uppercase rounded-[3px] transition-all duration-200"
+        style={
+          featured
+            ? { background: '#C49A3C', color: '#1c1917', border: 'none' }
+            : { background: 'transparent', color: '#1c1917', border: '1px solid #e7e5e0' }
+        }
+        onMouseEnter={(e) => {
+          if (comingSoon) return;
+          const el = e.currentTarget;
+          if (featured) {
+            el.style.background = '#E8C97A';
+          } else {
+            el.style.background = '#1c1917';
+            el.style.color = '#fafaf9';
+            el.style.borderColor = '#1c1917';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (comingSoon) return;
+          const el = e.currentTarget;
+          if (featured) {
+            el.style.background = '#C49A3C';
+            el.style.color = '#1c1917';
+          } else {
+            el.style.background = 'transparent';
+            el.style.color = '#1c1917';
+            el.style.borderColor = '#e7e5e0';
+          }
+        }}
+      >
+        {comingSoon ? 'Coming Soon' : (plan.ctaLabel ?? 'Get Started')}
+      </button>
+    </motion.div>
+  );
+};
+
+// ─── SECTION ───────────────────────────────────────────────────────────────────
+const SubscriptionSection = () => {
+  return (
+    <section
+      id="pricing"
+      className="py-24 border-t scroll-mt-20"
+      style={{ background: '#F7F5EF', borderColor: '#e7e5e0' }}
+    >
+      <div className="max-w-6xl mx-auto px-6">
+
+        {/* Header */}
+        <div className="mb-14">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-5 h-px" style={{ background: '#C49A3C' }} />
+            <span
+              className="text-[11px] font-medium tracking-[0.12em] uppercase"
+              style={{ color: '#8A6A28' }}
+            >
+              Pricing
+            </span>
+          </div>
+          <motion.h2
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.5 }}
+            className="text-[clamp(26px,3.5vw,44px)] font-bold leading-[1.1] tracking-tight"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif", color: '#1c1917' }}
+          >
+            Simple,<br />transparent pricing.
           </motion.h2>
-          <p className="text-slate-400 text-lg">
+          <p className="mt-3 text-[14px] max-w-sm" style={{ color: '#a8a29e' }}>
             Choose the plan that best fits your analysis needs.
           </p>
         </div>
 
-        {/* Changed grid-cols-1 md:grid-cols-2 to md:grid-cols-3 
-            to accommodate the three plans side-by-side on desktop.
-        */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
-           {SUBSCRIPTIONS.map((plan, index) => (
-             <PricePlanCard 
-               key={index} 
-               index={index} 
-               {...plan} 
-             />
-           ))}
+        {/* Cards grid */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 border rounded-[4px] overflow-hidden"
+          style={{ borderColor: '#e7e5e0' }}
+        >
+          {(SUBSCRIPTIONS as PlanData[]).map((plan, index) => (
+            <PlanCard key={index} plan={plan} index={index} />
+          ))}
         </div>
+
       </div>
     </section>
   );

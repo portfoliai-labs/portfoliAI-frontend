@@ -12,18 +12,43 @@ interface StepCardProps {
 const StepCard: React.FC<StepCardProps> = ({ number, icon: Icon, title, description, index }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 30 }}
+      initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
-      transition={{ duration: 0.5, delay: index * 0.2 }}
-      className="flex flex-col items-center text-center gap-4 relative group"
+      transition={{ duration: 0.5, delay: index * 0.15 }}
+      className="relative flex flex-col px-10 py-10"
     >
-      <div className="absolute -top-10 -left-4 text-7xl font-black text-slate-800/50 -z-10">{number}</div>
-      <div className="w-20 h-20 rounded-full bg-slate-900 flex items-center justify-center border-[6px] border-slate-950 shadow-xl group-hover:border-cyan-900 transition-colors z-10">
-        <Icon className="w-8 h-8 text-cyan-400" strokeWidth={2} />
+      {/* Background step number */}
+      <span
+        className="absolute top-6 right-8 text-[56px] font-black leading-none select-none pointer-events-none"
+        style={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          color: 'rgba(255,255,255,0.04)',
+        }}
+      >
+        0{number}
+      </span>
+
+      {/* Icon box */}
+      <div
+        className="w-11 h-11 flex items-center justify-center rounded-[4px] border mb-6 flex-shrink-0"
+        style={{ borderColor: 'rgba(196,154,60,0.25)' }}
+      >
+        <Icon className="w-5 h-5" style={{ color: '#E8C97A' }} strokeWidth={1.5} />
       </div>
-      <h3 className="text-xl font-bold text-white mt-4">{title}</h3>
-      <p className="text-sm text-slate-400 leading-relaxed max-w-[220px]">{description}</p>
+
+      <h3
+        className="text-[20px] font-bold mb-3 tracking-tight"
+        style={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          color: '#fff',
+        }}
+      >
+        {title}
+      </h3>
+      <p className="text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        {description}
+      </p>
     </motion.div>
   );
 };

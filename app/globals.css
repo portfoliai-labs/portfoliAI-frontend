@@ -1,3 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:wght@300;400;500&display=swap');
+
+/* Optional: make Playfair available as a utility via CSS variable */
+:root {
+  --font-playfair: 'Playfair Display', Georgia, serif;
+}
+
 @import "tailwindcss";
 
 :root {

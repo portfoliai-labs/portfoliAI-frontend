@@ -1,152 +1,350 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { 
-  BarChart3, TrendingDown, Lock, 
-  ArrowRight, UploadCloud, Settings2, DownloadCloud 
+import {
+  BarChart3, ArrowRight,
+  UploadCloud, Settings2, DownloadCloud,
+  User, Building2, Plug,
+  TrendingUp, DollarSign, Activity, Shield, Layers,
 } from "lucide-react";
-import { useAuthFlow } from "@/app/hooks/useAuthFlow"; 
+import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 import FeatureCard from "../components/homepage/FeatureCard";
 import StepCard from "../components/homepage/StepCard";
-import dynamic from 'next/dynamic';
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
+import ReportScrollPreview from "../components/homepage/ReportScrollPreview";
 
-
-// ==========================================
-// 1. DATA SECTIONS (TRANSLATED)
-// ==========================================
 const featuresData = [
-  { icon: BarChart3, title: "Deep Analysis", description: "Visualize exact asset allocation, category-level breakdowns, and historical ROI." },
-  { icon: TrendingDown, title: "Risk Tracking", description: "Understand your exposure to volatility with risk metrics calculated over moving windows." },
-  { icon: Lock, title: "100% Private & Secure", description: "Secure in-memory processing. Your files are analyzed and immediately destroyed." },
-  { icon: BarChart3, title: "Hidden Fees Analysis", description: "Precise breakdown of direct commissions and implicit trading spreads." },
-  { icon: Settings2, title: "Instant Reports", description: "Our AI engine generates your comprehensive PDF report in a matter of seconds." },
-  { icon: TrendingDown, title: "Real Returns", description: "Discover the exact moment your investment recovers initial costs (Break-even)." },
+  { icon: BarChart3,  title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
+  { icon: TrendingUp, title: "Cash Flow Analysis",    description: "Historical deposits, withdrawals, and buy/sell activity mapped across time and asset categories." },
+  { icon: DollarSign, title: "Cost Transparency",     description: "Commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
+  { icon: Activity,   title: "Performance & ROI",     description: "Monthly heatmaps, benchmark comparison, annual returns, and trailing period performance charts." },
+  { icon: Shield,     title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and Beta — correlated to real market events." },
+  { icon: Layers,     title: "Category-Level Detail", description: "In-depth analysis per asset class — ETFs, crypto, bonds — each with its own breakdown." },
 ];
 
 const stepsData = [
-  { number: 1, icon: UploadCloud, title: "Upload", description: "Export data from your broker and upload the CSV/Excel file." },
-  { number: 2, icon: Settings2, title: "Process", description: "The AI engine cleans, categorizes, and analyzes your transactions." },
-  { number: 3, icon: DownloadCloud, title: "Get Insights", description: "Download your detailed, ready-to-use PDF report." },
+  { number: 1, icon: UploadCloud,   title: "Upload",   description: "Export transaction history from your broker and upload the CSV or PDF file." },
+  { number: 2, icon: Settings2,     title: "Process",  description: "The AI engine parses, categorises, and analyses every transaction in your history." },
+  { number: 3, icon: DownloadCloud, title: "Download", description: "A professional, branded PDF ready to send to clients or present in a meeting." },
 ];
 
+const audienceData = [
+  {
+    number: "01", icon: User, title: "Private Investors", role: "Self-directed",
+    description: "Finally understand exactly what's happening inside your portfolio — with institutional-grade metrics, not simplified dashboards.",
+    features: ["Full P&L & ROI history", "Cost transparency by broker", "Risk & drawdown analysis", "PDF ready to archive"],
+    highlight: false,
+  },
+  {
+    number: "02", icon: Building2, title: "Financial Advisors", role: "Consultants & Wealth Managers",
+    description: "Deliver branded, professional reports to every client in seconds. Elevate your advisory practice without adding workload.",
+    features: ["White-label PDF reports", "Bulk report generation", "Client-ready formatting", "Branded with your firm's identity"],
+    highlight: true,
+  },
+  {
+    number: "03", icon: Plug, title: "Brokers & Fintechs", role: "Business & API Integration",
+    description: "Embed portfolio reporting directly into your platform. Offer clients a premium feature without building it from scratch.",
+    features: ["Full REST API access", "White-label & custom branding", "Usage-based pricing", "Dedicated integration support"],
+    highlight: false,
+  },
+];
 
-const Report3DShowcase = dynamic(
-  () => import('../components/homepage/Report3DShowcase'), 
-  { 
-    ssr: false,
-    loading: () => <div className="py-32 bg-slate-950 w-full min-h-[700px]" /> // Il tuo skeleton di caricamento
-  }
-);
+const BROKERS = ["Interactive Brokers", "DeGiro", "Fineco", "Scalable Capital", "Trade Republic", "Revolut", "Saxo Bank", "Flatex", "Conio"];
 
-// ==========================================
-// 2. MAIN PAGE
-// ==========================================
+function SectionEyebrow({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <span className="w-5 h-px" style={{ background: light ? "rgba(196,154,60,0.5)" : "#C49A3C" }} />
+      <span className="text-[11px] font-medium tracking-[0.12em] uppercase" style={{ color: light ? "rgba(196,154,60,0.6)" : "#8A6A28" }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function SectionHeading({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
+  return (
+    <h2 className="text-[clamp(26px,3.5vw,46px)] font-bold leading-[1.1] tracking-tight"
+      style={{ fontFamily: "'Playfair Display', Georgia, serif", color: light ? "#fff" : "#1c1917" }}>
+      {children}
+    </h2>
+  );
+}
+
+function AudiencePills() {
+  const pills = ["Private Investors", "Financial Advisors", "Brokers & API"];
+  const [active, setActive] = useState(0);
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {pills.map((p, i) => (
+        <button key={p} onClick={() => setActive(i)}
+          className="text-[11px] font-medium tracking-[0.06em] px-3.5 py-1.5 rounded-[2px] border uppercase transition-all duration-200"
+          style={active === i
+            ? { background: "#1c1917", color: "#E8C97A", borderColor: "#1c1917" }
+            : { background: "transparent", color: "#a8a29e", borderColor: "#e7e5e0" }
+          }
+        >{p}</button>
+      ))}
+    </div>
+  );
+}
+
+// ─── HERO — full light background, report floats ────────────────────────────────
+
+function HeroSection({ onLogin }: { onLogin: () => void }) {
+  return (
+    <section
+      className="grid grid-cols-1 lg:grid-cols-2 items-center border-b"
+      style={{ background: "#F7F5EF", borderColor: "#E0DACC", minHeight: "90vh" }}
+    >
+      {/* LEFT — copy */}
+      <motion.div
+        className="flex flex-col justify-center px-8 md:px-14 py-20"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.65, ease: "easeOut" }}
+      >
+        <SectionEyebrow>AI-Powered Portfolio Intelligence</SectionEyebrow>
+
+        <h1
+          className="text-[clamp(38px,5vw,64px)] font-black leading-[1.04] tracking-tight mb-6"
+          style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
+        >
+          The report<br />
+          your clients<br />
+          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>deserve</em> to see.
+        </h1>
+
+        <p className="text-[15px] font-light leading-[1.78] max-w-[420px] mb-8" style={{ color: "#78716c" }}>
+          Upload a broker export. PortfoliAI generates an institutional-grade PDF —
+          performance, risk, costs, allocation. In seconds. In total privacy.
+        </p>
+
+        <div className="mb-8"><AudiencePills /></div>
+
+        <div className="flex items-center gap-5">
+          <button onClick={onLogin}
+            className="flex items-center gap-2 text-[13px] font-semibold px-6 py-3.5 rounded-[3px] transition-colors duration-200"
+            style={{ background: "#1c1917", color: "#fafaf9" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2820")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
+          >
+            Generate Free Report <ArrowRight className="w-4 h-4" />
+          </button>
+          <button onClick={onLogin}
+            className="text-[12px] tracking-wide transition-colors duration-200"
+            style={{ color: "#a8a29e" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#a8a29e")}
+          >
+            View sample →
+          </button>
+        </div>
+
+        <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
+          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "<30s", label: "per report" }].map((s, i) => (
+            <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
+              <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
+              <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* RIGHT — same light bg, PDF floats with 3D shadow */}
+      <motion.div
+        className="flex items-center justify-center px-8 py-16 lg:py-0"
+        style={{ background: "#F7F5EF" }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.25 }}
+      >
+        <ReportScrollPreview />
+      </motion.div>
+    </section>
+  );
+}
+
+// ─── BROKER STRIP ──────────────────────────────────────────────────────────────
+
+function BrokerStrip() {
+  const items = [...BROKERS, ...BROKERS];
+  return (
+    <div className="overflow-hidden border-y" style={{ background: "#0D0C09", borderColor: "rgba(255,255,255,0.05)" }}>
+      <div className="flex whitespace-nowrap py-3.5" style={{ animation: "portfoliai-marquee 28s linear infinite" }}>
+        {items.map((b, i) => (
+          <span key={i} className="text-[10px] tracking-[0.14em] uppercase flex-shrink-0 px-9 border-r" style={{ color: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.06)" }}>
+            <span style={{ color: "rgba(196,154,60,0.5)", marginRight: 6 }}>✦</span>{b}
+          </span>
+        ))}
+      </div>
+      <style>{`@keyframes portfoliai-marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+    </div>
+  );
+}
+
+// ─── FOR WHOM ──────────────────────────────────────────────────────────────────
+
+function ForWhomSection() {
+  return (
+    <section id="audience" className="border-b scroll-mt-20 py-24" style={{ background: "#131210", borderColor: "rgba(255,255,255,0.06)" }}>
+      <div className="max-w-6xl mx-auto px-6">
+        <SectionEyebrow light>Built for</SectionEyebrow>
+        <SectionHeading light>One platform,<br />three use cases.</SectionHeading>
+        <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
+          Whether analysing your own portfolio or delivering reports at scale for hundreds of clients.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border rounded-[4px] overflow-hidden"
+          style={{ borderColor: "rgba(255,255,255,0.07)", "--tw-divide-opacity": 1 } as React.CSSProperties}>
+          {audienceData.map((card, i) => {
+            const Icon = card.icon;
+            return (
+              <motion.div key={card.number}
+                initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.5, delay: i * 0.08 }}
+                className="relative p-10 flex flex-col transition-colors duration-300"
+                style={{ background: card.highlight ? "rgba(196,154,60,0.025)" : "transparent" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(196,154,60,0.04)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = card.highlight ? "rgba(196,154,60,0.025)" : "transparent"; }}
+              >
+                <span className="absolute top-5 right-6 text-[64px] font-black leading-none select-none pointer-events-none"
+                  style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "rgba(255,255,255,0.04)" }}>{card.number}</span>
+                <div className="w-11 h-11 flex items-center justify-center rounded-[4px] border mb-5 flex-shrink-0"
+                  style={{ borderColor: card.highlight ? "rgba(196,154,60,0.45)" : "rgba(196,154,60,0.2)" }}>
+                  <Icon className="w-5 h-5" style={{ color: "#E8C97A" }} strokeWidth={1.5} />
+                </div>
+                <div className="text-[20px] font-bold mb-1 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fff" }}>{card.title}</div>
+                <div className="text-[10px] uppercase tracking-[0.1em] mb-4" style={{ color: "rgba(196,154,60,0.55)" }}>{card.role}</div>
+                <p className="text-[13px] leading-[1.7] mb-6 flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>{card.description}</p>
+                <ul className="flex flex-col gap-2">
+                  {card.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-[12px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      <span className="flex-shrink-0 mt-0.5 text-[11px]" style={{ color: "rgba(196,154,60,0.45)" }}>→</span>{f}
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── QUOTE ─────────────────────────────────────────────────────────────────────
+
+function QuoteSection() {
+  return (
+    <div className="border-b border-stone-200 py-16 px-6 text-center" style={{ background: "#FAF8F2" }}>
+      <blockquote className="text-[clamp(18px,2.5vw,30px)] font-bold italic leading-snug tracking-tight max-w-[640px] mx-auto mb-4"
+        style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
+        `&quot;`I used to spend hours building client reports in Excel. Now I generate them in 30 seconds.`&quot;`
+      </blockquote>
+      <p className="text-[11px] uppercase tracking-[0.1em]" style={{ color: "#a8a29e" }}>
+        Luca M. — Independent Financial Advisor, Milan
+      </p>
+    </div>
+  );
+}
+
+// ─── MAIN ──────────────────────────────────────────────────────────────────────
+
 export default function HomePage() {
   const { login } = useAuthFlow();
 
-
   return (
-    // Added scroll-smooth for native smooth scrolling to anchor links
-    <div className="min-h-screen bg-slate-950 text-slate-50 font-sans selection:bg-cyan-500/30 overflow-hidden scroll-smooth">
-      
-      {/* HEADER */}
-      <header className="px-6 py-4 max-w-6xl mx-auto flex justify-between items-center sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
-          className="text-2xl font-bold tracking-tighter text-white flex items-center gap-2"
-        >
-          <div className="bg-cyan-600 p-1.5 rounded-lg">
-            <BarChart3 className="text-white w-5 h-5" />
+    <div className="min-h-screen font-sans overflow-hidden scroll-smooth" style={{ background: "#F7F5EF", color: "#1c1917" }}>
+
+      {/* HEADER — light */}
+      <header className="px-6 md:px-10 py-4 flex justify-between items-center sticky top-0 z-50 border-b backdrop-blur-md"
+        style={{ background: "rgba(250,248,242,0.94)", borderColor: "#e7e5e0" }}>
+        <motion.div className="flex items-center gap-2.5" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
+          <div className="w-7 h-7 flex items-center justify-center rounded-[4px]" style={{ background: "#1c1917" }}>
+            <BarChart3 className="w-[14px] h-[14px]" style={{ stroke: "#C49A3C" }} strokeWidth={2} />
           </div>
-          PortfoliAI
+          <span className="text-[20px] font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
+            PortfoliAI
+          </span>
         </motion.div>
-        
-        {/* NAV WITH FIXED ANCHORS */}
-        <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-400">
-          <a href="#features" className="hover:text-cyan-400 transition-colors">Features</a>
-          <a href="#how-it-works" className="hover:text-cyan-400 transition-colors">How it Works</a>
-          <a href="#pricing" className="hover:text-cyan-400 transition-colors">Pricing</a>
-          <a href="#faq" className="hover:text-cyan-400 transition-colors">FAQ</a>
+
+        <nav className="hidden md:flex gap-7 text-[12px] font-normal uppercase tracking-[0.06em]">
+          {[{ label: "For Advisors", href: "#audience" }, { label: "For Business", href: "#audience" },
+            { label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }, { label: "FAQ", href: "#faq" }
+          ].map((item) => (
+            <a key={item.label} href={item.href} className="transition-colors duration-200" style={{ color: "#78716c" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#78716c")}
+            >{item.label}</a>
+          ))}
         </nav>
 
-        <motion.button 
+        <motion.button onClick={() => login()}
+          className="text-[12px] font-semibold px-5 py-2.5 rounded-[3px] uppercase tracking-[0.05em] transition-colors duration-200"
+          style={{ background: "#1c1917", color: "#fafaf9" }}
           initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
-          onClick={() => login()}
-          className="text-sm font-semibold bg-white text-slate-900 px-5 py-2.5 rounded-full hover:bg-cyan-50 transition-colors shadow-md"
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#292524")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
         >
           Sign In / Sign Up
         </motion.button>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 pt-20 pb-32 text-center">
-        
-        <motion.h1 
-          initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: "easeOut" }}
-          className="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight"
-        >
-          Your portfolio analysis, <br className="hidden md:block" /> 
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
-            made crystal clear by AI.
-          </span>
-        </motion.h1>
-        
-        <motion.p 
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2, ease: "easeOut" }}
-          className="text-lg md:text-xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed"
-        >
-          Upload your investment data. Our engine instantly generates an in-depth financial report on historical performance, cash flows, and risk metrics. In total privacy.
-        </motion.p>
+      <HeroSection onLogin={login} />
+      <BrokerStrip />
+      <ForWhomSection />
 
-        <div className="flex justify-center mb-12">
-          <button onClick={() => login()} className="group flex items-center gap-2 bg-cyan-600 text-white px-8 py-4 rounded-full text-lg font-bold hover:bg-cyan-500 transition-all shadow-[0_0_40px_-10px_rgba(6,182,212,0.4)]">
-            Create Free Report <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </button>
-        </div>
-
-        {/* THE SHOWCASE IS THE HERO VISUAL */}
-        <Report3DShowcase />
-      </main>
-
-      {/* FEATURES */}
-      <section id="features" className="bg-slate-900 border-t border-slate-800 py-32 scroll-mt-20">
-        <div className="max-w-6xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold mb-16">Everything you need to grow</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* FEATURES — light */}
+      <section id="features" className="border-b py-24 scroll-mt-20" style={{ background: "#F7F5EF", borderColor: "#e7e5e0" }}>
+        <div className="max-w-6xl mx-auto px-6">
+          <SectionEyebrow>What&apos;s inside every report</SectionEyebrow>
+          <SectionHeading>6 chapters.<br />Every angle covered.</SectionHeading>
+          <p className="mt-3 mb-14 text-[14px] text-stone-400 max-w-sm">
+            Every report follows the same rigorous structure — from a high-level overview to granular per-asset breakdowns.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {featuresData.map((f, i) => <FeatureCard key={i} index={i} {...f} />)}
           </div>
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
-      <section id="how-it-works" className="py-32 bg-slate-950 border-t border-slate-900 scroll-mt-20">
-         <div className="max-w-5xl mx-auto px-6 text-center">
-            <h2 className="text-3xl font-bold mb-20">Seamless Workflow</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-16 relative">
-              <div className="hidden md:block absolute top-10 left-1/4 right-1/4 h-px bg-slate-800 -z-10"></div>
-              {stepsData.map((s, i) => <StepCard key={i} index={i} {...s} />)}
-            </div>
-         </div>
+      {/* HOW IT WORKS — dark */}
+      <section id="how-it-works" className="py-24 border-b scroll-mt-20" style={{ background: "#131210", borderColor: "rgba(255,255,255,0.06)" }}>
+        <div className="max-w-6xl mx-auto px-6">
+          <SectionEyebrow light>The workflow</SectionEyebrow>
+          <SectionHeading light>Three steps.<br />No friction.</SectionHeading>
+          <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
+            No account setup, no complex integrations. Just upload and download.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 border rounded-[4px] overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+            {stepsData.map((s, i) => <StepCard key={i} index={i} {...s} />)}
+          </div>
+        </div>
       </section>
 
-      {/* PRICING SECTION (WITH ID) */}
+      <QuoteSection />
       <SubscriptionSection />
-
-      {/* FAQ SECTION (WITH ID) */}
       <FaqSection />
 
       {/* FOOTER */}
-      <footer className="bg-slate-950 border-t border-slate-900 text-slate-500 py-12 text-center text-sm">
+      <footer className="border-t py-12" style={{ background: "#131210", borderColor: "rgba(255,255,255,0.06)" }}>
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
-           <div className="flex items-center gap-2 font-bold text-white text-lg opacity-80">
-             <BarChart3 className="w-5 h-5" /> PortfoliAI
-           </div>
-           <p>© {new Date().getFullYear()} PortfoliAI. All rights reserved.</p>
-           <div className="flex gap-6">
-             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-             <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-           </div>
+          <div className="flex items-center gap-2 text-[18px] font-bold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fafaf9" }}>
+            <BarChart3 className="w-5 h-5" style={{ stroke: "#C49A3C" }} strokeWidth={1.5} />PortfoliAI
+          </div>
+          <p className="text-[11px] uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.2)" }}>
+            © {new Date().getFullYear()} PortfoliAI. All rights reserved.
+          </p>
+          <div className="flex gap-6">
+            {["Privacy Policy", "Terms of Service", "API Docs"].map((l) => (
+              <a key={l} href="#" className="text-[11px] uppercase tracking-wider transition-colors duration-200" style={{ color: "rgba(255,255,255,0.25)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.25)")}
+              >{l}</a>
+            ))}
+          </div>
         </div>
       </footer>
     </div>
