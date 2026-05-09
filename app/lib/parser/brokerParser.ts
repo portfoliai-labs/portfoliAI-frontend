@@ -6,7 +6,7 @@ import { StandardTransaction } from "../../models/Report";
 export type RawRow = Record<string, unknown>;
 
 export const ALL_FIELDS: (keyof StandardTransaction)[] = [
-  "date", "name", "id", "ticker", "operation", "amount", 
+  "date", "name", "isin", "ticker", "operation", "amount", 
   "price", "currency", "trade_amount", "fees", "broker"
 ];
 
@@ -45,7 +45,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
     columns: {
       date: "Operazione",
       name: "Titolo",
-      id: "Isin",
+      isin: "Isin",
       operation: "Segno",
       amount: "Quantita",
       price: "Prezzo",
@@ -103,9 +103,9 @@ export const standardizeRow = (
       ? formatters.name(getVal('name'), row) 
       : String(getVal('name') ?? ''),
       
-    id: formatters.id 
-      ? formatters.id(getVal('id'), row) 
-      : String(getVal('id') ?? ''),
+    isin: formatters.isin 
+      ? formatters.isin(getVal('isin'), row) 
+      : String(getVal('isin') ?? ''),
       
     ticker: formatters.ticker 
       ? formatters.ticker(getVal('ticker'), row) 

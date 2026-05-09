@@ -26,7 +26,7 @@ interface PresignedUrl {
 interface StandardTransaction {
   date: string;
   name: string;
-  id: string;
+  isin: string;
   ticker: string;
   operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
   amount: number;
