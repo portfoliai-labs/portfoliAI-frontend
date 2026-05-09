@@ -122,7 +122,7 @@ export function AdvisorUploadSection() {
         </button>
       </div>
 
-      <FileUploader />
+      <FileUploader forUserUuid={selected.uuid} />
     </div>
   );
 }

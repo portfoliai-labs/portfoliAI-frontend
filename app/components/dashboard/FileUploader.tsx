@@ -31,7 +31,7 @@ interface UploadedFileState {
   missingFields: string[];
 }
 
-export function FileUploader() {
+export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
@@ -122,7 +122,7 @@ export function FileUploader() {
     try {
       setLoading(true);
       const allTransactions = files.flatMap(f => f.previewData);
-      await reportService.processReport(allTransactions, "Multiple_Files_Upload");
+      await reportService.processReport(allTransactions, "Multiple_Files_Upload", forUserUuid);
       setStatus("processing");
       setShowToast(true);
       setFiles([]);

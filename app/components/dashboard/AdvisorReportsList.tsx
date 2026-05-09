@@ -120,7 +120,7 @@ export function AdvisorReportsList() {
         </div>
       </div>
 
-      <ReportsList />
+      <ReportsList forUserUuid={selected.uuid} />
     </div>
   );
 }

@@ -25,7 +25,7 @@ interface DocumentCardProps {
   setNewTagName: (name: string) => void;
 }
 
-export function ReportsList() {
+export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {}) {
   const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export function ReportsList() {
     try {
       setLoading(true);
       setError(null);
-      const data = await reportService.getAllDocuments();
+      const data = await reportService.getAllDocuments(forUserUuid);
       setDocuments(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to sync with server";

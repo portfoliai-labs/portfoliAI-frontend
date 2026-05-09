@@ -8,7 +8,7 @@ interface Document {
   document_id: string;
   user_id: string;
   job_id: string | null;
-  generated_by_id: number | null;
+  generated_by_uuid: string | null;
   name: string;
   size: number;
   status: DocumentStatus;

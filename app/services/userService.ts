@@ -7,9 +7,9 @@ export const userService = {
     return apiFetch<UserProfile>('/users/profile');
   },
 
-  // POST /users/profile — creates the user with basic info + role only
+  // POST /users/register — creates the user with basic info + role only
   async createUserProfile(payload: ProfileCreatePayload): Promise<UserProfile> {
-    return apiFetch<UserProfile>('/users/profile', {
+    return apiFetch<UserProfile>('/users/register', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

@@ -3,14 +3,17 @@ import type { Document, PresignedUrl, StandardTransaction } from "../models/Repo
 import { apiFetch } from "./apiClient";
 
 export const reportService = {
-  async getAllDocuments(): Promise<Document[]> {
-    return apiFetch<Document[]>('/v1/reports/');
+  // GET /v1/reports/?for_user_uuid=... — advisors pass client UUID to fetch their documents
+  async getAllDocuments(forUserUuid?: string | null): Promise<Document[]> {
+    const query = forUserUuid ? `?for_user_uuid=${encodeURIComponent(forUserUuid)}` : '';
+    return apiFetch<Document[]>(`/v1/reports/${query}`);
   },
 
-  async processReport(data: StandardTransaction[], filename: string): Promise<void> {
+  // POST /v1/reports/process-report — advisors pass for_user_uuid to generate for a client
+  async processReport(data: StandardTransaction[], filename: string, forUserUuid?: string | null): Promise<void> {
     return apiFetch<void>('/v1/reports/process-report', {
       method: 'POST',
-      body: JSON.stringify({ data, filename }),
+      body: JSON.stringify({ data, filename, for_user_uuid: forUserUuid ?? null }),
     });
   },
 
