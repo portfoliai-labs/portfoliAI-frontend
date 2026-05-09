@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
+import { useNotifications } from "../../hooks/useNotifications";
 
 interface UserProfile {
   first_name: string;
@@ -19,6 +20,8 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: DashboardHeaderProps) {
+  const { hasUnread, clearNotifications } = useNotifications();
+
   const [user] = useState<UserProfile | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -77,9 +80,14 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: Dashboar
 
       {/* RIGHT: Actions */}
       <div className="flex items-center gap-2 md:gap-3">
-        <button className="relative p-2 md:p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl md:rounded-2xl transition-all">
+        <button
+          onClick={clearNotifications}
+          className="relative p-2 md:p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl md:rounded-2xl transition-all"
+        >
           <Bell className="h-5 w-5" />
-          <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+          {hasUnread && (
+            <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+          )}
         </button>
 
         <div className="hidden md:block h-8 w-px bg-[#E0DACC] mx-2" />
