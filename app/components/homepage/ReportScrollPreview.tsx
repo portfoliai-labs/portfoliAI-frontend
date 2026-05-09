@@ -139,7 +139,7 @@ const ReportContent = () => (
         <ResponsiveContainer width="100%" height={56}>
           <LineChart data={portfolioOverTime} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <Line type="monotone" dataKey="v" stroke="#C49A3C" strokeWidth={1.5} dot={false} />
-            <Tooltip {...tooltipStyle} formatter={(v: number) => [`€ ${v.toLocaleString()}`, ""]} labelFormatter={() => ""} />
+            <Tooltip {...tooltipStyle} formatter={(v) => [`€ ${Number(v).toLocaleString()}`, ""]} labelFormatter={() => ""} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -188,7 +188,7 @@ const ReportContent = () => (
           <LineChart data={roiVsBenchmark} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <Line type="monotone" dataKey="p" stroke="#C49A3C" strokeWidth={1.5} dot={false} name="Portfolio" />
             <Line type="monotone" dataKey="b" stroke="#c4bdb5" strokeWidth={1}   dot={false} strokeDasharray="4 3" name="Benchmark" />
-            <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v.toFixed(2)}%`]} />
+            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v).toFixed(2)}%`]} />
           </LineChart>
         </ResponsiveContainer>
         <div className="flex gap-4 mt-1.5">
@@ -230,7 +230,7 @@ const ReportContent = () => (
           <BarChart data={volatilityData} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="#F0EDE6" />
             <Bar dataKey="v" fill="rgba(196,154,60,0.25)" radius={[2, 2, 0, 0]} />
-            <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v}%`, "Volatility"]} />
+            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v)}%`, "Volatility"]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -248,7 +248,7 @@ export default function ReportScrollPreview() {
   const posRef      = useRef(0);
   const dirRef      = useRef(1);
   const pausedRef   = useRef(false);
-  const resumeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [activeChapter, setActiveChapter] = useState(0);
 
   useEffect(() => {

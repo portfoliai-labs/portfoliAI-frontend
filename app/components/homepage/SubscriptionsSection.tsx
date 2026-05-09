@@ -6,13 +6,13 @@ import { SUBSCRIPTIONS } from '../../constants/subscriptions';
 // Mirrors whatever shape your SUBSCRIPTIONS constant exports.
 // Adjust field names here if yours differ.
 interface PlanData {
-  name: string;
+  title: string;
   price: string | number;
   period?: string;
   features: string[];
-  isFeatured?: boolean;
-  isComingSoon?: boolean;
-  ctaLabel?: string;
+  popular?: boolean;
+  available?: boolean;
+  ctaText?: string;
 }
 
 // ─── SINGLE PLAN CARD ──────────────────────────────────────────────────────────
@@ -24,8 +24,8 @@ const PlanCard = ({
   index: number;
 }) => {
   const isLast = index === 2;
-  const featured = plan.isFeatured ?? false;
-  const comingSoon = plan.isComingSoon ?? false;
+  const featured = plan.popular ?? false;
+  const comingSoon = !(plan.available ?? true);
 
   return (
     <motion.div
@@ -69,7 +69,7 @@ const PlanCard = ({
         className="text-[11px] font-medium tracking-[0.12em] uppercase mb-3"
         style={{ color: featured ? 'rgba(255,255,255,0.35)' : '#78716c' }}
       >
-        {plan.name}
+        {plan.title}
       </div>
 
       {/* Price */}
@@ -149,7 +149,7 @@ const PlanCard = ({
           }
         }}
       >
-        {comingSoon ? 'Coming Soon' : (plan.ctaLabel ?? 'Get Started')}
+        {comingSoon ? 'Coming Soon' : (plan.ctaText ?? 'Get Started')}
       </button>
     </motion.div>
   );
