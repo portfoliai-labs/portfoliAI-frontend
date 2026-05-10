@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
 import { useNotifications } from "../../hooks/useNotifications";
+import { NotificationPanel } from "./NotificationPanel";
 
 interface UserProfile {
   first_name: string;
@@ -20,7 +21,15 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: DashboardHeaderProps) {
-  const { hasUnread, clearNotifications } = useNotifications();
+  const {
+    notifications,
+    hasUnread,
+    isLoading,
+    loadNotifications,
+    markAllRead,
+    dismissAll,
+  } = useNotifications();
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   const [user] = useState<UserProfile | null>(() => {
     if (typeof window === "undefined") return null;
@@ -46,6 +55,15 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: Dashboar
   });
 
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? "U"}`.toUpperCase();
+
+  function handleBellClick() {
+    const opening = !isPanelOpen;
+    setIsPanelOpen(opening);
+    if (opening) {
+      loadNotifications();
+      markAllRead();
+    }
+  }
 
   return (
     <header className="sticky top-0 z-[60] w-full bg-[#F7F5EF] border-b border-[rgba(196,154,60,0.2)] px-4 md:px-8 py-4 flex justify-between items-center transition-all">
@@ -80,15 +98,28 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: Dashboar
 
       {/* RIGHT: Actions */}
       <div className="flex items-center gap-2 md:gap-3">
-        <button
-          onClick={clearNotifications}
-          className="relative p-2 md:p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl md:rounded-2xl transition-all"
-        >
-          <Bell className="h-5 w-5" />
-          {hasUnread && (
-            <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+
+        {/* Bell + panel */}
+        <div className="relative">
+          <button
+            onClick={handleBellClick}
+            className="relative p-2 md:p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl md:rounded-2xl transition-all"
+          >
+            <Bell className="h-5 w-5" />
+            {hasUnread && (
+              <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+            )}
+          </button>
+
+          {isPanelOpen && (
+            <NotificationPanel
+              notifications={notifications}
+              isLoading={isLoading}
+              onClose={() => setIsPanelOpen(false)}
+              onDismissAll={() => { dismissAll(); setIsPanelOpen(false); }}
+            />
           )}
-        </button>
+        </div>
 
         <div className="hidden md:block h-8 w-px bg-[#E0DACC] mx-2" />
 
