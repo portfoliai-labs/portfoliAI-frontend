@@ -40,7 +40,8 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  
+  const [hasInitialized, setHasInitialized] = useState<boolean>(false);
+
   const router = useRouter();
   const pathname = usePathname();
 
@@ -93,7 +94,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Listen for the custom event dispatched by apiClient on 401 responses
     window.addEventListener("auth-unauthorized", logout);
-    
+
     const token: string | null = localStorage.getItem("auth_token");
 
     // 1. Mandatory check: if no token is found within (reserved) group, boot to login
@@ -102,10 +103,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 2. Load user data if not already present in state
-    if (!user) {
+    // 2. Only run initialization once
+    if (!hasInitialized) {
       const cachedProfile: string | null = localStorage.getItem("user_profile");
-      
+
       if (cachedProfile) {
         try {
           setUser(JSON.parse(cachedProfile));
@@ -119,12 +120,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       } else {
         fetchProfile();
       }
+
+      setHasInitialized(true);
     }
 
     return () => {
       window.removeEventListener("auth-unauthorized", logout);
     };
-  }, [logout, fetchProfile, user]);
+  }, [hasInitialized, fetchProfile, logout]);
 
   /**
    * Memoize context value to prevent unnecessary re-renders of consuming components

@@ -121,7 +121,7 @@ function OnboardingWizard() {
         await userService.createUserProfile({
           first_name: formData.first_name,
           last_name: formData.last_name,
-          language: "en",
+          language: formData.language || "it",
           role: 'USER',
         });
         // Step 2: set investor financial profile
@@ -137,7 +137,7 @@ function OnboardingWizard() {
         await userService.createUserProfile({
           first_name: formData.first_name,
           last_name: formData.last_name,
-          language: formData.language || "it",
+          language: formData.language || "en",
           role: 'ADVISOR',
         });
         // Step 2: set advisor profile data

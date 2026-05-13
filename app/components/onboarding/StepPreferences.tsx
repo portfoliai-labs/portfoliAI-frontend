@@ -6,8 +6,6 @@ interface StepPreferencesProps {
 }
 
 export function StepPreferences({ formData, setFormData }: StepPreferencesProps) {
-  const selectClass = "w-full p-4 bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] rounded-2xl font-bold text-[#1c1917] focus:bg-white focus:border-[#C49A3C] outline-none transition-all appearance-none cursor-pointer";
-
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
       <div className="text-center mb-10">
@@ -21,34 +19,21 @@ export function StepPreferences({ formData, setFormData }: StepPreferencesProps)
           Le tue preferenze
         </h1>
         <p className="text-[#78716c] mt-2 text-sm">
-          Imposta lingua e valuta di riferimento predefinite.
+          Imposta la valuta di riferimento predefinita.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Lingua</label>
-          <select
-            className={selectClass}
-            value={formData.language || "it"}
-            onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-          >
-            <option value="it">🇮🇹 Italiano</option>
-            <option value="en">🇬🇧 English</option>
-          </select>
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Valuta di default</label>
-          <select
-            className={selectClass}
-            value={formData.currency || "EUR"}
-            onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-          >
-            <option value="EUR">Euro (€)</option>
-            <option value="USD">US Dollar ($)</option>
-            <option value="GBP">British Pound (£)</option>
-          </select>
-        </div>
+      <div className="space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Valuta di default</label>
+        <select
+          className="w-full p-4 bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] rounded-2xl font-bold text-[#1c1917] focus:bg-white focus:border-[#C49A3C] outline-none transition-all appearance-none cursor-pointer"
+          value={formData.currency || "EUR"}
+          onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+        >
+          <option value="EUR">Euro (€)</option>
+          <option value="USD">US Dollar ($)</option>
+          <option value="GBP">British Pound (£)</option>
+        </select>
       </div>
     </div>
   );

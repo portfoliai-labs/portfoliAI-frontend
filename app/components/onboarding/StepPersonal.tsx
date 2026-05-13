@@ -46,6 +46,18 @@ export function StepPersonal({ formData, setFormData }: StepPersonalProps) {
           />
         </div>
       </div>
+
+      <div className="space-y-2 mt-6">
+        <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Lingua di riferimento</label>
+        <select
+          className="w-full p-4 bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] rounded-2xl font-bold text-[#1c1917] focus:bg-white focus:border-[#C49A3C] outline-none transition-all appearance-none cursor-pointer"
+          value={formData.language || "it"}
+          onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+        >
+          <option value="it">🇮🇹 Italiano</option>
+          <option value="en">🇬🇧 English</option>
+        </select>
+      </div>
     </div>
   );
 }
