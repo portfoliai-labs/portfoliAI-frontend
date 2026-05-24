@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import { 
-  UploadCloud, Loader2, AlertCircle, Send, 
-  FileText, Trash2, CheckCircle2, X
+import {
+  UploadCloud, Loader2, AlertCircle, Send,
+  FileText, Trash2, CheckCircle2, X, AlertTriangle
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -29,6 +29,7 @@ interface UploadedFileState {
   detectedBroker: string;
   isValid: boolean;
   missingFields: string[];
+  hasOrdersWithoutTime: boolean;
 }
 
 export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
@@ -59,19 +60,19 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
 
   const processFileData = (rawData: RawRow[], mapping: Partial<Record<keyof StandardTransaction, string>>, brokerId: string) => {
     const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId));
-    const { isValid, missingFields } = validateMapping(previewData);
-    return { previewData, isValid, missingFields };
+    const { isValid, missingFields, hasOrdersWithoutTime } = validateMapping(previewData);
+    return { previewData, isValid, missingFields, hasOrdersWithoutTime };
   };
 
   const onParseComplete = (data: RawRow[], fileName: string) => {
     const id = Math.random().toString(36).substring(7);
     const broker = identifyBroker(data[0]);
     const initialMapping = BROKER_CONFIGS[broker]?.columns || {};
-    
-    const { previewData, isValid, missingFields } = processFileData(data, initialMapping, broker);
+
+    const { previewData, isValid, missingFields, hasOrdersWithoutTime } = processFileData(data, initialMapping, broker);
 
     const newFile: UploadedFileState = {
-      id, fileName, rawData: data, previewData, manualMap: initialMapping, detectedBroker: broker, isValid, missingFields: missingFields.map(String)
+      id, fileName, rawData: data, previewData, manualMap: initialMapping, detectedBroker: broker, isValid, missingFields: missingFields.map(String), hasOrdersWithoutTime
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -82,10 +83,10 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const handleMappingChange = (stdField: keyof StandardTransaction, csvHeader: string) => {
     if (!activeFile) return;
     const newMapping = { ...activeFile.manualMap, [stdField]: csvHeader };
-    const { previewData, isValid, missingFields } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
+    const { previewData, isValid, missingFields, hasOrdersWithoutTime } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
 
     setFiles(prev => prev.map(f => f.id === activeFile.id ? {
-      ...f, manualMap: newMapping, previewData, isValid, missingFields: missingFields.map(String)
+      ...f, manualMap: newMapping, previewData, isValid, missingFields: missingFields.map(String), hasOrdersWithoutTime
     } : f));
   };
 
@@ -227,6 +228,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
               )}
             </div>
 
+            {activeFile.hasOrdersWithoutTime && (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                  Some orders have a date without a time. Without the order time, the spread cannot be calculated.                </p>
+              </div>
+            )}
+
             <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse min-w-[800px]">
@@ -235,11 +244,13 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                       {ALL_FIELDS.map((field) => {
                         const isRequired = REQUIRED_FIELDS.includes(field);
                         const hasValue = !!activeFile.previewData[0]?.[field];
+                        const hasMissingDates = field === "date" && activeFile.hasOrdersWithoutTime;
                         return (
                           <th key={field} className="px-5 py-5 min-w-[180px]">
                             <div className="flex flex-col gap-2.5">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
                                 {field} {isRequired && <span className="text-rose-500 text-xs">*</span>}
+                                {hasMissingDates && <AlertTriangle className="h-3 w-3 text-amber-500" />}
                               </span>
                               <select 
                                 value={activeFile.manualMap[field] || ""}

@@ -6,12 +6,12 @@ import { StandardTransaction } from "../../models/Report";
 export type RawRow = Record<string, unknown>;
 
 export const ALL_FIELDS: (keyof StandardTransaction)[] = [
-  "date", "name", "isin", "ticker", "operation", "amount", 
-  "price", "currency", "trade_amount", "fees", "broker"
+  "date", "isin", "ticker", "operation", "quantity", 
+  "price", "currency", "fees", "broker"
 ];
 
 export const REQUIRED_FIELDS: (keyof StandardTransaction)[] = [
-  "date", "name", "operation", "amount", "price", "currency", "ticker"
+  "date", "operation", "quantity", "price", "currency", "ticker"
 ];
 
 /**
@@ -44,13 +44,11 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   FINECO: {
     columns: {
       date: "Operazione",
-      name: "Titolo",
       isin: "Isin",
       operation: "Segno",
-      amount: "Quantita",
+      quantity: "Quantita",
       price: "Prezzo",
       currency: "Divisa",
-      trade_amount: "Controvalore",
       fees: "Commissioni amministrato",
     },
     formatters: {
@@ -99,10 +97,6 @@ export const standardizeRow = (
       ? formatters.date(getVal('date'), row) 
       : String(getVal('date') ?? ''),
       
-    name: formatters.name 
-      ? formatters.name(getVal('name'), row) 
-      : String(getVal('name') ?? ''),
-      
     isin: formatters.isin 
       ? formatters.isin(getVal('isin'), row) 
       : String(getVal('isin') ?? ''),
@@ -115,9 +109,9 @@ export const standardizeRow = (
       ? formatters.operation(getVal('operation'), row) 
       : fallbackOperationParser(getVal('operation')),
       
-    amount: formatters.amount 
-      ? formatters.amount(getVal('amount'), row) 
-      : Number(getVal('amount')),
+    quantity: formatters.quantity 
+      ? formatters.quantity(getVal('quantity'), row) 
+      : Number(getVal('quantity')),
       
     price: formatters.price 
       ? formatters.price(getVal('price'), row) 
@@ -126,10 +120,6 @@ export const standardizeRow = (
     currency: formatters.currency 
       ? formatters.currency(getVal('currency'), row) 
       : String(getVal('currency') ?? ''),
-      
-    trade_amount: formatters.trade_amount 
-      ? formatters.trade_amount(getVal('trade_amount'), row) 
-      : Number(getVal('trade_amount')),
       
     fees: formatters.fees 
       ? formatters.fees(getVal('fees'), row) 
@@ -159,17 +149,27 @@ export const identifyBroker = (firstRow: RawRow | undefined): string => {
   return "UNKNOWN";
 };
 
+const hasTimeComponent = (date: string): boolean =>
+  /T\d{2}:\d{2}/.test(date) || /\s\d{2}:\d{2}/.test(date);
+
 /**
  * Validates if the mapping is complete based on REQUIRED_FIELDS.
+ * Checks all rows (not just the first) for missing required fields.
+ * Also detects orders that have a date but no time component.
  */
 export const validateMapping = (data: StandardTransaction[]) => {
-  if (data.length === 0) return { isValid: false, missingFields: REQUIRED_FIELDS };
+  if (data.length === 0) return { isValid: false, missingFields: REQUIRED_FIELDS, hasOrdersWithoutTime: false };
 
-  const sample = data[0];
-  const missingFields = REQUIRED_FIELDS.filter(field => {
-    const val = sample[field];
-    return val === undefined || val === null || val === "" || (typeof val === 'number' && isNaN(val));
-  });
+  const missingFields = REQUIRED_FIELDS.filter(field =>
+    data.some(row => {
+      const val = row[field];
+      return val === undefined || val === null || val === "" || (typeof val === 'number' && isNaN(val));
+    })
+  );
 
-  return { isValid: missingFields.length === 0, missingFields };
+  const hasOrdersWithoutTime = data.some(
+    row => row.date && row.date !== "" && !hasTimeComponent(row.date)
+  );
+
+  return { isValid: missingFields.length === 0, missingFields, hasOrdersWithoutTime };
 };

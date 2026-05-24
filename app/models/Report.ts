@@ -25,14 +25,12 @@ interface PresignedUrl {
 // Matches ReportPayload DTO (POST /v1/reports/process-report)
 interface StandardTransaction {
   date: string;
-  name: string;
   isin: string;
   ticker: string;
   operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
-  amount: number;
+  quantity: number;
   price: number;
   currency: string;
-  trade_amount: number;
   fees: number;
   broker: string;
 }
