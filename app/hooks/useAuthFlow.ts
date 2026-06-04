@@ -14,35 +14,38 @@ interface ApiErrorResponse {
   message?: string;
 }
 
-export function useAuthFlow() {
+export function useAuthFlow(mode: 'default' | 'addon' = 'default') {
   const router = useRouter();
   const [status, setStatus] = useState<string>('Ready to authenticate');
   const [isError, setIsError] = useState<boolean>(false);
+  const [addonToken, setAddonToken] = useState<string | null>(null);
 
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse: TokenResponse) => {
       setStatus('Authenticating...');
       setIsError(false);
-      
+
       try {
         const token: string = tokenResponse.access_token;
         localStorage.setItem("auth_token", token);
-        
+
+        if (mode === 'addon') {
+          setAddonToken(token);
+          return;
+        }
+
         try {
           // Attempt to fetch the profile to decide the routing
           const userProfile = await userService.getUserProfile();
           localStorage.setItem("user_profile", JSON.stringify(userProfile));
           router.push('/dashboard');
-          
+
         } catch (error: unknown) {
-          // Type-safe error handling for the linter
           const apiError = error as ApiErrorResponse;
-          
+
           if (apiError && apiError.status === 404) {
-            // Profile missing: expected for new users
             router.push('/onboarding');
           } else {
-            // Other errors (500, etc.)
             throw error;
           }
         }
@@ -58,9 +61,10 @@ export function useAuthFlow() {
     },
   });
 
-  return { 
-    login, 
-    status, 
-    isError 
+  return {
+    login,
+    status,
+    isError,
+    addonToken,
   };
 }
