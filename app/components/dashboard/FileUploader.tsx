@@ -8,15 +8,17 @@ import {
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { reportService } from "../../services/reportService";
-import { 
-  identifyBroker, 
+import {
+  identifyBroker,
   BROKER_CONFIGS,
   ALL_FIELDS,
-  REQUIRED_FIELDS, 
+  REQUIRED_FIELDS,
   validateMapping,
+  validateTransactions,
   standardizeRow,
   RawRow,
-} from "../../lib/parser/brokerParser";
+  TransactionValidationResult,
+} from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
 
 
@@ -30,6 +32,8 @@ interface UploadedFileState {
   isValid: boolean;
   missingFields: string[];
   hasOrdersWithoutTime: boolean;
+  hasMissingExchangeMic: boolean;
+  validationErrors: TransactionValidationResult;
 }
 
 export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
@@ -54,25 +58,41 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     files.find(f => f.id === activeFileId) || null, 
   [files, activeFileId]);
 
-  const allFilesValid = useMemo(() => 
-    files.length > 0 && files.every(f => f.isValid), 
+  const allFilesValid = useMemo(() =>
+    files.length > 0 && files.every(f => f.isValid),
   [files]);
+
+  // Set of "rowIndex_field" strings for O(1) cell-level error lookup in the preview table
+  const errorSet = useMemo(
+    () => new Set((activeFile?.validationErrors.errors ?? []).map(e => `${e.row}_${e.field}`)),
+    [activeFile],
+  );
 
   const processFileData = (rawData: RawRow[], mapping: Partial<Record<keyof StandardTransaction, string>>, brokerId: string) => {
     const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId));
-    const { isValid, missingFields, hasOrdersWithoutTime } = validateMapping(previewData);
-    return { previewData, isValid, missingFields, hasOrdersWithoutTime };
+    const { isValid: mappingValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic } = validateMapping(previewData);
+    const validationErrors = validateTransactions(previewData);
+    return {
+      previewData,
+      isValid: mappingValid && validationErrors.isValid,
+      missingFields,
+      hasOrdersWithoutTime,
+      hasMissingExchangeMic,
+      validationErrors,
+    };
   };
 
   const onParseComplete = (data: RawRow[], fileName: string) => {
     const id = Math.random().toString(36).substring(7);
-    const broker = identifyBroker(data[0]);
+    const broker = identifyBroker(data);
     const initialMapping = BROKER_CONFIGS[broker]?.columns || {};
 
-    const { previewData, isValid, missingFields, hasOrdersWithoutTime } = processFileData(data, initialMapping, broker);
+    const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(data, initialMapping, broker);
 
     const newFile: UploadedFileState = {
-      id, fileName, rawData: data, previewData, manualMap: initialMapping, detectedBroker: broker, isValid, missingFields: missingFields.map(String), hasOrdersWithoutTime
+      id, fileName, rawData: data, previewData, manualMap: initialMapping,
+      detectedBroker: broker, isValid, missingFields: missingFields.map(String),
+      hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -83,10 +103,11 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const handleMappingChange = (stdField: keyof StandardTransaction, csvHeader: string) => {
     if (!activeFile) return;
     const newMapping = { ...activeFile.manualMap, [stdField]: csvHeader };
-    const { previewData, isValid, missingFields, hasOrdersWithoutTime } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
+    const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
 
     setFiles(prev => prev.map(f => f.id === activeFile.id ? {
-      ...f, manualMap: newMapping, previewData, isValid, missingFields: missingFields.map(String), hasOrdersWithoutTime
+      ...f, manualMap: newMapping, previewData, isValid,
+      missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
     } : f));
   };
 
@@ -107,7 +128,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         const reader = new FileReader();
         reader.onload = (e) => {
           const workbook = XLSX.read(e.target?.result, { type: "array" });
-          const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]) as RawRow[];
+          // defval: "" ensures every row includes ALL column keys even when cells are empty
+          const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" }) as RawRow[];
           onParseComplete(json, file.name);
         };
         reader.readAsArrayBuffer(file);
@@ -232,7 +254,35 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
               <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
                 <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                  Some orders have a date without a time. Without the order time, the spread cannot be calculated.                </p>
+                  Some orders have a date without a time. Without the order time, the spread cannot be calculated.
+                </p>
+              </div>
+            )}
+
+            {activeFile.hasMissingExchangeMic && (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                  Some transactions are missing the <span className="font-bold">exchange MIC</span> code. The ticker from the first available exchange will be used, which may cause unexpected spread.
+                </p>
+              </div>
+            )}
+
+            {!activeFile.validationErrors.isValid && (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
+                  <span className="text-xs font-bold text-rose-800">
+                    {activeFile.validationErrors.invalidRowCount} row{activeFile.validationErrors.invalidRowCount !== 1 ? 's' : ''} have validation errors — upload is blocked until resolved
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 pl-6">
+                  {Object.entries(activeFile.validationErrors.errorsByField).map(([field, count]) => (
+                    <span key={field} className="text-[10px] font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-lg">
+                      {field}: {count} error{count !== 1 ? 's' : ''}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -251,6 +301,11 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
                                 {field} {isRequired && <span className="text-rose-500 text-xs">*</span>}
                                 {hasMissingDates && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+                                {activeFile.validationErrors.errorsByField[field] && (
+                                  <span className="bg-rose-100 text-rose-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                    {activeFile.validationErrors.errorsByField[field]}
+                                  </span>
+                                )}
                               </span>
                               <select 
                                 value={activeFile.manualMap[field] || ""}
@@ -260,7 +315,9 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                                 }`}
                               >
                                 <option value="" className="text-slate-400">-- Ignore --</option>
-                                {Object.keys(activeFile.rawData[0] || {}).map(header => (
+                                {Array.from(
+                                  new Set(activeFile.rawData.flatMap(r => Object.keys(r)))
+                                ).map(header => (
                                   <option key={header} value={header}>{header}</option>
                                 ))}
                               </select>
@@ -273,11 +330,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                   <tbody className="divide-y divide-slate-100">
                     {activeFile.previewData.slice(0, 5).map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                        {ALL_FIELDS.map((field) => (
-                          <td key={field} className="px-5 py-4 text-sm font-medium text-slate-600 truncate max-w-[180px]">
-                            {row[field] ? String(row[field]) : <span className="text-slate-300">-</span>}
-                          </td>
-                        ))}
+                        {ALL_FIELDS.map((field) => {
+                          const hasError = errorSet.has(`${i}_${field}`);
+                          return (
+                            <td key={field} className={`px-5 py-4 text-sm font-medium truncate max-w-[180px] ${hasError ? 'bg-rose-50 text-rose-700' : 'text-slate-600'}`}>
+                              {row[field] ? String(row[field]) : <span className={hasError ? 'text-rose-300' : 'text-slate-300'}>-</span>}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
