@@ -254,7 +254,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
               <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
                 <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                  Some orders have a date without a time. Without the order time, the spread cannot be calculated.
+                  Some orders are missing execution times. For these transactions, the spread will be calculated as a daily approximation.
                 </p>
               </div>
             )}
