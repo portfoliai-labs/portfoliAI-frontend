@@ -145,7 +145,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     try {
       setLoading(true);
       const allTransactions = files.flatMap(f => f.previewData);
-      await reportService.processReport(allTransactions, "Multiple_Files_Upload", forUserUuid);
+      await reportService.processReport(allTransactions, files[0].fileName, forUserUuid);
       setStatus("processing");
       setShowToast(true);
       setFiles([]);
