@@ -36,7 +36,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         if (!val) return "OTHER";
         const s = String(val).toUpperCase();
         if (s === "A") return "buy";
-        if (s === "S") return "sell";
+        if (s === "V") return "sell";
         return "dividend";
       },
       fees: (val: unknown): number => {

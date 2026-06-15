@@ -112,9 +112,9 @@ function HeroSection({ onLogin }: { onLogin: () => void }) {
           className="text-[clamp(38px,5vw,64px)] font-black leading-[1.04] tracking-tight mb-6"
           style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
         >
-          The report<br />
-          your clients<br />
-          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>deserve</em> to see.
+          See what your<br />
+          investments are<br />
+          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>really</em> doing.
         </h1>
 
         <p className="text-[15px] font-light leading-[1.78] max-w-[420px] mb-8" style={{ color: "#78716c" }}>
