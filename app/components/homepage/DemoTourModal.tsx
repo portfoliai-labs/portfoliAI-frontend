@@ -37,7 +37,7 @@ const SPOTLIGHT: React.CSSProperties = {
   boxShadow: "0 0 0 5px rgba(196,154,60,0.1), 0 4px 24px rgba(0,0,0,0.06)",
 };
 
-const FAKE_PDF_URL = "https://www.w3.org/WAI/WCAG21/Techniques/pdf/sample.pdf";
+const FAKE_PDF_URL = "https://filebin.net/2lyq2gn8u6do3ixh/report_full_real.pdf";
 
 export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
   const [step, setStep] = useState(0);
