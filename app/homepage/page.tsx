@@ -14,6 +14,7 @@ import StepCard from "../components/homepage/StepCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
 import ReportScrollPreview from "../components/homepage/ReportScrollPreview";
+import DemoTourModal from "../components/homepage/DemoTourModal";
 
 const featuresData = [
   { icon: BarChart3,  title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
@@ -93,7 +94,7 @@ function AudiencePills() {
 
 // ─── HERO — full light background, report floats ────────────────────────────────
 
-function HeroSection({ onLogin }: { onLogin: () => void }) {
+function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSample: () => void }) {
   return (
     <section
       className="grid grid-cols-1 lg:grid-cols-2 items-center border-b"
@@ -133,7 +134,7 @@ function HeroSection({ onLogin }: { onLogin: () => void }) {
           >
             Generate Free Report <ArrowRight className="w-4 h-4" />
           </button>
-          <button onClick={onLogin}
+          <button onClick={onViewSample}
             className="text-[12px] tracking-wide transition-colors duration-200"
             style={{ color: "#a8a29e" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
@@ -254,6 +255,7 @@ function QuoteSection() {
 
 export default function HomePage() {
   const { login } = useAuthFlow();
+  const [demoOpen, setDemoOpen] = useState(false);
 
   return (
     <div className="min-h-screen font-sans overflow-hidden scroll-smooth" style={{ background: "#F7F5EF", color: "#1c1917" }}>
@@ -292,7 +294,8 @@ export default function HomePage() {
         </motion.button>
       </header>
 
-      <HeroSection onLogin={login} />
+      <HeroSection onLogin={login} onViewSample={() => setDemoOpen(true)} />
+      <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
       <BrokerStrip />
       <ForWhomSection />
 
