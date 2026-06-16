@@ -70,6 +70,7 @@ export default function DashboardPage() {
         onLogout={logout}
         isMenuOpen={isSidebarOpen}
         onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        subscriptionTier={user.subscription_tier}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -79,6 +80,7 @@ export default function DashboardPage() {
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           role={user?.role}
+          subscriptionTier={user.subscription_tier}
         />
 
         <main className="flex-1 overflow-y-auto lg:ml-72 bg-[#F7F5EF] p-4 md:p-12 transition-all duration-300">

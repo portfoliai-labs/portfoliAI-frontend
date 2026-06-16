@@ -5,6 +5,7 @@ import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
 import { useNotifications } from "../../hooks/useNotifications";
 import { NotificationPanel } from "./NotificationPanel";
+import type { SubscriptionTier } from "../../models/User";
 
 interface UserProfile {
   first_name: string;
@@ -14,13 +15,19 @@ interface UserProfile {
   full_name?: string;
 }
 
+const TIER_LABEL: Record<SubscriptionTier, string> = {
+  FREE: 'Free Plan',
+  TESTER: 'Tester',
+};
+
 interface DashboardHeaderProps {
   onLogout: () => void;
   onMenuToggle?: () => void;
   isMenuOpen?: boolean;
+  subscriptionTier?: SubscriptionTier | null;
 }
 
-export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: DashboardHeaderProps) {
+export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscriptionTier }: DashboardHeaderProps) {
   const {
     notifications,
     hasUnread,
@@ -145,7 +152,9 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen }: Dashboar
               {user?.full_name || "User Account"}
             </span>
             <div className="flex items-center gap-1">
-              <span className="text-[10px] font-semibold text-[#C49A3C] uppercase tracking-wide">Pro Plan</span>
+              <span className="text-[10px] font-semibold text-[#C49A3C] uppercase tracking-wide">
+                {subscriptionTier ? TIER_LABEL[subscriptionTier] : 'Free Plan'}
+              </span>
             </div>
           </div>
         </div>

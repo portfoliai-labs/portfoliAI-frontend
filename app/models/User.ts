@@ -4,6 +4,9 @@
 // Matches UserRoles enum from backend
 type UserRole = 'USER' | 'ADVISOR';
 
+// Matches SubscriptionTier enum from backend
+type SubscriptionTier = 'FREE' | 'TESTER';
+
 // Matches UserProfileResponse DTO (GET /users/profile, POST /users/profile response)
 interface UserProfile {
   uuid: string;
@@ -21,6 +24,7 @@ interface UserProfile {
   financial_goals: string | null;
   risk_tolerance: string | null;
   currency: string | null;
+  subscription_tier: SubscriptionTier | null;
 }
 
 // Matches ProfileCreatePayload DTO (POST /users/profile)
@@ -48,4 +52,4 @@ interface UserMetrics {
   report_in_progress: number;
 }
 
-export type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, UserRole };
+export type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, UserRole, SubscriptionTier };

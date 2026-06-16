@@ -1,7 +1,7 @@
 "use client";
 
 import { LayoutDashboard, FileText, Settings, UploadCloud, ChevronRight, Sparkles, Users } from "lucide-react";
-import { UserRole } from "../../models/User";
+import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
   activeSection: string;
@@ -9,9 +9,10 @@ interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   role?: UserRole;
+  subscriptionTier?: SubscriptionTier | null;
 }
 
-export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role }: SidebarProps) {
+export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const investorItems = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Upload Documents', icon: UploadCloud },
@@ -73,27 +74,29 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           })}
         </nav>
 
-        <div className="p-5 border-t border-white/10">
-          <div className="bg-[#131210] p-5 rounded-[1.5rem] border border-[#C49A3C]/20 text-white relative overflow-hidden">
-            <div className="absolute -top-10 -right-10 w-24 h-24 bg-[#C49A3C]/10 blur-2xl rounded-full" />
+        {subscriptionTier !== 'TESTER' && (
+          <div className="p-5 border-t border-white/10">
+            <div className="bg-[#131210] p-5 rounded-[1.5rem] border border-[#C49A3C]/20 text-white relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-24 h-24 bg-[#C49A3C]/10 blur-2xl rounded-full" />
 
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="h-3.5 w-3.5 text-[#C49A3C]" />
-                <p className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro Version</p>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="h-3.5 w-3.5 text-[#C49A3C]" />
+                  <p className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro Version</p>
+                </div>
+                <p className="text-[13px] font-medium text-[#a8a29e] leading-tight mb-4">
+                  Unlock unlimited analysis and tax insights.
+                </p>
+                <button
+                  onClick={() => handleNavClick('subscription')}
+                  className="w-full py-2.5 bg-[#C49A3C] text-[#131210] rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-[#d4aa4c] transition-colors"
+                >
+                  Upgrade Now
+                </button>
               </div>
-              <p className="text-[13px] font-medium text-[#a8a29e] leading-tight mb-4">
-                Unlock unlimited analysis and tax insights.
-              </p>
-              <button
-                onClick={() => handleNavClick('subscription')}
-                className="w-full py-2.5 bg-[#C49A3C] text-[#131210] rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-[#d4aa4c] transition-colors"
-              >
-                Upgrade Now
-              </button>
             </div>
           </div>
-        </div>
+        )}
       </aside>
     </>
   );
