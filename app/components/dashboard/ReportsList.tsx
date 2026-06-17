@@ -15,8 +15,8 @@ import type { Document } from "../../models/Report";
  */
 interface DocumentCardProps {
   report: Document;
-  // Triggered when the user wants to fetch the presigned URL and download
   onDownload: (docId: string, fileName: string) => void;
+  onView: (docId: string) => void;
   onRemoveTag: (docId: string, tagName: string) => void;
   onAddTag: (docId: string) => void;
   taggingDocId: string | null;
@@ -62,10 +62,23 @@ export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {
 
   // --- ACTIONS ---
 
-  /**
-   * 1. Calls the service to get a secure Presigned URL from Cloudflare R2
-   * 2. Fetches the file as a Blob to trigger a clean browser download
-   */
+  const handleView = async (docId: string) => {
+    try {
+      const { url } = await reportService.downloadReport(docId);
+      if (!url) throw new Error("Invalid URL received from server");
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Could not fetch file data from storage");
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+      window.open(blobUrl, "_blank");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not open file";
+      alert(`Error: ${msg}`);
+    }
+  };
+
   const handleDownload = async (docId: string, fileName: string) => {
     try {
       // Step 1: Request the short-lived signed URL from the backend
@@ -226,10 +239,11 @@ export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {
         ) : viewMode === "list" ? (
           <div className="grid gap-4">
             {filteredList.map(report => (
-              <DocumentCard 
-                key={report.document_id} 
-                report={report} 
-                onDownload={handleDownload} 
+              <DocumentCard
+                key={report.document_id}
+                report={report}
+                onDownload={handleDownload}
+                onView={handleView}
                 onRemoveTag={handleRemoveTag}
                 onAddTag={handleAddTag}
                 taggingDocId={taggingDocId}
@@ -254,10 +268,11 @@ export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {
               </div>
               <div className="grid gap-4">
                 {docs.map(report => (
-                  <DocumentCard 
-                    key={`grouped-${tag}-${report.document_id}`} 
-                    report={report} 
-                    onDownload={handleDownload} 
+                  <DocumentCard
+                    key={`grouped-${tag}-${report.document_id}`}
+                    report={report}
+                    onDownload={handleDownload}
+                    onView={handleView}
                     onRemoveTag={handleRemoveTag}
                     onAddTag={handleAddTag}
                     taggingDocId={taggingDocId}
@@ -278,15 +293,16 @@ export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {
 /**
  * DocumentCard: UI component for each document item
  */
-function DocumentCard({ 
-  report, 
-  onDownload, 
-  onRemoveTag, 
-  onAddTag, 
-  taggingDocId, 
-  setTaggingDocId, 
-  newTagName, 
-  setNewTagName 
+function DocumentCard({
+  report,
+  onDownload,
+  onView,
+  onRemoveTag,
+  onAddTag,
+  taggingDocId,
+  setTaggingDocId,
+  newTagName,
+  setNewTagName
 }: DocumentCardProps) {
   return (
     <div className="group flex flex-col md:flex-row md:items-center justify-between p-5 md:p-6 bg-white border border-slate-200/80 rounded-[2rem] hover:shadow-xl hover:shadow-slate-200/50 hover:border-blue-200 transition-all duration-300 gap-5 md:gap-0">
@@ -346,8 +362,8 @@ function DocumentCard({
 
       {/* Primary Actions */}
       <div className="flex gap-2 md:gap-3 w-full md:w-auto mt-2 md:mt-0">
-        <button 
-          onClick={() => onDownload(report.document_id, report.name)}
+        <button
+          onClick={() => onView(report.document_id)}
           className="flex-1 md:flex-none flex justify-center items-center px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200 rounded-xl hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all"
         >
           <Eye className="h-4 w-4" />
