@@ -8,7 +8,7 @@ import {
 import { userService } from "../../services/userService";
 import { useUser } from "../../context/UserContext";
 
-export function SettingsSection() {
+export function ProfileSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -107,7 +107,7 @@ export function SettingsSection() {
             className="text-2xl md:text-3xl font-bold text-[#1c1917] tracking-tight"
             style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           >
-            Settings
+            Profile
           </h2>
           <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
             Manage your preferences and financial profile

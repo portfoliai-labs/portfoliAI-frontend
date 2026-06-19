@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, FileText, Settings, UploadCloud, ChevronRight, Sparkles, Users } from "lucide-react";
+import { LayoutDashboard, FileText, Settings, UploadCloud, ChevronRight, Sparkles, Users, User2Icon } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -17,7 +17,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Upload Documents', icon: UploadCloud },
     { id: 'reports', label: 'Reports Archive', icon: FileText },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'profile', label: 'Profile', icon: User2Icon },
   ];
 
   const consultantItems = [

@@ -6,7 +6,7 @@ import { useUser } from "../../context/UserContext";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Sidebar } from "../../components/dashboard/Sidebar";
 import { FileUploader } from "../../components/dashboard/FileUploader";
-import { SettingsSection } from "../../components/dashboard/SettingsSection";
+import { ProfileSection } from "../../components/dashboard/ProfileSection";
 import { ReportsList } from "../../components/dashboard/ReportsList";
 import { ClientsSection } from "../../components/dashboard/ClientsSection";
 import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
@@ -40,8 +40,8 @@ export default function DashboardPage() {
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
-      case 'settings':
-        return <SettingsSection />;
+      case 'profile':
+        return <ProfileSection />;
       case 'subscription':
         return <SubscriptionSection />;
       default:
