@@ -37,7 +37,7 @@ const SPOTLIGHT: React.CSSProperties = {
   boxShadow: "0 0 0 5px rgba(196,154,60,0.1), 0 4px 24px rgba(0,0,0,0.06)",
 };
 
-const FAKE_PDF_URL = "https://filebin.net/2lyq2gn8u6do3ixh/report_full_real.pdf";
+const FAKE_PDF_URL = "https://pub-cece637ec06c4770af51867735ef74de.r2.dev/files/report_full_real.pdf";
 
 export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
   const [step, setStep] = useState(0);
@@ -53,7 +53,7 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
   const isLast = step === STEPS.length - 1;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 lg:p-8">
       <motion.div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         initial={{ opacity: 0 }}
@@ -62,14 +62,14 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
       />
 
       <motion.div
-        className="relative w-full max-w-5xl flex flex-col rounded-[6px] overflow-hidden"
+        className="relative w-full max-w-5xl flex flex-col rounded-md overflow-hidden"
         style={{ height: "85vh", background: "#F7F5EF", boxShadow: "0 32px 80px rgba(0,0,0,0.45)" }}
         initial={{ opacity: 0, scale: 0.96, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
         {/* Progress bar */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] z-20" style={{ background: "#e7e5e0" }}>
+        <div className="absolute top-0 left-0 right-0 h-0.5 z-20" style={{ background: "#e7e5e0" }}>
           <motion.div
             className="h-full"
             style={{ background: "#C49A3C" }}
@@ -92,7 +92,7 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
 
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Fake top bar */}
-            <div className="h-12 border-b flex items-center px-5 gap-2.5 flex-shrink-0" style={{ background: "#FDFCF8", borderColor: "#e7e5e0" }}>
+            <div className="h-12 border-b flex items-center px-5 gap-2.5 shrink-0" style={{ background: "#FDFCF8", borderColor: "#e7e5e0" }}>
               <div className="w-5 h-5 rounded-[3px] flex items-center justify-center" style={{ background: "#1c1917" }}>
                 <BarChart3 className="w-3 h-3" style={{ stroke: "#C49A3C" }} />
               </div>
@@ -123,9 +123,9 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
         </div>
 
         {/* Bottom tour bar */}
-        <div className="flex-shrink-0 border-t px-6 py-4 flex items-center gap-6" style={{ background: "#FDFCF8", borderColor: "#e7e5e0" }}>
+        <div className="shrink-0 border-t px-6 py-4 flex items-center gap-6" style={{ background: "#FDFCF8", borderColor: "#e7e5e0" }}>
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.1em] font-medium mb-0.5" style={{ color: "#8A6A28" }}>
+            <div className="text-[10px] uppercase tracking-widest font-medium mb-0.5" style={{ color: "#8A6A28" }}>
               Step {step + 1} / {STEPS.length}
             </div>
             <div className="font-bold text-[14px] truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
@@ -135,7 +135,7 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
               {current.description}
             </div>
           </div>
-          <div className="flex items-center gap-2.5 flex-shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => setStep((s) => s - 1)}
               disabled={isFirst}
@@ -176,7 +176,7 @@ function DemoSidebar({ activeNav }: { activeNav: string }) {
     { id: "settings", label: "Settings", icon: Settings },
   ];
   return (
-    <aside className="w-48 lg:w-56 flex-shrink-0 flex flex-col" style={{ background: "#1c1917" }}>
+    <aside className="w-48 lg:w-56 shrink-0 flex flex-col" style={{ background: "#1c1917" }}>
       <nav className="flex-1 px-3 pt-14 space-y-0.5">
         {items.map(({ id, label, icon: Icon }) => {
           const active = id === activeNav;
@@ -198,7 +198,7 @@ function DemoSidebar({ activeNav }: { activeNav: string }) {
         })}
       </nav>
       <div className="p-3 border-t border-white/10">
-        <div className="rounded-[1.5rem] p-3 border border-[#C49A3C]/20" style={{ background: "#131210" }}>
+        <div className="rounded-3xl p-3 border border-[#C49A3C]/20" style={{ background: "#131210" }}>
           <div className="flex items-center gap-1.5 mb-1">
             <Sparkles className="h-3 w-3 text-[#C49A3C]" />
             <span className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro</span>
@@ -261,7 +261,7 @@ function ScreenFileDetected() {
 
       {/* RIGHT: preview */}
       <div className="xl:col-span-3 space-y-4">
-        <div className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h3 className="text-lg font-black text-slate-900">ib_transactions_2024.csv</h3>
             <p className="text-sm text-slate-500 mt-0.5">
@@ -274,9 +274,9 @@ function ScreenFileDetected() {
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden" style={SPOTLIGHT}>
+        <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden" style={SPOTLIGHT}>
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[560px]">
+            <table className="w-full text-left border-collapse min-w-140">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   {["date", "type", "ticker", "quantity", "price", "currency"].map((col) => (
@@ -342,7 +342,7 @@ function ScreenReportReady() {
 
       {/* Document Card — faithful replica */}
       <div
-        className="group flex flex-col md:flex-row md:items-center justify-between p-5 md:p-6 bg-white border border-slate-200/80 rounded-[2rem] hover:shadow-xl hover:shadow-slate-200/50 hover:border-blue-200 transition-all duration-300 gap-5 md:gap-0"
+        className="group flex flex-col md:flex-row md:items-center justify-between p-5 md:p-6 bg-white border border-slate-200/80 rounded-4xl hover:shadow-xl hover:shadow-slate-200/50 hover:border-blue-200 transition-all duration-300 gap-5 md:gap-0"
         style={SPOTLIGHT}
       >
         <div className="flex items-start md:items-center gap-4 md:gap-6 w-full md:w-auto">
