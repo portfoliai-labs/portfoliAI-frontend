@@ -81,7 +81,7 @@ function AudiencePills() {
     <div className="flex gap-2 flex-wrap">
       {pills.map((p, i) => (
         <button key={p} onClick={() => setActive(i)}
-          className="text-[11px] font-medium tracking-[0.06em] px-3.5 py-1.5 rounded-[2px] border uppercase transition-all duration-200"
+          className="text-[11px] font-medium tracking-widest px-3.5 py-1.5 rounded-sm border uppercase transition-all duration-200"
           style={active === i
             ? { background: "#1c1917", color: "#E8C97A", borderColor: "#1c1917" }
             : { background: "transparent", color: "#a8a29e", borderColor: "#e7e5e0" }
@@ -118,7 +118,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
           <em style={{ fontStyle: "italic", color: "#8A6A28" }}>really</em> doing.
         </h1>
 
-        <p className="text-[15px] font-light leading-[1.78] max-w-[420px] mb-8" style={{ color: "#78716c" }}>
+        <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
           Upload a broker export. PortfoliAI generates an institutional-grade PDF —
           performance, risk, costs, allocation. In seconds. In total privacy.
         </p>
@@ -176,7 +176,7 @@ function BrokerStrip() {
     <div className="overflow-hidden border-y" style={{ background: "#0D0C09", borderColor: "rgba(255,255,255,0.05)" }}>
       <div className="flex whitespace-nowrap py-3.5" style={{ animation: "portfoliai-marquee 28s linear infinite" }}>
         {items.map((b, i) => (
-          <span key={i} className="text-[10px] tracking-[0.14em] uppercase flex-shrink-0 px-9 border-r" style={{ color: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.06)" }}>
+          <span key={i} className="text-[10px] tracking-[0.14em] uppercase shrink-0 px-9 border-r" style={{ color: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.06)" }}>
             <span style={{ color: "rgba(196,154,60,0.5)", marginRight: 6 }}>✦</span>{b}
           </span>
         ))}
@@ -197,7 +197,7 @@ function ForWhomSection() {
         <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
           Whether analysing your own portfolio or delivering reports at scale for hundreds of clients.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border rounded-[4px] overflow-hidden"
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border rounded-sm overflow-hidden"
           style={{ borderColor: "rgba(255,255,255,0.07)", "--tw-divide-opacity": 1 } as React.CSSProperties}>
           {audienceData.map((card, i) => {
             const Icon = card.icon;
@@ -212,17 +212,17 @@ function ForWhomSection() {
               >
                 <span className="absolute top-5 right-6 text-[64px] font-black leading-none select-none pointer-events-none"
                   style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "rgba(255,255,255,0.04)" }}>{card.number}</span>
-                <div className="w-11 h-11 flex items-center justify-center rounded-[4px] border mb-5 flex-shrink-0"
+                <div className="w-11 h-11 flex items-center justify-center rounded-sm border mb-5 shrink-0"
                   style={{ borderColor: card.highlight ? "rgba(196,154,60,0.45)" : "rgba(196,154,60,0.2)" }}>
                   <Icon className="w-5 h-5" style={{ color: "#E8C97A" }} strokeWidth={1.5} />
                 </div>
                 <div className="text-[20px] font-bold mb-1 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fff" }}>{card.title}</div>
-                <div className="text-[10px] uppercase tracking-[0.1em] mb-4" style={{ color: "rgba(196,154,60,0.55)" }}>{card.role}</div>
+                <div className="text-[10px] uppercase tracking-widest mb-4" style={{ color: "rgba(196,154,60,0.55)" }}>{card.role}</div>
                 <p className="text-[13px] leading-[1.7] mb-6 flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>{card.description}</p>
                 <ul className="flex flex-col gap-2">
                   {card.features.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-[12px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      <span className="flex-shrink-0 mt-0.5 text-[11px]" style={{ color: "rgba(196,154,60,0.45)" }}>→</span>{f}
+                      <span className="shrink-0 mt-0.5 text-[11px]" style={{ color: "rgba(196,154,60,0.45)" }}>→</span>{f}
                     </li>
                   ))}
                 </ul>
@@ -240,11 +240,11 @@ function ForWhomSection() {
 function QuoteSection() {
   return (
     <div className="border-b border-stone-200 py-16 px-6 text-center" style={{ background: "#FAF8F2" }}>
-      <blockquote className="text-[clamp(18px,2.5vw,30px)] font-bold italic leading-snug tracking-tight max-w-[640px] mx-auto mb-4"
+      <blockquote className="text-[clamp(18px,2.5vw,30px)] font-bold italic leading-snug tracking-tight max-w-160 mx-auto mb-4"
         style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
         `&quot;`I used to spend hours building client reports in Excel. Now I generate them in 30 seconds.`&quot;`
       </blockquote>
-      <p className="text-[11px] uppercase tracking-[0.1em]" style={{ color: "#a8a29e" }}>
+      <p className="text-[11px] uppercase tracking-widest" style={{ color: "#a8a29e" }}>
         Luca M. — Independent Financial Advisor, Milan
       </p>
     </div>
@@ -264,8 +264,8 @@ export default function HomePage() {
       <header className="px-6 md:px-10 py-4 flex justify-between items-center sticky top-0 z-50 border-b backdrop-blur-md"
         style={{ background: "rgba(250,248,242,0.94)", borderColor: "#e7e5e0" }}>
         <motion.div className="flex items-center gap-2.5" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
-          <div className="w-7 h-7 flex items-center justify-center rounded-[4px]" style={{ background: "#1c1917" }}>
-            <BarChart3 className="w-[14px] h-[14px]" style={{ stroke: "#C49A3C" }} strokeWidth={2} />
+          <div className="w-7 h-7 flex items-center justify-center rounded-sm" style={{ background: "#1c1917" }}>
+            <BarChart3 className="w-3.5 h-3.5" style={{ stroke: "#C49A3C" }} strokeWidth={2} />
           </div>
           <span className="text-[20px] font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
             PortfoliAI
@@ -321,7 +321,7 @@ export default function HomePage() {
           <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
             No account setup, no complex integrations. Just upload and download.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 border rounded-[4px] overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 border rounded-sm overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
             {stepsData.map((s, i) => <StepCard key={i} index={i} {...s} />)}
           </div>
         </div>
@@ -341,7 +341,7 @@ export default function HomePage() {
             © {new Date().getFullYear()} PortfoliAI. All rights reserved.
           </p>
           <div className="flex gap-6">
-            {["Privacy Policy", "Terms of Service", "API Docs"].map((l) => (
+            {["Privacy Policy", "Terms of Service"].map((l) => (
               <a key={l} href="#" className="text-[11px] uppercase tracking-wider transition-colors duration-200" style={{ color: "rgba(255,255,255,0.25)" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.25)")}
