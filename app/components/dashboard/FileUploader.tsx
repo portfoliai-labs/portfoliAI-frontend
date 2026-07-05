@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
   UploadCloud, Loader2, AlertCircle, Send,
-  FileText, Trash2, CheckCircle2, X, AlertTriangle
+  FileText, Trash2, CheckCircle2, X, AlertTriangle, FileSpreadsheet
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -43,7 +43,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const [status, setStatus] = useState<"idle" | "preview" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
-  
+  const [showExampleModal, setShowExampleModal] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Effetto per nascondere automaticamente il toast dopo 5 secondi
@@ -185,6 +186,77 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         </div>
       )}
 
+      {/* MODAL: Upload file example */}
+      {showExampleModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          onClick={() => setShowExampleModal(false)}
+        >
+          <div
+            className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 max-w-3xl w-full p-6 md:p-8 space-y-5 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-50 rounded-xl">
+                  <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Example upload file</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Expected column format for CSV/Excel</p>
+                </div>
+              </div>
+              <button onClick={() => setShowExampleModal(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[700px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {["date", "ticker", "operation", "quantity", "price", "currency", "fees"].map((field) => (
+                        <th key={field} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          {field}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[
+                      { date: "2024-01-15", ticker: "AAPL", operation: "buy", quantity: "10", price: "185.20", currency: "USD", fees: "1.50" },
+                      { date: "2024-02-10", ticker: "VWCE.MI", operation: "sell", quantity: "5", price: "98.35", currency: "EUR", fees: "0" },
+                    ].map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50">
+                        {Object.values(row).map((val, j) => (
+                          <td key={j} className="px-4 py-3 text-sm font-medium text-slate-600">{val}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                  <span className="font-bold">ticker</span>: must match the ticker available on <span className="font-bold">Yahoo Finance</span> (e.g. <span className="font-mono">AAPL</span>, <span className="font-mono">VWCE.MI</span>).
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                  <span className="font-bold">operation</span>: must be either <span className="font-mono">buy</span> or <span className="font-mono">sell</span>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* LEFT COLUMN: File List & Upload */}
       <div className="xl:col-span-1 space-y-4">
         <div 
@@ -198,6 +270,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           <p className="text-xs text-slate-400 mt-1">CSV or Excel formats</p>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
         </div>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowExampleModal(true); }}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          View example Excel/CSV file
+        </button>
 
         <div className="space-y-2">
           {files.map(file => (

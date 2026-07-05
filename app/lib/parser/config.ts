@@ -8,7 +8,7 @@ export const ALL_FIELDS: (keyof StandardTransaction)[] = [
 ];
 
 export const REQUIRED_FIELDS: (keyof StandardTransaction)[] = [
-  "id", "date", "operation", "quantity", "price", "currency",
+  "id", "date", "operation", "quantity", "price", "currency", "ticker"
 ];
 
 export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
