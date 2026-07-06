@@ -2,8 +2,8 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
-  UploadCloud, Loader2, AlertCircle, Send,
-  FileText, Trash2, CheckCircle2, X, AlertTriangle, FileSpreadsheet
+  UploadCloud, AlertCircle, Loader2, Send,
+  FileText, CheckCircle2, X, FileSpreadsheet, PlusCircle
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -12,38 +12,37 @@ import {
   identifyBroker,
   BROKER_CONFIGS,
   ALL_FIELDS,
-  REQUIRED_FIELDS,
   validateMapping,
   validateTransactions,
   standardizeRow,
   RawRow,
-  TransactionValidationResult,
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
+import { AddTransactionModal } from "./AddTransactionModal";
+import { FileMappingModal } from "./FileMappingModal";
+import { UploadedFileState } from "./uploaderTypes";
+import { TransactionsSection, TransactionRow } from "./TransactionsSection";
 
-
-interface UploadedFileState {
-  id: string;
-  fileName: string;
-  rawData: Record<string, unknown>[];
-  previewData: StandardTransaction[];
-  manualMap: Partial<Record<keyof StandardTransaction, string>>;
-  detectedBroker: string;
-  isValid: boolean;
-  missingFields: string[];
-  hasOrdersWithoutTime: boolean;
-  hasMissingExchangeMic: boolean;
-  validationErrors: TransactionValidationResult;
-}
+const EXISTING_PAGE_SIZE = 10;
+const PENDING_PAGE_SIZE = 10;
 
 export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
-  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [mappingModalFileId, setMappingModalFileId] = useState<string | null>(null);
+  const [manualTransactions, setManualTransactions] = useState<StandardTransaction[]>([]);
+  const [existingItems, setExistingItems] = useState<StandardTransaction[]>([]);
+  const [existingTotal, setExistingTotal] = useState(0);
+  const [existingPage, setExistingPage] = useState(1);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [loadingExisting, setLoadingExisting] = useState(true);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [deletingKeys, setDeletingKeys] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<"idle" | "preview" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
   const [showExampleModal, setShowExampleModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,19 +54,93 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     }
   }, [showToast]);
 
-  const activeFile = useMemo(() => 
-    files.find(f => f.id === activeFileId) || null, 
-  [files, activeFileId]);
+  // Fetch one page of the user's already-saved transactions whenever the page (or user) changes
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingExisting(true);
+    reportService.getExistingTransactions(forUserUuid, existingPage, EXISTING_PAGE_SIZE)
+      .then(res => { if (!cancelled) { setExistingItems(res.items); setExistingTotal(res.total); } })
+      .finally(() => { if (!cancelled) setLoadingExisting(false); });
+    return () => { cancelled = true; };
+  }, [forUserUuid, existingPage]);
 
-  const allFilesValid = useMemo(() =>
-    files.length > 0 && files.every(f => f.isValid),
+  // Re-fetches a given page of saved transactions (used after a save/delete changes the underlying data)
+  const refreshExisting = async (page: number) => {
+    setLoadingExisting(true);
+    try {
+      const res = await reportService.getExistingTransactions(forUserUuid, page, EXISTING_PAGE_SIZE);
+      setExistingItems(res.items);
+      setExistingTotal(res.total);
+    } finally {
+      setLoadingExisting(false);
+    }
+  };
+
+  // Close the mapping modal if the file it points to has been removed
+  useEffect(() => {
+    if (mappingModalFileId && !files.some(f => f.id === mappingModalFileId)) {
+      setMappingModalFileId(null);
+    }
+  }, [files, mappingModalFileId]);
+
+  const mappingFile = useMemo(() =>
+    files.find(f => f.id === mappingModalFileId) || null,
+  [files, mappingModalFileId]);
+
+  // Only confirmed files (mapping reviewed by the user) contribute to the preview/submission
+  const confirmedFilesValid = useMemo(() =>
+    files.filter(f => f.confirmed).every(f => f.isValid),
   [files]);
 
-  // Set of "rowIndex_field" strings for O(1) cell-level error lookup in the preview table
-  const errorSet = useMemo(
-    () => new Set((activeFile?.validationErrors.errors ?? []).map(e => `${e.row}_${e.field}`)),
-    [activeFile],
-  );
+  // Per-file "rowIndex_field" error sets, used to highlight cells in the unified preview
+  const fileErrorSets = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const f of files) {
+      map.set(f.id, new Set(f.validationErrors.errors.map(e => `${e.row}_${e.field}`)));
+    }
+    return map;
+  }, [files]);
+
+  // New transactions not yet saved: manual entries + rows from confirmed files
+  const pendingRows = useMemo<TransactionRow[]>(() => {
+    const manualRows = manualTransactions.map(tx => ({
+      key: `manual::${tx.id}`,
+      transaction: tx,
+      sourceLabel: "Manual",
+      origin: "pending" as const,
+      errorFields: new Set<string>(),
+    }));
+
+    const fileRows = files.filter(f => f.confirmed).flatMap(f => {
+      const errSet = fileErrorSets.get(f.id) ?? new Set<string>();
+      return f.previewData.map((tx, idx) => ({
+        key: `file::${f.id}::${idx}`,
+        transaction: tx,
+        sourceLabel: f.fileName,
+        origin: "pending" as const,
+        errorFields: new Set(ALL_FIELDS.filter(field => errSet.has(`${idx}_${field}`))),
+      }));
+    });
+
+    return [...manualRows, ...fileRows];
+  }, [manualTransactions, files, fileErrorSets]);
+
+  // Pending rows are paginated client-side (e.g. a large file upload), independently of the saved-transactions pagination
+  const pendingTotalPages = Math.max(1, Math.ceil(pendingRows.length / PENDING_PAGE_SIZE));
+  const clampedPendingPage = Math.min(pendingPage, pendingTotalPages);
+  const pagedPendingRows = useMemo(() =>
+    pendingRows.slice((clampedPendingPage - 1) * PENDING_PAGE_SIZE, clampedPendingPage * PENDING_PAGE_SIZE),
+  [pendingRows, clampedPendingPage]);
+
+  const existingRows = useMemo<TransactionRow[]>(() => existingItems.map(tx => ({
+    key: `existing::${tx.id}`,
+    transaction: tx,
+    sourceLabel: "Saved",
+    origin: "existing" as const,
+    errorFields: new Set<string>(),
+  })), [existingItems]);
+
+  const canSubmit = pendingRows.length > 0 && confirmedFilesValid;
 
   const processFileData = (rawData: RawRow[], mapping: Partial<Record<keyof StandardTransaction, string>>, brokerId: string) => {
     const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId));
@@ -93,30 +166,142 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     const newFile: UploadedFileState = {
       id, fileName, rawData: data, previewData, manualMap: initialMapping,
       detectedBroker: broker, isValid, missingFields: missingFields.map(String),
-      hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
+      hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors, confirmed: false,
     };
 
     setFiles(prev => [...prev, newFile]);
-    setActiveFileId(id);
-    setStatus("preview");
+    setMappingModalFileId(id);
+    // A file was picked and is about to be shown for mapping/preview — make sure the upload modal doesn't linger.
+    setShowExampleModal(false);
   };
 
-  const handleMappingChange = (stdField: keyof StandardTransaction, csvHeader: string) => {
-    if (!activeFile) return;
-    const newMapping = { ...activeFile.manualMap, [stdField]: csvHeader };
-    const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(activeFile.rawData, newMapping, activeFile.detectedBroker);
+  const handleMappingChange = (fileId: string, stdField: keyof StandardTransaction, csvHeader: string) => {
+    setFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const newMapping = { ...f.manualMap, [stdField]: csvHeader };
+      const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(f.rawData, newMapping, f.detectedBroker);
+      return {
+        ...f, manualMap: newMapping, previewData, isValid,
+        missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
+      };
+    }));
+  };
 
-    setFiles(prev => prev.map(f => f.id === activeFile.id ? {
-      ...f, manualMap: newMapping, previewData, isValid,
-      missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
-    } : f));
+  const confirmMapping = (fileId: string) => {
+    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, confirmed: true } : f));
+    setMappingModalFileId(null);
+    setStatus("preview");
   };
 
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
-    if (activeFileId === id) setActiveFileId(null);
+    if (mappingModalFileId === id) setMappingModalFileId(null);
     if (files.length <= 1) setStatus("idle");
   };
+
+  // Recomputes preview/validation for a file after some of its raw rows were deleted; drops the file if it's now empty
+  const updateFileRawData = (fileId: string, newRawData: RawRow[]) => {
+    setFiles(prev => {
+      const next: UploadedFileState[] = [];
+      for (const f of prev) {
+        if (f.id !== fileId) { next.push(f); continue; }
+        if (newRawData.length === 0) continue;
+        const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } =
+          processFileData(newRawData, f.manualMap, f.detectedBroker);
+        next.push({
+          ...f, rawData: newRawData, previewData, isValid,
+          missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
+        });
+      }
+      return next;
+    });
+  };
+
+  const toggleRowSelection = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Toggles selection for a given set of keys (e.g. all rows on the current page of a section)
+  const toggleSelectAllForKeys = (keys: string[]) => {
+    setSelectedKeys(prev => {
+      const allSelected = keys.length > 0 && keys.every(k => prev.has(k));
+      const next = new Set(prev);
+      keys.forEach(k => allSelected ? next.delete(k) : next.add(k));
+      return next;
+    });
+  };
+
+  // Removes a batch of rows regardless of origin: pending ones are dropped locally,
+  // existing (saved) ones are deleted via the backend first.
+  const deleteKeys = async (keys: string[]) => {
+    if (keys.length === 0) return;
+    const manualIds = new Set<string>();
+    const fileGroups = new Map<string, Set<number>>();
+    const existingIds = new Set<string>();
+
+    keys.forEach(key => {
+      const [type, ...rest] = key.split("::");
+      if (type === "manual") {
+        manualIds.add(rest[0]);
+      } else if (type === "file") {
+        const [fileId, idxStr] = rest;
+        if (!fileGroups.has(fileId)) fileGroups.set(fileId, new Set());
+        fileGroups.get(fileId)!.add(Number(idxStr));
+      } else if (type === "existing") {
+        existingIds.add(rest[0]);
+      }
+    });
+
+    if (manualIds.size > 0) {
+      setManualTransactions(prev => prev.filter(t => !manualIds.has(t.id)));
+    }
+
+    fileGroups.forEach((idxSet, fileId) => {
+      const file = files.find(f => f.id === fileId);
+      if (!file) return;
+      updateFileRawData(fileId, file.rawData.filter((_, i) => !idxSet.has(i)));
+    });
+
+    if (existingIds.size > 0) {
+      const existingKeys = Array.from(existingIds).map(id => `existing::${id}`);
+      setDeletingKeys(prev => new Set([...prev, ...existingKeys]));
+      try {
+        const toDelete = existingItems.filter(tx => existingIds.has(tx.id));
+        await Promise.all(toDelete.map(tx => reportService.deleteTransaction(tx.id, forUserUuid)));
+        await refreshExisting(existingPage);
+      } finally {
+        setDeletingKeys(prev => {
+          const next = new Set(prev);
+          existingKeys.forEach(k => next.delete(k));
+          return next;
+        });
+      }
+    }
+
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      keys.forEach(k => next.delete(k));
+      return next;
+    });
+  };
+
+  // Saved transactions are already persisted, so confirm before deleting them; pending ones need no confirmation.
+  const confirmAndDeleteKeys = (keys: string[]) => {
+    const existingCount = keys.filter(k => k.startsWith("existing::")).length;
+    if (existingCount > 0) {
+      const confirmed = window.confirm(
+        `Delete ${existingCount} saved transaction${existingCount !== 1 ? 's' : ''}? This cannot be undone.`
+      );
+      if (!confirmed) return;
+    }
+    void deleteKeys(keys);
+  };
+
+  const deleteRow = (key: string) => confirmAndDeleteKeys([key]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = event.target.files;
@@ -137,19 +322,33 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       }
     }
 
-    if (fileInputRef.current) 
+    if (fileInputRef.current)
       fileInputRef.current.value = "";
   };
 
+  const handleAddManualTransaction = (transaction: StandardTransaction) => {
+    setManualTransactions(prev => [...prev, transaction]);
+    setStatus("preview");
+  };
+
   const handleConfirmUpload = async () => {
-    if (!allFilesValid) return;
+    if (!canSubmit) return;
     try {
       setLoading(true);
-      const allTransactions = files.flatMap(f => f.previewData);
-      await reportService.processReport(allTransactions, files[0].fileName, forUserUuid);
+      const newTransactions = pendingRows.map(r => r.transaction);
+      const filename = files[0]?.fileName ?? "manual-transactions";
+      await reportService.processReport(newTransactions, filename, forUserUuid);
+      if (existingPage === 1) {
+        await refreshExisting(1);
+      } else {
+        setExistingPage(1);
+      }
       setStatus("processing");
       setShowToast(true);
       setFiles([]);
+      setManualTransactions([]);
+      setPendingPage(1);
+      setSelectedKeys(new Set());
     } catch (error: unknown) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -160,8 +359,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 animate-in fade-in duration-500 pb-12 relative">
-      
+    <div className="space-y-6 animate-in fade-in duration-500 pb-12 relative">
+
       {/* NOTIFICA TOAST (Visualizzata in base allo stato) */}
       {showToast && (
         <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-100 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${
@@ -177,7 +376,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
               {status === "error" ? "Analysis Failed" : "Analysis Started Successfully"}
             </span>
             <span className="text-xs opacity-80">
-              {status === "error" ? errorMessage : "Your files are being processed. Check the archive shortly."}
+              {status === "error" ? errorMessage : "Your transactions are being processed. Check the archive shortly."}
             </span>
           </div>
           <button onClick={() => setShowToast(false)} className="ml-4 p-1 hover:bg-white/20 rounded-lg transition-colors">
@@ -202,7 +401,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                   <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900">Example upload file</h3>
+                  <h3 className="text-lg font-black text-slate-900">Upload a file</h3>
                   <p className="text-xs text-slate-500 mt-0.5">Expected column format for CSV/Excel</p>
                 </div>
               </div>
@@ -253,188 +452,152 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
                 </p>
               </div>
             </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowExampleModal(false)}
+                className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => { setShowExampleModal(false); fileInputRef.current?.click(); }}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
+              >
+                <UploadCloud className="h-4 w-4" />
+                Upload file
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* LEFT COLUMN: File List & Upload */}
-      <div className="xl:col-span-1 space-y-4">
-        <div 
-          onClick={() => fileInputRef.current?.click()}
-          className="p-8 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all text-center group"
+      {/* MODAL: Add a single transaction manually */}
+      {showAddModal && (
+        <AddTransactionModal
+          onClose={() => setShowAddModal(false)}
+          onAdd={handleAddManualTransaction}
+        />
+      )}
+
+      {/* MODAL: Map a file's columns before its rows join the preview */}
+      {mappingFile && (
+        <FileMappingModal
+          file={mappingFile}
+          onMappingChange={(field, header) => handleMappingChange(mappingFile.id, field, header)}
+          onConfirm={() => confirmMapping(mappingFile.id)}
+          onClose={() => setMappingModalFileId(null)}
+        />
+      )}
+
+      {/* TOOLBAR: upload actions, full width */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div
+          onClick={() => setShowExampleModal(true)}
+          className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
         >
-          <div className="bg-slate-100 w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-100 transition-colors">
-            <UploadCloud className="h-6 w-6 text-slate-500 group-hover:text-blue-600 transition-colors" />
+          <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
           </div>
-          <span className="text-sm font-bold text-slate-700">Browse Files</span>
-          <p className="text-xs text-slate-400 mt-1">CSV or Excel formats</p>
+          <div className="text-left overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
+            <p className="text-xs text-slate-400 truncate">CSV or Excel formats</p>
+          </div>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
         </div>
 
         <button
-          onClick={(e) => { e.stopPropagation(); setShowExampleModal(true); }}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors"
+          onClick={() => setShowAddModal(true)}
+          className="p-5 rounded-3xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-4 transition-colors group text-left"
         >
-          <FileSpreadsheet className="h-4 w-4" />
-          View example Excel/CSV file
+          <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <PlusCircle className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
+            <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
+          </div>
         </button>
+      </div>
 
-        <div className="space-y-2">
+      {/* File chips: click to (re)open the column mapping modal for that file */}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
           {files.map(file => (
-            <div 
+            <button
               key={file.id}
-              onClick={() => setActiveFileId(file.id)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between shadow-sm ${
-                activeFileId === file.id ? "border-blue-500 bg-blue-50/30 ring-4 ring-blue-500/10" : "border-slate-200 bg-white hover:border-slate-300"
+              onClick={() => setMappingModalFileId(file.id)}
+              className={`flex items-center gap-2 pl-4 pr-2 py-2 rounded-full border transition-all text-sm font-semibold max-w-full ${
+                !file.confirmed ? "border-amber-300 bg-amber-50/60 text-amber-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
               }`}
             >
-              <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className={`h-5 w-5 shrink-0 ${file.isValid ? "text-slate-700" : "text-amber-500"}`} />
-                <span className="text-sm font-semibold text-slate-700 truncate">{file.fileName}</span>
-              </div>
-              <button onClick={(e) => { e.stopPropagation(); removeFile(file.id); }} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
+              <FileText className={`h-4 w-4 shrink-0 ${!file.confirmed || !file.isValid ? "text-amber-500" : ""}`} />
+              <span className="truncate max-w-50">{file.fileName}</span>
+              {!file.confirmed && (
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full shrink-0">
+                  Needs mapping
+                </span>
+              )}
+              <span
+                onClick={(e) => { e.stopPropagation(); removeFile(file.id); }}
+                className="p-1 rounded-full hover:bg-black/5 shrink-0"
+              >
+                <X className="h-3.5 w-3.5" />
+              </span>
+            </button>
           ))}
         </div>
+      )}
 
-        {files.length > 0 && (
-          <button 
-            disabled={!allFilesValid || loading}
-            onClick={handleConfirmUpload}
-            className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md ${
-              allFilesValid ? "bg-slate-900 text-white hover:bg-blue-600 shadow-slate-200" : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-            }`}
-          >
-            {loading ? <Loader2 className="animate-spin h-4 w-4" /> : <Send className="h-4 w-4" />}
-            Analyze {files.length} {files.length === 1 ? 'File' : 'Files'}
-          </button>
-        )}
-      </div>
+      {/* New transactions: manual entries + confirmed file rows, not yet saved. Paginated client-side for large uploads. */}
+      {pendingRows.length > 0 && (
+        <TransactionsSection
+          title="New transactions"
+          rows={pagedPendingRows}
+          totalCount={pendingRows.length}
+          page={clampedPendingPage}
+          pageSize={PENDING_PAGE_SIZE}
+          onPageChange={setPendingPage}
+          loading={false}
+          selectedKeys={selectedKeys}
+          onToggleRow={toggleRowSelection}
+          onToggleAll={toggleSelectAllForKeys}
+          onDeleteSelected={confirmAndDeleteKeys}
+          onDeleteRow={deleteRow}
+          deletingKeys={deletingKeys}
+          emptyMessage="No new transactions."
+          headerAction={
+            <button
+              disabled={!canSubmit || loading}
+              onClick={handleConfirmUpload}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm ${
+                canSubmit ? "bg-slate-900 text-white hover:bg-blue-600" : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+              }`}
+            >
+              {loading ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+              Save {pendingRows.length} new {pendingRows.length === 1 ? 'transaction' : 'transactions'}
+            </button>
+          }
+        />
+      )}
 
-      {/* RIGHT COLUMN: Mapping & Preview for Active File */}
-      <div className="xl:col-span-3">
-        {activeFile ? (
-          <div className="space-y-4 md:space-y-6">
-            <div className="bg-white p-5 md:p-6 rounded-4xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg md:text-xl font-black text-slate-900 truncate max-w-50 sm:max-w-md">{activeFile.fileName}</h3>
-                <p className="text-sm text-slate-500 mt-1">Detected Broker: <span className="px-2 py-1 bg-slate-100 rounded-md text-slate-700 font-bold ml-1">{activeFile.detectedBroker}</span></p>
-              </div>
-              {!activeFile.isValid && (
-                <div className="flex items-center gap-2 text-amber-700 bg-amber-50 px-4 py-2.5 rounded-xl border border-amber-200/50 shrink-0">
-                  <AlertCircle className="h-4 w-4" />
-                  <span className="text-xs font-bold">Fix mapping required</span>
-                </div>
-              )}
-            </div>
-
-            {activeFile.hasOrdersWithoutTime && (
-              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                  Some orders are missing execution times. For these transactions, the spread will be calculated as a daily approximation.
-                </p>
-              </div>
-            )}
-
-            {activeFile.hasMissingExchangeMic && (
-              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                  Some transactions are missing the <span className="font-bold">exchange MIC</span> code. The ticker from the first available exchange will be used, which may cause unexpected spread.
-                </p>
-              </div>
-            )}
-
-            {!activeFile.validationErrors.isValid && (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
-                  <span className="text-xs font-bold text-rose-800">
-                    {activeFile.validationErrors.invalidRowCount} row{activeFile.validationErrors.invalidRowCount !== 1 ? 's' : ''} have validation errors — upload is blocked until resolved
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2 pl-6">
-                  {Object.entries(activeFile.validationErrors.errorsByField).map(([field, count]) => (
-                    <span key={field} className="text-[10px] font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-lg">
-                      {field}: {count} error{count !== 1 ? 's' : ''}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden">
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left border-collapse min-w-200">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      {ALL_FIELDS.map((field) => {
-                        const isRequired = REQUIRED_FIELDS.includes(field);
-                        const hasValue = !!activeFile.previewData[0]?.[field];
-                        const hasMissingDates = field === "date" && activeFile.hasOrdersWithoutTime;
-                        return (
-                          <th key={field} className="px-5 py-5 min-w-45">
-                            <div className="flex flex-col gap-2.5">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                                {field} {isRequired && <span className="text-rose-500 text-xs">*</span>}
-                                {hasMissingDates && <AlertTriangle className="h-3 w-3 text-amber-500" />}
-                                {activeFile.validationErrors.errorsByField[field] && (
-                                  <span className="bg-rose-100 text-rose-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                                    {activeFile.validationErrors.errorsByField[field]}
-                                  </span>
-                                )}
-                              </span>
-                              <select 
-                                value={activeFile.manualMap[field] || ""}
-                                onChange={(e) => handleMappingChange(field, e.target.value)}
-                                className={`text-xs bg-white border rounded-xl p-2.5 font-semibold outline-none transition-all focus:ring-4 ${
-                                  !hasValue && isRequired ? 'border-amber-300 focus:ring-amber-50 bg-amber-50/30' : 'border-slate-200 focus:ring-slate-50 focus:border-slate-300'
-                                }`}
-                              >
-                                <option value="" className="text-slate-400">-- Ignore --</option>
-                                {Array.from(
-                                  new Set(activeFile.rawData.flatMap(r => Object.keys(r)))
-                                ).map(header => (
-                                  <option key={header} value={header}>{header}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeFile.previewData.slice(0, 5).map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                        {ALL_FIELDS.map((field) => {
-                          const hasError = errorSet.has(`${i}_${field}`);
-                          return (
-                            <td key={field} className={`px-5 py-4 text-sm font-medium truncate max-w-45 ${hasError ? 'bg-rose-50 text-rose-700' : 'text-slate-600'}`}>
-                              {row[field] ? String(row[field]) : <span className={hasError ? 'text-rose-300' : 'text-slate-300'}>-</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="h-full min-h-100 flex flex-col items-center justify-center border-2 border-dashed border-slate-200/80 rounded-[2.5rem] bg-slate-50/50 p-10 text-center">
-            <div className="p-5 bg-white rounded-2xl shadow-sm border border-slate-100 mb-4">
-               <FileText className="h-8 w-8 text-slate-300" />
-            </div>
-            <p className="text-slate-600 font-semibold text-lg">No file selected</p>
-            <p className="text-slate-400 text-sm mt-1">Upload a file or select one from the sidebar to map its data.</p>
-          </div>
-        )}
-      </div>
+      {/* Saved transactions: mocked as server-paginated */}
+      <TransactionsSection
+        title="Saved transactions"
+        rows={existingRows}
+        totalCount={existingTotal}
+        page={existingPage}
+        pageSize={EXISTING_PAGE_SIZE}
+        onPageChange={setExistingPage}
+        loading={loadingExisting}
+        selectedKeys={selectedKeys}
+        onToggleRow={toggleRowSelection}
+        onToggleAll={toggleSelectAllForKeys}
+        onDeleteSelected={confirmAndDeleteKeys}
+        onDeleteRow={deleteRow}
+        deletingKeys={deletingKeys}
+        emptyMessage="No transactions yet. Add one manually or upload a file to get started."
+      />
     </div>
   );
 }

@@ -1,0 +1,190 @@
+"use client";
+
+import { ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleDollarSign, FileText, Loader2, Trash2 } from "lucide-react";
+import { StandardTransaction } from "../../models/Report";
+
+export interface TransactionRow {
+  key: string;
+  transaction: StandardTransaction;
+  sourceLabel: string;
+  origin: "existing" | "pending";
+  errorFields: Set<string>;
+}
+
+interface TransactionsSectionProps {
+  title: string;
+  rows: TransactionRow[]; // current page only
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  loading: boolean;
+  selectedKeys: Set<string>;
+  onToggleRow: (key: string) => void;
+  onToggleAll: (keysOnPage: string[]) => void;
+  onDeleteSelected: (keys: string[]) => void;
+  onDeleteRow: (key: string) => void;
+  deletingKeys: Set<string>;
+  emptyMessage: string;
+  headerAction?: ReactNode;
+}
+
+const OPERATION_STYLES: Record<string, { icon: typeof ArrowUpRight; classes: string }> = {
+  buy: { icon: ArrowUpRight, classes: "bg-emerald-50 text-emerald-600" },
+  sell: { icon: ArrowDownRight, classes: "bg-rose-50 text-rose-600" },
+  dividend: { icon: CircleDollarSign, classes: "bg-blue-50 text-blue-600" },
+  OTHER: { icon: CircleDollarSign, classes: "bg-slate-100 text-slate-500" },
+};
+
+function formatMoney(value: number, currency: string): string {
+  if (Number.isNaN(value)) return "-";
+  return `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || ""}`.trim();
+}
+
+export function TransactionsSection({
+  title, rows, totalCount, page, pageSize, onPageChange, loading,
+  selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onDeleteRow, deletingKeys,
+  emptyMessage, headerAction,
+}: TransactionsSectionProps) {
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pageKeys = rows.map(r => r.key);
+  const allOnPageSelected = pageKeys.length > 0 && pageKeys.every(k => selectedKeys.has(k));
+  const selectedOnPage = pageKeys.filter(k => selectedKeys.has(k));
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 md:px-6 py-4 border-b border-slate-200 gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          {rows.length > 0 && (
+            <input
+              type="checkbox"
+              className="accent-blue-600 w-4 h-4 cursor-pointer"
+              checked={allOnPageSelected}
+              onChange={() => onToggleAll(pageKeys)}
+            />
+          )}
+          <h4 className="text-sm font-black text-slate-900">
+            {title} <span className="text-slate-400 font-semibold">({totalCount})</span>
+          </h4>
+        </div>
+        <div className="flex items-center gap-3">
+          {selectedOnPage.length > 0 && (
+            <button
+              onClick={() => onDeleteSelected(selectedOnPage)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 text-xs font-bold transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete selected ({selectedOnPage.length})
+            </button>
+          )}
+          {headerAction}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-16 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-16 flex flex-col items-center justify-center text-center px-6">
+          <div className="p-5 bg-slate-50 rounded-2xl mb-4">
+            <FileText className="h-7 w-7 text-slate-300" />
+          </div>
+          <p className="text-slate-600 font-semibold">{emptyMessage}</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {rows.map((row) => {
+            const tx = row.transaction;
+            const isExisting = row.origin === "existing";
+            const opStyle = OPERATION_STYLES[tx.operation] ?? OPERATION_STYLES.OTHER;
+            const OpIcon = opStyle.icon;
+            const isDeleting = deletingKeys.has(row.key);
+            const hasError = (field: keyof StandardTransaction) => row.errorFields.has(field);
+            const total = tx.quantity * tx.price;
+
+            const secondaryParts = [
+              `${Number.isNaN(tx.quantity) ? "-" : tx.quantity} @ ${formatMoney(tx.price, tx.currency)}`,
+              !Number.isNaN(total) && `= ${formatMoney(total, tx.currency)}`,
+              tx.isin && `ISIN ${tx.isin}`,
+              tx.exchange_mic && `MIC ${tx.exchange_mic}`,
+              tx.broker,
+              tx.fees > 0 && `fees ${formatMoney(tx.fees, tx.currency)}`,
+              !isExisting && row.sourceLabel,
+            ].filter(Boolean).join(" · ");
+
+            return (
+              <div
+                key={row.key}
+                className={`flex items-center gap-3 px-5 md:px-6 py-3.5 transition-colors ${
+                  selectedKeys.has(row.key)
+                    ? "bg-blue-50/40"
+                    : isExisting
+                    ? "bg-slate-50/30 hover:bg-slate-50"
+                    : "hover:bg-slate-50/60"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-blue-600 w-4 h-4 cursor-pointer shrink-0"
+                  checked={selectedKeys.has(row.key)}
+                  onChange={() => onToggleRow(row.key)}
+                />
+
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${opStyle.classes}`}>
+                  <OpIcon className="h-4 w-4" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm font-black truncate ${hasError("ticker") || hasError("isin") ? "text-rose-600" : "text-slate-900"}`}>
+                      {tx.ticker || tx.isin || "—"}
+                    </span>
+                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 ${opStyle.classes}`}>
+                      {tx.operation}
+                    </span>
+                    <span className={`text-xs font-semibold shrink-0 ${hasError("date") ? "text-rose-500" : "text-slate-400"}`}>
+                      {tx.date || "no date"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">{secondaryParts}</p>
+                </div>
+
+                <button
+                  onClick={() => onDeleteRow(row.key)}
+                  disabled={isDeleting}
+                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors shrink-0 disabled:opacity-40"
+                >
+                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-5 md:px-6 py-3.5 border-t border-slate-200">
+          <button
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1 || loading}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Prev
+          </button>
+          <span className="text-xs font-semibold text-slate-400">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            Next
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

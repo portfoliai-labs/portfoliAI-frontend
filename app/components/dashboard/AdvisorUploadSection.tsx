@@ -22,7 +22,7 @@ function ClientPicker({
   return (
     <div className="space-y-8 pb-12">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Upload Documenti</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Transazioni</p>
         <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
           Seleziona un Cliente
         </h1>
