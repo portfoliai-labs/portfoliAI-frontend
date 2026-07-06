@@ -3,11 +3,12 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import {
   UploadCloud, AlertCircle, Loader2, Send,
-  FileText, CheckCircle2, X, FileSpreadsheet, PlusCircle
+  FileText, CheckCircle2, X, FileSpreadsheet, PlusCircle, Sparkles
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { reportService } from "../../services/reportService";
+import { transactionService } from "../../services/transactionService";
 import {
   identifyBroker,
   BROKER_CONFIGS,
@@ -18,31 +19,102 @@ import {
   RawRow,
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
-import { AddTransactionModal } from "./AddTransactionModal";
+import type { TransactionInput, TransactionResponse } from "../../models/Transaction";
+import { TransactionModal } from "./TransactionModal";
 import { FileMappingModal } from "./FileMappingModal";
 import { UploadedFileState } from "./uploaderTypes";
-import { TransactionsSection, TransactionRow } from "./TransactionsSection";
+import { TransactionsSection, TransactionRow, DisplayTransaction } from "./TransactionsSection";
 
 const EXISTING_PAGE_SIZE = 10;
 const PENDING_PAGE_SIZE = 10;
 
+function pendingToDisplay(tx: StandardTransaction): DisplayTransaction {
+  return {
+    ticker: tx.ticker ?? null,
+    isin: tx.isin ?? null,
+    exchange_mic: tx.exchange_mic ?? null,
+    date: tx.date,
+    operation: tx.operation,
+    quantity: tx.quantity,
+    price: tx.price,
+    currency: tx.currency,
+    fees: tx.fees,
+    broker: tx.broker,
+  };
+}
+
+function existingToDisplay(tx: TransactionResponse): DisplayTransaction {
+  return {
+    ticker: tx.ticker,
+    isin: tx.isin,
+    exchange_mic: tx.exchange_mic,
+    date: tx.date,
+    operation: tx.operation,
+    quantity: tx.quantity,
+    price: tx.price,
+    currency: tx.currency,
+    fees: tx.fees,
+    broker: tx.broker,
+  };
+}
+
+// Converts a saved backend transaction back into the client-local editable shape,
+// keyed by transaction_uuid so edits can be routed to the right PATCH call.
+function existingResponseToStandard(tx: TransactionResponse): StandardTransaction {
+  const base = {
+    id: tx.transaction_uuid,
+    date: tx.date,
+    operation: tx.operation,
+    quantity: tx.quantity,
+    price: tx.price,
+    currency: tx.currency,
+    fees: tx.fees,
+    broker: tx.broker ?? "",
+    ...(tx.exchange_mic ? { exchange_mic: tx.exchange_mic } : {}),
+  };
+  return (tx.ticker
+    ? { ...base, ticker: tx.ticker, ...(tx.isin ? { isin: tx.isin } : {}) }
+    : { ...base, isin: tx.isin ?? "" }) as StandardTransaction;
+}
+
+// The backend has no ticker-from-ISIN resolver exposed yet, so ISIN-only rows
+// fall back to using the ISIN as both asset_id and ticker.
+function toTransactionInput(tx: DisplayTransaction): TransactionInput {
+  const ticker = tx.ticker ?? tx.isin ?? "";
+  return {
+    asset_id: ticker,
+    isin: tx.isin,
+    ticker,
+    exchange_mic: tx.exchange_mic,
+    date: tx.date,
+    operation: tx.operation as TransactionInput["operation"],
+    quantity: tx.quantity,
+    price: tx.price,
+    fees: tx.fees,
+    currency: tx.currency,
+    broker: tx.broker,
+  };
+}
+
 export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
   const [mappingModalFileId, setMappingModalFileId] = useState<string | null>(null);
   const [manualTransactions, setManualTransactions] = useState<StandardTransaction[]>([]);
-  const [existingItems, setExistingItems] = useState<StandardTransaction[]>([]);
+  const [existingItems, setExistingItems] = useState<TransactionResponse[]>([]);
   const [existingTotal, setExistingTotal] = useState(0);
   const [existingPage, setExistingPage] = useState(1);
   const [pendingPage, setPendingPage] = useState(1);
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deletingKeys, setDeletingKeys] = useState<Set<string>>(new Set());
-  const [status, setStatus] = useState<"idle" | "preview" | "processing" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "preview" | "saved" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
   const [showExampleModal, setShowExampleModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,7 +130,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   useEffect(() => {
     let cancelled = false;
     setLoadingExisting(true);
-    reportService.getExistingTransactions(forUserUuid, existingPage, EXISTING_PAGE_SIZE)
+    transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE)
       .then(res => { if (!cancelled) { setExistingItems(res.items); setExistingTotal(res.total); } })
       .finally(() => { if (!cancelled) setLoadingExisting(false); });
     return () => { cancelled = true; };
@@ -68,7 +140,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const refreshExisting = async (page: number) => {
     setLoadingExisting(true);
     try {
-      const res = await reportService.getExistingTransactions(forUserUuid, page, EXISTING_PAGE_SIZE);
+      const res = await transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE);
       setExistingItems(res.items);
       setExistingTotal(res.total);
     } finally {
@@ -105,7 +177,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const pendingRows = useMemo<TransactionRow[]>(() => {
     const manualRows = manualTransactions.map(tx => ({
       key: `manual::${tx.id}`,
-      transaction: tx,
+      transaction: pendingToDisplay(tx),
       sourceLabel: "Manual",
       origin: "pending" as const,
       errorFields: new Set<string>(),
@@ -115,7 +187,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       const errSet = fileErrorSets.get(f.id) ?? new Set<string>();
       return f.previewData.map((tx, idx) => ({
         key: `file::${f.id}::${idx}`,
-        transaction: tx,
+        transaction: pendingToDisplay(tx),
         sourceLabel: f.fileName,
         origin: "pending" as const,
         errorFields: new Set(ALL_FIELDS.filter(field => errSet.has(`${idx}_${field}`))),
@@ -133,12 +205,28 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   [pendingRows, clampedPendingPage]);
 
   const existingRows = useMemo<TransactionRow[]>(() => existingItems.map(tx => ({
-    key: `existing::${tx.id}`,
-    transaction: tx,
+    key: `existing::${tx.transaction_uuid}`,
+    transaction: existingToDisplay(tx),
     sourceLabel: "Saved",
     origin: "existing" as const,
     errorFields: new Set<string>(),
   })), [existingItems]);
+
+  // Resolves the row behind the currently-open edit modal, regardless of its origin
+  const editingTransaction = useMemo<StandardTransaction | undefined>(() => {
+    if (!editingKey) return undefined;
+    const [type, ...rest] = editingKey.split("::");
+    if (type === "manual") return manualTransactions.find(t => t.id === rest[0]);
+    if (type === "file") {
+      const [fileId, idxStr] = rest;
+      return files.find(f => f.id === fileId)?.previewData[Number(idxStr)];
+    }
+    if (type === "existing") {
+      const tx = existingItems.find(t => t.transaction_uuid === rest[0]);
+      return tx ? existingResponseToStandard(tx) : undefined;
+    }
+    return undefined;
+  }, [editingKey, manualTransactions, files, existingItems]);
 
   const canSubmit = pendingRows.length > 0 && confirmedFilesValid;
 
@@ -270,8 +358,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       const existingKeys = Array.from(existingIds).map(id => `existing::${id}`);
       setDeletingKeys(prev => new Set([...prev, ...existingKeys]));
       try {
-        const toDelete = existingItems.filter(tx => existingIds.has(tx.id));
-        await Promise.all(toDelete.map(tx => reportService.deleteTransaction(tx.id, forUserUuid)));
+        const toDelete = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
+        await Promise.all(toDelete.map(tx => transactionService.deleteTransaction(tx.transaction_uuid)));
         await refreshExisting(existingPage);
       } finally {
         setDeletingKeys(prev => {
@@ -301,8 +389,6 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     void deleteKeys(keys);
   };
 
-  const deleteRow = (key: string) => confirmAndDeleteKeys([key]);
-
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = event.target.files;
     if (!uploadedFiles) return;
@@ -331,19 +417,52 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     setStatus("preview");
   };
 
+  // Applies an edit to whichever row is behind `key`: manual/file rows are updated locally,
+  // saved (existing) ones are persisted via PATCH. File-sourced rows are detached into a
+  // standalone manual transaction, since their previous shape is regenerated from the file's
+  // raw data + column mapping on every change and can't hold a one-off manual edit.
+  const handleUpdateTransaction = async (key: string, updated: StandardTransaction) => {
+    const [type, ...rest] = key.split("::");
+
+    if (type === "manual") {
+      setManualTransactions(prev => prev.map(t => t.id === rest[0] ? updated : t));
+      return;
+    }
+
+    if (type === "file") {
+      const [fileId, idxStr] = rest;
+      const file = files.find(f => f.id === fileId);
+      if (!file) return;
+      updateFileRawData(fileId, file.rawData.filter((_, i) => i !== Number(idxStr)));
+      setManualTransactions(prev => [...prev, updated]);
+      return;
+    }
+
+    if (type === "existing") {
+      const uuid = rest[0];
+      try {
+        await transactionService.updateTransaction(uuid, toTransactionInput(pendingToDisplay(updated)));
+        await refreshExisting(existingPage);
+      } catch (error: unknown) {
+        setStatus("error");
+        setErrorMessage(error instanceof Error ? error.message : "Failed to update transaction.");
+        setShowToast(true);
+      }
+    }
+  };
+
   const handleConfirmUpload = async () => {
     if (!canSubmit) return;
     try {
       setLoading(true);
-      const newTransactions = pendingRows.map(r => r.transaction);
-      const filename = files[0]?.fileName ?? "manual-transactions";
-      await reportService.processReport(newTransactions, filename, forUserUuid);
+      const newTransactions = pendingRows.map(r => toTransactionInput(r.transaction));
+      await transactionService.saveTransactions(newTransactions, forUserUuid);
       if (existingPage === 1) {
         await refreshExisting(1);
       } else {
         setExistingPage(1);
       }
-      setStatus("processing");
+      setStatus("saved");
       setShowToast(true);
       setFiles([]);
       setManualTransactions([]);
@@ -351,10 +470,28 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       setSelectedKeys(new Set());
     } catch (error: unknown) {
       setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to save transactions.");
       setShowToast(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Kicks off analysis on demand, independent of saving. The backend has no filename
+  // of its own significance yet, so a random UUID is used as a placeholder.
+  const handleStartAnalysis = async () => {
+    try {
+      setAnalyzing(true);
+      const filename = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+      await reportService.processReport(filename, forUserUuid);
+      setStatus("processing");
+      setShowToast(true);
+    } catch (error: unknown) {
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to start analysis.");
+      setShowToast(true);
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -373,10 +510,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           )}
           <div className="flex flex-col">
             <span className="text-sm font-bold">
-              {status === "error" ? "Analysis Failed" : "Analysis Started Successfully"}
+              {status === "error" ? "Action Failed" : status === "saved" ? "Transactions Saved" : "Analysis Started Successfully"}
             </span>
             <span className="text-xs opacity-80">
-              {status === "error" ? errorMessage : "Your transactions are being processed. Check the archive shortly."}
+              {status === "error"
+                ? errorMessage
+                : status === "saved"
+                ? "Your transactions have been saved. Run an analysis whenever you're ready."
+                : "Your transactions are being processed. Check the archive shortly."}
             </span>
           </div>
           <button onClick={() => setShowToast(false)} className="ml-4 p-1 hover:bg-white/20 rounded-lg transition-colors">
@@ -474,9 +615,21 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
 
       {/* MODAL: Add a single transaction manually */}
       {showAddModal && (
-        <AddTransactionModal
+        <TransactionModal
+          mode="add"
           onClose={() => setShowAddModal(false)}
-          onAdd={handleAddManualTransaction}
+          onSave={handleAddManualTransaction}
+        />
+      )}
+
+      {/* MODAL: Edit (or delete) whichever transaction row was clicked */}
+      {editingKey && editingTransaction && (
+        <TransactionModal
+          mode="edit"
+          initial={editingTransaction}
+          onClose={() => setEditingKey(null)}
+          onSave={(transaction) => { void handleUpdateTransaction(editingKey, transaction); setEditingKey(null); }}
+          onDelete={() => { confirmAndDeleteKeys([editingKey]); setEditingKey(null); }}
         />
       )}
 
@@ -563,7 +716,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           onToggleRow={toggleRowSelection}
           onToggleAll={toggleSelectAllForKeys}
           onDeleteSelected={confirmAndDeleteKeys}
-          onDeleteRow={deleteRow}
+          onRowClick={setEditingKey}
           deletingKeys={deletingKeys}
           emptyMessage="No new transactions."
           headerAction={
@@ -581,7 +734,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         />
       )}
 
-      {/* Saved transactions: mocked as server-paginated */}
+      {/* Saved transactions: server-paginated */}
       <TransactionsSection
         title="Saved transactions"
         rows={existingRows}
@@ -594,9 +747,23 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         onToggleRow={toggleRowSelection}
         onToggleAll={toggleSelectAllForKeys}
         onDeleteSelected={confirmAndDeleteKeys}
-        onDeleteRow={deleteRow}
+        onRowClick={setEditingKey}
         deletingKeys={deletingKeys}
         emptyMessage="No transactions yet. Add one manually or upload a file to get started."
+        headerAction={
+          <button
+            disabled={analyzing || loadingExisting || existingTotal === 0}
+            onClick={handleStartAnalysis}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm ${
+              !analyzing && !loadingExisting && existingTotal > 0
+                ? "bg-slate-900 text-white hover:bg-blue-600"
+                : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+            }`}
+          >
+            {analyzing ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Run analysis
+          </button>
+        }
       />
     </div>
   );

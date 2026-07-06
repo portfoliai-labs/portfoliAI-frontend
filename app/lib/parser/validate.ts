@@ -9,7 +9,8 @@ const hasTimeComponent = (date: string): boolean =>
 
 // --- Regex constants ---
 
-const ISO_DATE_RE   = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+// Date-only, or a datetime with an optional seconds/fractional-seconds/timezone suffix
+const ISO_DATE_RE   = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 const CURRENCY_RE   = /^[A-Z]{3}$/;
 const MIC_RE        = /^[A-Z]{4}$/;
 const ISIN_RE       = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
@@ -58,7 +59,7 @@ export const validateTransactions = (data: StandardTransaction[]): TransactionVa
 
   data.forEach((row, i) => {
     if (!row.date || !ISO_DATE_RE.test(row.date))
-      errors.push({ field: "date", row: i, message: "Must be ISO format YYYY-MM-DD" });
+      errors.push({ field: "date", row: i, message: "Must be ISO format YYYY-MM-DD, optionally with a time (YYYY-MM-DDTHH:mm)" });
 
     if (row.isin && !ISIN_RE.test(row.isin))
       errors.push({ field: "isin", row: i, message: `Invalid ISIN format: "${row.isin}"` });

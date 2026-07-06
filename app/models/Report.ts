@@ -22,14 +22,16 @@ interface PresignedUrl {
   url: string;
 }
 
-// Matches ReportPayload DTO (POST /v1/reports/process-report)
+// Frontend-only shape used while a transaction is being parsed/edited client-side,
+// before it is turned into a backend TransactionInput (see models/Transaction.ts) and saved.
+// `id` is a locally-generated key (isin, or a random uuid), not the backend transaction_uuid.
 // At least one of `isin` or `ticker` must be provided.
 // If `exchange_mic` is omitted, warn the user: the ticker from the first available
 // exchange will be used, which may cause unexpected spread.
 type StandardTransaction = {
   id: string;
   date: string;
-  operation: 'buy' | 'sell' | 'dividend' | 'OTHER';
+  operation: 'buy' | 'sell' | 'dividend' | 'other';
   quantity: number;
   price: number;
   currency: string;

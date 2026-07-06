@@ -33,7 +33,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         }
       },
       operation: (val: unknown): StandardTransaction["operation"] => {
-        if (!val) return "OTHER";
+        if (!val) return "other";
         const s = String(val).toUpperCase();
         if (s === "A") return "buy";
         if (s === "V") return "sell";

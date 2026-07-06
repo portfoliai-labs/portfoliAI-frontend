@@ -2,11 +2,25 @@
 
 import { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleDollarSign, FileText, Loader2, Trash2 } from "lucide-react";
-import { StandardTransaction } from "../../models/Report";
+
+// Normalized shape both pending (client-parsed StandardTransaction) and existing
+// (backend TransactionResponse) rows are converted into before reaching this component.
+export interface DisplayTransaction {
+  ticker: string | null;
+  isin: string | null;
+  exchange_mic: string | null;
+  date: string;
+  operation: string;
+  quantity: number;
+  price: number;
+  currency: string;
+  fees: number;
+  broker: string | null;
+}
 
 export interface TransactionRow {
   key: string;
-  transaction: StandardTransaction;
+  transaction: DisplayTransaction;
   sourceLabel: string;
   origin: "existing" | "pending";
   errorFields: Set<string>;
@@ -24,7 +38,7 @@ interface TransactionsSectionProps {
   onToggleRow: (key: string) => void;
   onToggleAll: (keysOnPage: string[]) => void;
   onDeleteSelected: (keys: string[]) => void;
-  onDeleteRow: (key: string) => void;
+  onRowClick: (key: string) => void;
   deletingKeys: Set<string>;
   emptyMessage: string;
   headerAction?: ReactNode;
@@ -34,7 +48,7 @@ const OPERATION_STYLES: Record<string, { icon: typeof ArrowUpRight; classes: str
   buy: { icon: ArrowUpRight, classes: "bg-emerald-50 text-emerald-600" },
   sell: { icon: ArrowDownRight, classes: "bg-rose-50 text-rose-600" },
   dividend: { icon: CircleDollarSign, classes: "bg-blue-50 text-blue-600" },
-  OTHER: { icon: CircleDollarSign, classes: "bg-slate-100 text-slate-500" },
+  other: { icon: CircleDollarSign, classes: "bg-slate-100 text-slate-500" },
 };
 
 function formatMoney(value: number, currency: string): string {
@@ -44,7 +58,7 @@ function formatMoney(value: number, currency: string): string {
 
 export function TransactionsSection({
   title, rows, totalCount, page, pageSize, onPageChange, loading,
-  selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onDeleteRow, deletingKeys,
+  selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onRowClick, deletingKeys,
   emptyMessage, headerAction,
 }: TransactionsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -98,10 +112,10 @@ export function TransactionsSection({
           {rows.map((row) => {
             const tx = row.transaction;
             const isExisting = row.origin === "existing";
-            const opStyle = OPERATION_STYLES[tx.operation] ?? OPERATION_STYLES.OTHER;
+            const opStyle = OPERATION_STYLES[tx.operation] ?? OPERATION_STYLES.other;
             const OpIcon = opStyle.icon;
             const isDeleting = deletingKeys.has(row.key);
-            const hasError = (field: keyof StandardTransaction) => row.errorFields.has(field);
+            const hasError = (field: keyof DisplayTransaction) => row.errorFields.has(field);
             const total = tx.quantity * tx.price;
 
             const secondaryParts = [
@@ -117,8 +131,11 @@ export function TransactionsSection({
             return (
               <div
                 key={row.key}
-                className={`flex items-center gap-3 px-5 md:px-6 py-3.5 transition-colors ${
-                  selectedKeys.has(row.key)
+                onClick={() => !isDeleting && onRowClick(row.key)}
+                className={`flex items-center gap-3 px-5 md:px-6 py-3.5 transition-colors cursor-pointer ${
+                  isDeleting
+                    ? "opacity-40 pointer-events-none"
+                    : selectedKeys.has(row.key)
                     ? "bg-blue-50/40"
                     : isExisting
                     ? "bg-slate-50/30 hover:bg-slate-50"
@@ -129,6 +146,7 @@ export function TransactionsSection({
                   type="checkbox"
                   className="accent-blue-600 w-4 h-4 cursor-pointer shrink-0"
                   checked={selectedKeys.has(row.key)}
+                  onClick={(e) => e.stopPropagation()}
                   onChange={() => onToggleRow(row.key)}
                 />
 
@@ -151,13 +169,7 @@ export function TransactionsSection({
                   <p className="text-xs text-slate-400 truncate mt-0.5">{secondaryParts}</p>
                 </div>
 
-                <button
-                  onClick={() => onDeleteRow(row.key)}
-                  disabled={isDeleting}
-                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors shrink-0 disabled:opacity-40"
-                >
-                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </button>
+                {isDeleting && <Loader2 className="h-4 w-4 animate-spin text-slate-400 shrink-0" />}
               </div>
             );
           })}

@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { X, AlertCircle, PlusCircle, ChevronDown } from "lucide-react";
+import { X, AlertCircle, PlusCircle, Pencil, ChevronDown, Trash2 } from "lucide-react";
 import { StandardTransaction } from "../../models/Report";
 import { validateTransactions } from "../../lib/parser";
 
-interface AddTransactionModalProps {
+interface TransactionModalProps {
+  mode: "add" | "edit";
+  initial?: StandardTransaction;
   onClose: () => void;
-  onAdd: (transaction: StandardTransaction) => void;
+  onSave: (transaction: StandardTransaction) => void;
+  onDelete?: () => void;
 }
 
-const OPERATIONS: StandardTransaction["operation"][] = ["buy", "sell", "dividend"];
+const OPERATIONS: StandardTransaction["operation"][] = ["buy", "sell", "dividend", "other"];
 
 interface FormState {
   date: string;
+  time: string;
   operation: StandardTransaction["operation"];
   quantity: string;
   price: string;
@@ -27,6 +31,7 @@ interface FormState {
 
 const emptyForm: FormState = {
   date: "",
+  time: "",
   operation: "buy",
   quantity: "",
   price: "",
@@ -37,6 +42,33 @@ const emptyForm: FormState = {
   exchangeMic: "",
   broker: "Manual",
 };
+
+// Pulls the "YYYY-MM-DD" and, if present, "HH:mm" straight out of the ISO string as text —
+// deliberately not routed through `Date`, which would reinterpret a bare date (no time,
+// no offset) as UTC midnight and could shift it by a day once displayed in local time.
+function splitIsoDate(iso: string): { date: string; time: string } {
+  const match = iso?.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/);
+  if (!match) return { date: iso ?? "", time: "" };
+  return { date: match[1], time: match[2] ?? "" };
+}
+
+function toFormState(tx?: StandardTransaction): FormState {
+  if (!tx) return emptyForm;
+  const { date, time } = splitIsoDate(tx.date);
+  return {
+    date,
+    time,
+    operation: tx.operation,
+    quantity: Number.isNaN(tx.quantity) ? "" : String(tx.quantity),
+    price: Number.isNaN(tx.price) ? "" : String(tx.price),
+    currency: tx.currency,
+    fees: String(tx.fees ?? 0),
+    ticker: tx.ticker ?? "",
+    isin: tx.isin ?? "",
+    exchangeMic: tx.exchange_mic ?? "",
+    broker: tx.broker,
+  };
+}
 
 function InputField({
   label, value, onChange, type = "text", placeholder, required,
@@ -82,9 +114,10 @@ function SelectField({
   );
 }
 
-export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps) {
-  const [form, setForm] = useState<FormState>(emptyForm);
+export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: TransactionModalProps) {
+  const [form, setForm] = useState<FormState>(() => toFormState(initial));
   const [errors, setErrors] = useState<string[]>([]);
+  const isEdit = mode === "edit";
 
   const set = <K extends keyof FormState>(key: K) => (value: string) =>
     setForm(prev => ({ ...prev, [key]: value }));
@@ -102,8 +135,8 @@ export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps
     const fallbackId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
     const transaction: StandardTransaction = {
-      id: isin || fallbackId,
-      date: form.date,
+      id: initial?.id || isin || fallbackId,
+      date: form.time ? `${form.date}T${form.time}` : form.date,
       operation: form.operation,
       quantity,
       price,
@@ -123,7 +156,7 @@ export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps
       return;
     }
 
-    onAdd(transaction);
+    onSave(transaction);
     onClose();
   };
 
@@ -139,11 +172,13 @@ export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-blue-50 rounded-xl">
-              <PlusCircle className="h-5 w-5 text-blue-600" />
+              {isEdit ? <Pencil className="h-5 w-5 text-blue-600" /> : <PlusCircle className="h-5 w-5 text-blue-600" />}
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900">Add transaction</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Fill in the fields for a single transaction</p>
+              <h3 className="text-lg font-black text-slate-900">{isEdit ? "Edit transaction" : "Add transaction"}</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isEdit ? "Update the fields for this transaction" : "Fill in the fields for a single transaction"}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
@@ -164,6 +199,7 @@ export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InputField label="Date" type="date" value={form.date} onChange={set("date")} required />
+          <InputField label="Time" type="time" value={form.time} onChange={set("time")} placeholder="Optional" />
           <SelectField label="Operation" value={form.operation} onChange={(v) => set("operation")(v as StandardTransaction["operation"])} options={OPERATIONS} />
           <InputField label="Ticker" value={form.ticker} onChange={set("ticker")} placeholder="AAPL" />
           <InputField label="ISIN" value={form.isin} onChange={set("isin")} placeholder="US0378331005" />
@@ -175,19 +211,30 @@ export function AddTransactionModal({ onClose, onAdd }: AddTransactionModalProps
           <InputField label="Broker" value={form.broker} onChange={set("broker")} placeholder="Manual" />
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            onClick={onClose}
-            className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
-          >
-            Add transaction
-          </button>
+        <div className="flex items-center justify-between gap-3 pt-2">
+          {isEdit && onDelete ? (
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
+            >
+              {isEdit ? "Save changes" : "Add transaction"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -35,12 +35,12 @@ export const standardizeRow = (
     val !== undefined && val !== null && val !== "" ? String(val) : undefined;
 
   const fallbackOperation = (val: unknown): StandardTransaction["operation"] => {
-    if (!val) return "OTHER";
+    if (!val) return "other";
     const s = String(val).toUpperCase();
     if (s.includes("BUY") || s.includes("ACQUISTO") || s === "A" || s.includes("+")) return "buy";
     if (s.includes("SELL") || s.includes("VENDITA") || s === "S" || s.includes("-")) return "sell";
     if (s.includes("DIV")) return "dividend";
-    return "OTHER";
+    return "other";
   };
 
   return {
