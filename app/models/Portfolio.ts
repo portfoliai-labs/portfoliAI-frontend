@@ -1,27 +1,23 @@
 // models/Portfolio.ts
+// Matches TransactionsSummaryResponse DTO (GET /v1/transactions/summary)
 
 // A single asset currently held, aggregated across all of the user's processed transactions.
 // Every field here is derived purely from transaction input data (quantity, price paid, fees,
 // broker, currency, asset class) — never from current market prices/values.
 interface Holding {
-  ticker: string;
-  isin?: string;
+  ticker: string | null;
+  isin: string | null;
   name: string;
   assetClass: string;
   quantity: number;
   investedValue: number;
   currency: string;
   fees: number;
-  broker?: string;
+  broker: string | null;
 }
 
 interface BrokerTotal {
   broker: string;
-  totalInvested: number;
-}
-
-interface CurrencyTotal {
-  currency: string;
   totalInvested: number;
 }
 
@@ -38,30 +34,40 @@ interface BrokerFeesTotal {
 // A closed round-trip (a sell matched against its buy price). Profit/loss is derived
 // entirely from the buy/sell prices recorded in the transactions — never from a current quote.
 interface RealizedTrade {
-  ticker: string;
+  ticker: string | null;
   quantity: number;
   buyPrice: number;
   sellPrice: number;
   currency: string;
-  broker?: string;
+  broker: string | null;
 }
 
-// Matches the (future) GET /v1/portfolio/summary response shape.
-interface PortfolioSummary {
-  totalInvested: number;
+// All monetary figures in here share one currency. A ticker's underlying currency isn't
+// something the app can convert (no live FX rate), so every aggregate — total invested,
+// fees, broker/asset-class breakdowns, realized P&L — is scoped to a single currency rather
+// than summed across them. One of these exists per currency actually present in the portfolio.
+interface CurrencyBreakdown {
   currency: string;
+  totalInvested: number;
   totalFeesPaid: number;
-  holdings: Holding[];
+  holdingsCount: number;
   purchasesByBroker: BrokerTotal[];
-  purchasesByCurrency: CurrencyTotal[];
   purchasesByAssetClass: AssetClassTotal[];
   feesByBroker: BrokerFeesTotal[];
   realizedTrades: RealizedTrade[];
-  totalRealizedPL: number;
+  totalRealizedPl: number;
   sellCount: number;
   winRate: number;
 }
 
+// Matches TransactionsSummaryResponse (GET /v1/transactions/summary)
+interface PortfolioSummary {
+  // Every holding across every currency — safe to list or filter, never summed as one figure.
+  holdings: Holding[];
+  // One entry per currency present in the portfolio.
+  byCurrency: CurrencyBreakdown[];
+}
+
 export type {
-  Holding, PortfolioSummary, BrokerTotal, CurrencyTotal, AssetClassTotal, BrokerFeesTotal, RealizedTrade,
+  Holding, PortfolioSummary, CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, RealizedTrade,
 };

@@ -1,40 +1,28 @@
 // app/components/dashboard/DashboardOverview.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Layers,
   Wallet,
-  Lightbulb,
   TrendingUp,
   TrendingDown,
   Receipt,
   Target,
   Repeat,
+  Search,
+  ChevronDown,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
 import { portfolioService } from "../../services/portfolioService";
-import type { PortfolioSummary } from "../../models/Portfolio";
+import type { PortfolioSummary, CurrencyBreakdown, Holding } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 
-interface AISuggestion {
-  id: number;
-  text: string;
-}
-
-const SUGGESTIONS: AISuggestion[] = [
-  { id: 1, text: "Remember to set your financial goals in the settings page." },
-  { id: 2, text: "Upgrade to Pro to access the latest GPT-4o analysis models." },
-  { id: 3, text: "You can upload raw CSVs from major brokers; we'll handle the conversion." },
-  { id: 4, text: "Analyze your dividend history to optimize your passive income." },
-  { id: 5, text: "Check your portfolio's risk score after every new trade import." }
-];
-
 export default function DashboardOverview() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
-  const [currentSuggestion, setCurrentSuggestion] = useState<AISuggestion | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -43,8 +31,7 @@ export default function DashboardOverview() {
         setLoading(true);
         const data = await portfolioService.getPortfolioSummary();
         setPortfolio(data);
-        const randomIdx = Math.floor(Math.random() * SUGGESTIONS.length);
-        setCurrentSuggestion(SUGGESTIONS[randomIdx]);
+        setSelectedCurrency(data.byCurrency[0]?.currency ?? null);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -63,216 +50,176 @@ export default function DashboardOverview() {
   }
 
   const holdings = portfolio?.holdings ?? [];
-  const totalInvested = portfolio?.totalInvested ?? 0;
-  const currency = portfolio?.currency ?? "EUR";
-  const totalFeesPaid = portfolio?.totalFeesPaid ?? 0;
-  const purchasesByCurrency = portfolio?.purchasesByCurrency ?? [];
-  const purchasesByBroker = portfolio?.purchasesByBroker ?? [];
-  const feesByBroker = portfolio?.feesByBroker ?? [];
-  const realizedTrades = portfolio?.realizedTrades ?? [];
-  const totalRealizedPL = portfolio?.totalRealizedPL ?? 0;
-  const sellCount = portfolio?.sellCount ?? 0;
-  const winRate = portfolio?.winRate ?? 0;
-  const sortedHoldings = [...holdings].sort((a, b) => b.investedValue - a.investedValue);
-  const topHolding = sortedHoldings[0];
-  const maxInvested = topHolding?.investedValue ?? 0;
-  const maxCurrencyTotal = Math.max(0, ...purchasesByCurrency.map(c => c.totalInvested));
-  const maxBrokerTotal = Math.max(0, ...purchasesByBroker.map(b => b.totalInvested));
-  const tradesWithPL = realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * t.quantity }));
-  const maxAbsPL = Math.max(0, ...tradesWithPL.map(t => Math.abs(t.profitLoss)));
+  const byCurrency = portfolio?.byCurrency ?? [];
+
+  // The top holding within each currency — a cross-currency "top holding" would need an
+  // FX rate to compare, so this is computed per currency instead of once globally.
+  const topHoldingByCurrency = new Map<string, Holding | undefined>(
+    byCurrency.map(cb => {
+      const inCurrency = [...holdings]
+        .filter(h => h.currency === cb.currency)
+        .sort((a, b) => b.investedValue - a.investedValue);
+      return [cb.currency, inCurrency[0]];
+    })
+  );
+
+  const activeCurrencyData = byCurrency.find(cb => cb.currency === selectedCurrency) ?? byCurrency[0];
 
   return (
     <div className="px-0 py-6 space-y-8">
 
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard Overview</h1>
-          <p className="text-slate-500 font-medium">Track your portfolio performance and AI insights.</p>
-          <p className="text-xs text-slate-400 italic mt-1">
-            Figures below come only from your recorded transactions (price paid, quantity, fees) — not from current market prices.
-          </p>
-        </div>
-
-        {/* AI SUGGESTION BOX */}
-        {currentSuggestion && (
-          <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl max-w-md shadow-sm">
-            <Lightbulb className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-amber-600">AI Suggestion</span>
-              <p className="text-xs font-bold text-amber-900 leading-relaxed italic">
-                &quot;{currentSuggestion.text}&quot;
-              </p>
-            </div>
-          </div>
-        )}
+      <div>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard Overview</h1>
+        <p className="text-slate-500 font-medium">Track your portfolio performance.</p>
+        <p className="text-xs text-slate-400 italic mt-1">
+          Figures below come only from your recorded transactions (price paid, quantity, fees) — not from current market prices.
+          Amounts are grouped by currency and are never summed together, since converting between them would need a live FX rate.
+        </p>
       </div>
 
-      {/* PORTFOLIO SUMMARY */}
+      {/* ALL HOLDINGS — every currency together, since nothing here is summed */}
+      <SectionHeader
+        eyebrow="Portfolio"
+        title="All Holdings"
+        subtitle="Every position across all currencies — search or filter to narrow the list"
+      />
+      <HoldingsExplorer holdings={holdings} />
+
+      {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
+      {byCurrency.length === 0 ? (
+        <div className="bg-white p-10 rounded-4xl border border-slate-200 shadow-sm text-center">
+          <div className="p-4 bg-slate-50 rounded-2xl mb-3 inline-flex">
+            <Wallet className="h-6 w-6 text-slate-300" />
+          </div>
+          <p className="text-slate-600 font-semibold">No holdings yet</p>
+          <p className="text-slate-400 text-sm mt-1">Upload or add transactions to see your portfolio here.</p>
+        </div>
+      ) : activeCurrencyData ? (
+        <>
+          <SectionHeader
+            eyebrow="Portfolio"
+            title={`${activeCurrencyData.currency} Positions`}
+            subtitle="Figures shown in this currency only — never combined with other currencies"
+          />
+
+          {byCurrency.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {byCurrency.map((cb) => {
+                const active = cb.currency === activeCurrencyData.currency;
+                return (
+                  <button
+                    key={cb.currency}
+                    onClick={() => setSelectedCurrency(cb.currency)}
+                    className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-colors ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                    }`}
+                  >
+                    {cb.currency}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <CurrencySection data={activeCurrencyData} topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)} />
+        </>
+      ) : null}
+
+    </div>
+  );
+}
+
+/**
+ * CURRENCY SECTION — every monetary aggregate (invested, fees, broker/asset-class
+ * breakdowns, realized P&L) lives inside one of these, scoped to a single currency.
+ * A ticker's currency isn't something this app converts, so summing across sections
+ * would silently add e.g. USD and EUR as if they were the same unit — small multiples
+ * (one full section per currency) avoid that instead of one misleading combined total.
+ */
+function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHolding?: Holding }) {
+  const { currency } = data;
+  const tradesWithPL = data.realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * t.quantity }));
+  const maxAbsPL = Math.max(0, ...tradesWithPL.map(t => Math.abs(t.profitLoss)));
+
+  return (
+    <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
         <StatCard
           title="Total Invested"
-          value={formatCurrency(totalInvested, currency, 0)}
+          value={formatCurrency(data.totalInvested, currency, 0)}
           icon={<Wallet className="h-5 w-5 text-[#C49A3C]" />}
-          description={`Across ${holdings.length} ${holdings.length === 1 ? "holding" : "holdings"}`}
+          description={`Across ${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}`}
           color="gold"
         />
-
         <StatCard
           title="Holdings"
-          value={holdings.length.toString()}
+          value={data.holdingsCount.toString()}
           icon={<Layers className="h-5 w-5 text-blue-600" />}
-          description="Distinct assets you've invested in"
+          description={`Distinct assets in ${currency}`}
           color="blue"
         />
-
         <StatCard
           title="Most Invested In"
           value={topHolding?.ticker ?? "—"}
           icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
-          description={topHolding ? `${formatCurrency(topHolding.investedValue, topHolding.currency)} invested` : "No holdings yet"}
+          description={topHolding ? `${formatCurrency(topHolding.investedValue, currency)} invested` : "No holdings yet"}
           color="emerald"
         />
-
         <StatCard
           title="Total Fees Paid"
-          value={formatCurrency(totalFeesPaid, currency, 2)}
+          value={formatCurrency(data.totalFeesPaid, currency, 2)}
           icon={<Receipt className="h-5 w-5 text-violet-600" />}
-          description="Across all transactions"
+          description={`Across all ${currency} transactions`}
           color="violet"
         />
       </div>
 
-      {/* HOLDINGS */}
-      <SectionHeader
-        eyebrow="Portfolio"
-        title="Your Holdings"
-        subtitle="How much you've put into each asset, by purchase price"
-      />
-      <div className="bg-white p-6 md:p-8 rounded-4xl border border-slate-200 shadow-sm">
-        {sortedHoldings.length === 0 ? (
-          <div className="py-12 flex flex-col items-center justify-center text-center">
-            <div className="p-4 bg-slate-50 rounded-2xl mb-3">
-              <Wallet className="h-6 w-6 text-slate-300" />
-            </div>
-            <p className="text-slate-600 font-semibold">No holdings yet</p>
-            <p className="text-slate-400 text-sm mt-1">Upload or add transactions to see your allocation here.</p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {sortedHoldings.map((h) => {
-              const pctOfInvested = totalInvested > 0 ? (h.investedValue / totalInvested) * 100 : 0;
-              const widthPct = maxInvested > 0 ? (h.investedValue / maxInvested) * 100 : 0;
-              return (
-                <div key={h.ticker} className="group">
-                  <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="text-sm font-bold text-slate-900 shrink-0">{h.ticker}</span>
-                      <span className="text-xs text-slate-400 truncate">{h.name}</span>
-                    </div>
-                    <span className="text-sm font-bold text-slate-900 shrink-0">{formatCurrency(h.investedValue, h.currency)}</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-r-full bg-[#C49A3C] transition-all duration-500 group-hover:brightness-110"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-[11px] text-slate-400">{h.quantity} units</span>
-                    <span className="text-[11px] text-slate-400">{pctOfInvested.toFixed(1)}% of total invested value</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* WHERE YOUR MONEY WENT */}
-      <SectionHeader
-        eyebrow="Portfolio"
-        title="Where Your Money Went"
-        subtitle="Broken down by broker, currency, and fees paid"
-      />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-black text-slate-900">Purchases by broker</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-5">Where your orders were placed</p>
-          <div className="space-y-4">
-            {purchasesByBroker.map((b) => {
-              const widthPct = maxBrokerTotal > 0 ? (b.totalInvested / maxBrokerTotal) * 100 : 0;
-              return (
-                <div key={b.broker}>
-                  <div className="flex items-baseline justify-between gap-4 mb-1">
-                    <span className="text-xs font-bold text-slate-900">{b.broker}</span>
-                    <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(b.totalInvested, currency, 0)}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-black text-slate-900">Purchases by currency</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-5">How much you&apos;ve invested in each currency</p>
-          <div className="space-y-4">
-            {purchasesByCurrency.map((c) => {
-              const widthPct = maxCurrencyTotal > 0 ? (c.totalInvested / maxCurrencyTotal) * 100 : 0;
-              return (
-                <div key={c.currency}>
-                  <div className="flex items-baseline justify-between gap-4 mb-1">
-                    <span className="text-xs font-bold text-slate-900">{c.currency}</span>
-                    <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(c.totalInvested, c.currency, 0)}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
+        <BarList
+          title="Purchases by broker"
+          subtitle="Where your orders were placed"
+          items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
+          currency={currency}
+        />
+        <BarList
+          title="Purchases by asset class"
+          subtitle="Stocks, ETFs, bonds, and the rest"
+          items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
+          currency={currency}
+        />
         <DonutBreakdown
           title="Fees by broker"
           subtitle="Where your trading costs came from"
-          data={feesByBroker.map(d => ({ label: d.broker, value: d.totalFees }))}
+          data={data.feesByBroker.map(d => ({ label: d.broker, value: d.totalFees }))}
           currency={currency}
         />
       </div>
 
-      {/* REALIZED GAINS & LOSSES */}
-      <SectionHeader
-        eyebrow="Performance"
-        title="Realized Gains & Losses"
-        subtitle="From completed sells only — comparing your sell price to your original purchase price"
-      />
       <div>
+        <h3 className="text-base font-black text-slate-900 mb-4">Realized gains &amp; losses in {currency}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
           <StatCard
             title="Total Realized P&L"
-            value={`${totalRealizedPL >= 0 ? "+" : ""}${formatCurrency(totalRealizedPL, currency, 2)}`}
-            icon={totalRealizedPL >= 0
+            value={`${data.totalRealizedPl >= 0 ? "+" : ""}${formatCurrency(data.totalRealizedPl, currency, 2)}`}
+            icon={data.totalRealizedPl >= 0
               ? <TrendingUp className="h-5 w-5 text-emerald-600" />
               : <TrendingDown className="h-5 w-5 text-rose-600" />}
             description="Sum of profit/loss on closed positions"
-            color={totalRealizedPL >= 0 ? "emerald" : "red"}
+            color={data.totalRealizedPl >= 0 ? "emerald" : "red"}
           />
           <StatCard
             title="Sell Transactions"
-            value={sellCount.toString()}
+            value={data.sellCount.toString()}
             icon={<Repeat className="h-5 w-5 text-blue-600" />}
             description="Completed sells recorded"
             color="blue"
           />
           <StatCard
             title="Win Rate"
-            value={`${winRate.toFixed(0)}%`}
+            value={`${data.winRate.toFixed(0)}%`}
             icon={<Target className="h-5 w-5 text-[#C49A3C]" />}
             description="Sells closed at a profit"
             color="gold"
@@ -284,16 +231,16 @@ export default function DashboardOverview() {
           <p className="text-xs text-slate-500 mt-1 mb-6">Based on your recorded buy and sell prices for each closed position</p>
 
           {tradesWithPL.length === 0 ? (
-            <p className="text-sm text-slate-400 py-6">No completed sells yet.</p>
+            <p className="text-sm text-slate-400 py-6">No completed sells in {currency} yet.</p>
           ) : (
             <div className="space-y-5">
-              {tradesWithPL.map((t) => {
+              {tradesWithPL.map((t, i) => {
                 const isGain = t.profitLoss >= 0;
                 const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.profitLoss) / maxAbsPL) * 50 : 0;
                 return (
-                  <div key={t.ticker}>
+                  <div key={`${t.ticker ?? "unknown"}-${i}`}>
                     <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                      <span className="text-sm font-bold text-slate-900">{t.ticker}</span>
+                      <span className="text-sm font-bold text-slate-900">{t.ticker ?? "—"}</span>
                       <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
                         {isGain ? "+" : ""}{formatCurrency(t.profitLoss, t.currency, 2)}
                       </span>
@@ -323,7 +270,6 @@ export default function DashboardOverview() {
           )}
         </div>
       </div>
-
     </div>
   );
 }
@@ -374,6 +320,49 @@ function StatCard({ title, value, icon, description, color }: StatCardProps) {
         <h3 className="text-2xl font-black text-slate-900">{value}</h3>
         <p className="text-xs font-medium text-slate-500 mt-1">{description}</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * BAR LIST — magnitude comparison across a handful of named categories that all share
+ * one currency (broker, asset class). Never fed cross-currency values: bar length directly
+ * encodes size, so mixing units would visually imply a comparison that isn't real.
+ */
+interface BarListProps {
+  title: string;
+  subtitle: string;
+  items: { label: string; value: number }[];
+  currency: string;
+}
+
+function BarList({ title, subtitle, items, currency }: BarListProps) {
+  const max = Math.max(0, ...items.map(i => i.value));
+
+  return (
+    <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm">
+      <h3 className="text-sm font-black text-slate-900">{title}</h3>
+      <p className="text-xs text-slate-500 mt-1 mb-5">{subtitle}</p>
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6">No data yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {items.map((item) => {
+            const widthPct = max > 0 ? (item.value / max) * 100 : 0;
+            return (
+              <div key={item.label}>
+                <div className="flex items-baseline justify-between gap-4 mb-1">
+                  <span className="text-xs font-bold text-slate-900">{item.label}</span>
+                  <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(item.value, currency, 0)}</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -438,6 +427,118 @@ function DonutBreakdown({ title, subtitle, data, currency }: DonutBreakdownProps
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * HOLDINGS EXPLORER — the one place all currencies appear together. Deliberately a plain
+ * filterable table rather than a bar chart: bar length would encode invested value, and a
+ * USD bar next to a EUR bar of the same length would visually claim they're equal, which
+ * isn't true without a live FX rate. A table just lists the numbers with their own currency.
+ */
+function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
+  const [search, setSearch] = useState("");
+  const [assetClass, setAssetClass] = useState("all");
+  const [currency, setCurrency] = useState("all");
+
+  const assetClasses = useMemo(() => [...new Set(holdings.map(h => h.assetClass))].sort(), [holdings]);
+  const currencies = useMemo(() => [...new Set(holdings.map(h => h.currency))].sort(), [holdings]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return holdings
+      .filter(h => assetClass === "all" || h.assetClass === assetClass)
+      .filter(h => currency === "all" || h.currency === currency)
+      .filter(h => !q || h.ticker?.toLowerCase().includes(q) || h.name.toLowerCase().includes(q))
+      // Grouped by currency first so ordering never implies a cross-currency size comparison.
+      .sort((a, b) => a.currency.localeCompare(b.currency) || b.investedValue - a.investedValue);
+  }, [holdings, search, assetClass, currency]);
+
+  return (
+    <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-5 md:p-6 border-b border-slate-200">
+        <div className="relative flex-1 min-w-0">
+          <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by ticker or name…"
+            className="w-full h-10 pl-10 pr-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
+          />
+        </div>
+        <FilterSelect label="Asset class" value={assetClass} onChange={setAssetClass} options={assetClasses} />
+        <FilterSelect label="Currency" value={currency} onChange={setCurrency} options={currencies} />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="py-14 flex flex-col items-center justify-center text-center px-6">
+          <div className="p-4 bg-slate-50 rounded-2xl mb-3">
+            <Wallet className="h-6 w-6 text-slate-300" />
+          </div>
+          <p className="text-slate-600 font-semibold">{holdings.length === 0 ? "No holdings yet" : "No holdings match your filters"}</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {holdings.length === 0 ? "Upload or add transactions to see your holdings here." : "Try a different search or filter."}
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-150">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Asset</th>
+                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Class</th>
+                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Quantity</th>
+                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Invested</th>
+                <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Broker</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((h, i) => (
+                <tr key={`${h.currency}::${h.ticker ?? h.isin ?? i}::${h.broker ?? ""}`} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-5 md:px-6 py-3.5">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="text-sm font-bold text-slate-900 shrink-0">{h.ticker ?? h.isin ?? "—"}</span>
+                      <span className="text-xs text-slate-400 truncate">{h.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                      {h.assetClass}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{h.quantity}</td>
+                  <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">
+                    {formatCurrency(h.investedValue, h.currency, 2)}
+                  </td>
+                  <td className="px-3 md:px-6 py-3.5 text-sm font-medium text-slate-500">{h.broker ?? "Unknown"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({
+  label, value, onChange, options,
+}: {
+  label: string; value: string; onChange: (v: string) => void; options: string[];
+}) {
+  return (
+    <div className="relative shrink-0">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 pl-3.5 pr-9 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all appearance-none cursor-pointer"
+      >
+        <option value="all">All {label.toLowerCase()}</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <ChevronDown className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
     </div>
   );
 }
