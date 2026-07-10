@@ -13,13 +13,19 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
+import { useUser } from "../../context/UserContext";
 import { portfolioService } from "../../services/portfolioService";
+import { userService } from "../../services/userService";
 import type { PortfolioSummary, CurrencyBreakdown, Holding } from "../../models/Portfolio";
+import type { UserMetrics } from "../../models/User";
 import { formatCurrency } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
+import { QuotaBar, FREE_MONTHLY_REPORTS } from "./QuotaBar";
 
 export default function DashboardOverview() {
+  const { user } = useUser();
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
+  const [metrics, setMetrics] = useState<UserMetrics | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -27,8 +33,12 @@ export default function DashboardOverview() {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const data = await portfolioService.getPortfolioSummary();
+        const [data, userMetrics] = await Promise.all([
+          portfolioService.getPortfolioSummary(),
+          userService.getUserMetrics(),
+        ]);
         setPortfolio(data);
+        setMetrics(userMetrics);
         setSelectedCurrency(data.byCurrency[0]?.currency ?? null);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
@@ -83,6 +93,14 @@ export default function DashboardOverview() {
           Figures come from your recorded transactions — not current market prices
         </div>
       </div>
+
+      {/* REPORT QUOTA — user-level, not per-currency, so it lives outside the currency loop.
+          Testers aren't capped, so there's no quota to show them. */}
+      {user?.subscription_tier !== "TESTER" && (
+        <div className="max-w-sm">
+          <QuotaBar used={metrics?.report_generated ?? 0} total={FREE_MONTHLY_REPORTS} />
+        </div>
+      )}
 
       {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
       {activeCurrencyData && (
