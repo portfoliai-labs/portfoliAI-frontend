@@ -10,6 +10,7 @@ import {
   Search,
   ChevronDown,
   Info,
+  Sparkles,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
@@ -22,7 +23,11 @@ import { formatCurrency } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 import { QuotaBar, FREE_MONTHLY_REPORTS } from "./QuotaBar";
 
-export default function DashboardOverview() {
+export default function DashboardOverview({
+  onNavigate,
+}: {
+  onNavigate?: (section: string) => void;
+}) {
   const { user } = useUser();
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [metrics, setMetrics] = useState<UserMetrics | null>(null);
@@ -88,9 +93,20 @@ export default function DashboardOverview() {
           </h1>
           <p className="text-slate-500 font-medium mt-1">Track your portfolio performance.</p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-slate-200 bg-white text-xs text-slate-500 font-medium">
-          <Info className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-          Figures come from your recorded transactions — not current market prices
+        <div className="flex flex-col items-end gap-3">
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate("upload")}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-blue-600 transition-colors shadow-sm"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Generate Report
+            </button>
+          )}
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-slate-200 bg-white text-xs text-slate-500 font-medium">
+            <Info className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            Figures come from your recorded transactions — not current market prices
+          </div>
         </div>
       </div>
 

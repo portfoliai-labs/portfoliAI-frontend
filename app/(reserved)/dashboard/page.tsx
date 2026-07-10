@@ -33,13 +33,13 @@ export default function DashboardPage() {
       case 'overview':
         return isAdvisor
           ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
-          : <DashboardOverview />;
+          : <DashboardOverview onNavigate={setActiveSection} />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
       case 'profile':
         return <ProfileSection />;
       case 'subscription':

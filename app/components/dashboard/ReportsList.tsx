@@ -25,7 +25,13 @@ interface DocumentCardProps {
   setNewTagName: (name: string) => void;
 }
 
-export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {}) {
+export function ReportsList({
+  forUserUuid,
+  onNavigate,
+}: {
+  forUserUuid?: string | null;
+  onNavigate?: (section: string) => void;
+} = {}) {
   const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +241,14 @@ export function ReportsList({ forUserUuid }: { forUserUuid?: string | null } = {
             <FileText className="h-12 w-12 text-slate-300 mb-4" />
             <h3 className="text-lg font-bold text-slate-700">No reports found</h3>
             <p className="text-slate-500 mt-1">Upload files and generate a report to see it here.</p>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate("upload")}
+                className="mt-5 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-blue-600 transition-colors"
+              >
+                Go to Transactions
+              </button>
+            )}
           </div>
         ) : viewMode === "list" ? (
           <div className="grid gap-4">
