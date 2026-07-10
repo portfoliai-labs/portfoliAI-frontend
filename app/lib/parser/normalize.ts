@@ -43,11 +43,15 @@ export const standardizeRow = (
     return "other";
   };
 
+  const isin   = fmt.isin   ? fmt.isin(getVal("isin"), row)     : optStr(getVal("isin"));
+  const ticker = fmt.ticker ? fmt.ticker(getVal("ticker"), row) : optStr(getVal("ticker"));
+
   return {
-    id:           fmt.id           ? fmt.id(getVal("id"), row)                 : optStr(getVal("id")),
+    // Locally-generated key, never mapped from a CSV column — prefers isin, falls back to ticker.
+    id:           isin || ticker || "",
     date:         fmt.date         ? fmt.date(getVal("date"), row)              : String(getVal("date") ?? ""),
-    isin:         fmt.isin         ? fmt.isin(getVal("isin"), row)              : optStr(getVal("isin")),
-    ticker:       fmt.ticker       ? fmt.ticker(getVal("ticker"), row)          : optStr(getVal("ticker")),
+    isin,
+    ticker,
     exchange_mic: fmt.exchange_mic ? fmt.exchange_mic(getVal("exchange_mic"), row) : optStr(getVal("exchange_mic")),
     operation:    fmt.operation    ? fmt.operation(getVal("operation"), row)    : fallbackOperation(getVal("operation")),
     quantity:     fmt.quantity     ? fmt.quantity(getVal("quantity"), row)      : Number(getVal("quantity")),

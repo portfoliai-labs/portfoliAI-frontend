@@ -3,18 +3,17 @@ import { parse, format } from "date-fns";
 import { BrokerConfig } from "./types";
 
 export const ALL_FIELDS: (keyof StandardTransaction)[] = [
-  "id", "date", "isin", "ticker", "exchange_mic", "operation", "quantity",
+  "date", "isin", "ticker", "exchange_mic", "operation", "quantity",
   "price", "currency", "fees", "broker",
 ];
 
 export const REQUIRED_FIELDS: (keyof StandardTransaction)[] = [
-  "id", "date", "operation", "quantity", "price", "currency", "ticker"
+  "date", "operation", "quantity", "price", "currency", "ticker"
 ];
 
 export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   FINECO: {
     columns: {
-      id: "Isin",
       date: "Operazione",
       isin: "Isin",
       operation: "Segno",

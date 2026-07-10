@@ -132,10 +132,11 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
     const price = Number(form.price);
 
     const isin = form.isin.trim().toUpperCase();
-    const fallbackId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    const ticker = form.ticker.trim().toUpperCase();
 
     const transaction: StandardTransaction = {
-      id: initial?.id || isin || fallbackId,
+      // Locally-generated key, not shown to the user — prefers isin, falls back to ticker.
+      id: initial?.id || isin || ticker,
       date: form.time ? `${form.date}T${form.time}` : form.date,
       operation: form.operation,
       quantity,
@@ -144,7 +145,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
       fees: form.fees.trim() === "" ? 0 : Number(form.fees),
       broker: form.broker.trim() || "Manual",
       ...(isin ? { isin } : {}),
-      ...(form.ticker.trim() ? { ticker: form.ticker.trim().toUpperCase() } : {}),
+      ...(ticker ? { ticker } : {}),
       ...(form.exchangeMic.trim() ? { exchange_mic: form.exchangeMic.trim().toUpperCase() } : {}),
     } as StandardTransaction;
 
