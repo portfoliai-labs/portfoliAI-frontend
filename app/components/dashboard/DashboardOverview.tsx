@@ -6,12 +6,10 @@ import {
   Layers,
   Wallet,
   TrendingUp,
-  TrendingDown,
   Receipt,
-  Target,
-  Repeat,
   Search,
   ChevronDown,
+  Info,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
@@ -68,53 +66,37 @@ export default function DashboardOverview() {
   return (
     <div className="px-0 py-6 space-y-8">
 
-      {/* HEADER SECTION */}
-      <div>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard Overview</h1>
-        <p className="text-slate-500 font-medium">Track your portfolio performance.</p>
-        <p className="text-xs text-slate-400 italic mt-1">
-          Figures below come only from your recorded transactions (price paid, quantity, fees) — not from current market prices.
-          Amounts are grouped by currency and are never summed together, since converting between them would need a live FX rate.
-        </p>
+      {/* MASTHEAD */}
+      <div className="flex flex-wrap items-end justify-between gap-6">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
+          <h1
+            className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            Dashboard Overview
+          </h1>
+          <p className="text-slate-500 font-medium mt-1">Track your portfolio performance.</p>
+        </div>
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-slate-200 bg-white text-xs text-slate-500 font-medium">
+          <Info className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          Figures come from your recorded transactions — not current market prices
+        </div>
       </div>
 
-      {/* ALL HOLDINGS — every currency together, since nothing here is summed */}
-      <SectionHeader
-        eyebrow="Portfolio"
-        title="All Holdings"
-        subtitle="Every position across all currencies — search or filter to narrow the list"
-      />
-      <HoldingsExplorer holdings={holdings} />
-
       {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
-      {byCurrency.length === 0 ? (
-        <div className="bg-white p-10 rounded-4xl border border-slate-200 shadow-sm text-center">
-          <div className="p-4 bg-slate-50 rounded-2xl mb-3 inline-flex">
-            <Wallet className="h-6 w-6 text-slate-300" />
-          </div>
-          <p className="text-slate-600 font-semibold">No holdings yet</p>
-          <p className="text-slate-400 text-sm mt-1">Upload or add transactions to see your portfolio here.</p>
-        </div>
-      ) : activeCurrencyData ? (
-        <>
-          <SectionHeader
-            eyebrow="Portfolio"
-            title={`${activeCurrencyData.currency} Positions`}
-            subtitle="Figures shown in this currency only — never combined with other currencies"
-          />
-
+      {activeCurrencyData && (
+        <div className="space-y-4">
           {byCurrency.length > 1 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="inline-flex gap-1 p-1 bg-slate-100 rounded-full w-fit">
               {byCurrency.map((cb) => {
                 const active = cb.currency === activeCurrencyData.currency;
                 return (
                   <button
                     key={cb.currency}
                     onClick={() => setSelectedCurrency(cb.currency)}
-                    className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-colors ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                    className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-colors ${
+                      active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
                     {cb.currency}
@@ -123,10 +105,26 @@ export default function DashboardOverview() {
               })}
             </div>
           )}
-
+          {byCurrency.length > 1 && (
+            <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+              Figures below are shown in {activeCurrencyData.currency} only, never combined with other currencies — converting between them would need a live FX rate.
+            </p>
+          )}
           <CurrencySection data={activeCurrencyData} topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)} />
-        </>
-      ) : null}
+        </div>
+      )}
+
+      {/* ALL HOLDINGS — detail table, every currency together, since nothing here is summed */}
+      <div>
+        <SectionHeader
+          eyebrow="Portfolio"
+          title="All Holdings"
+          subtitle="Every position across all currencies — search or filter to narrow the list"
+        />
+        <div className="mt-6">
+          <HoldingsExplorer holdings={holdings} />
+        </div>
+      </div>
 
     </div>
   );
@@ -141,95 +139,107 @@ export default function DashboardOverview() {
  */
 function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHolding?: Holding }) {
   const { currency } = data;
+  // feesByBroker is grouped by broker, so a broker with $0 in fees still gets a row —
+  // an empty-array check wouldn't catch that. totalFeesPaid reflects the actual amount.
+  const hasFees = data.totalFeesPaid > 0;
   const tradesWithPL = data.realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * t.quantity }));
   const maxAbsPL = Math.max(0, ...tradesWithPL.map(t => Math.abs(t.profitLoss)));
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Invested"
-          value={formatCurrency(data.totalInvested, currency, 0)}
-          icon={<Wallet className="h-5 w-5 text-[#C49A3C]" />}
-          description={`Across ${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}`}
-          color="gold"
-        />
-        <StatCard
-          title="Holdings"
-          value={data.holdingsCount.toString()}
-          icon={<Layers className="h-5 w-5 text-blue-600" />}
-          description={`Distinct assets in ${currency}`}
-          color="blue"
-        />
-        <StatCard
-          title="Most Invested In"
-          value={topHolding?.ticker ?? "—"}
-          icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
-          description={topHolding ? `${formatCurrency(topHolding.investedValue, currency)} invested` : "No holdings yet"}
-          color="emerald"
-        />
-        <StatCard
-          title="Total Fees Paid"
-          value={formatCurrency(data.totalFeesPaid, currency, 2)}
-          icon={<Receipt className="h-5 w-5 text-violet-600" />}
-          description={`Across all ${currency} transactions`}
-          color="violet"
-        />
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <BarList
-          title="Purchases by broker"
-          subtitle="Where your orders were placed"
-          items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
-          currency={currency}
+      {/* MODULE 1 — AT A GLANCE */}
+      <Module>
+        <ModuleHead
+          eyebrow={`${currency} · Positions`}
+          title="At a glance"
+          desc="The four numbers that matter most for your positions in this currency."
         />
-        <BarList
-          title="Purchases by asset class"
-          subtitle="Stocks, ETFs, bonds, and the rest"
-          items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
-          currency={currency}
-        />
-        <DonutBreakdown
-          title="Fees by broker"
-          subtitle="Where your trading costs came from"
-          data={data.feesByBroker.map(d => ({ label: d.broker, value: d.totalFees }))}
-          currency={currency}
-        />
-      </div>
-
-      <div>
-        <h3 className="text-base font-black text-slate-900 mb-4">Realized gains &amp; losses in {currency}</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
-          <StatCard
-            title="Total Realized P&L"
-            value={`${data.totalRealizedPl >= 0 ? "+" : ""}${formatCurrency(data.totalRealizedPl, currency, 2)}`}
-            icon={data.totalRealizedPl >= 0
-              ? <TrendingUp className="h-5 w-5 text-emerald-600" />
-              : <TrendingDown className="h-5 w-5 text-rose-600" />}
-            description="Sum of profit/loss on closed positions"
-            color={data.totalRealizedPl >= 0 ? "emerald" : "red"}
-          />
-          <StatCard
-            title="Sell Transactions"
-            value={data.sellCount.toString()}
-            icon={<Repeat className="h-5 w-5 text-blue-600" />}
-            description="Completed sells recorded"
-            color="blue"
-          />
-          <StatCard
-            title="Win Rate"
-            value={`${data.winRate.toFixed(0)}%`}
-            icon={<Target className="h-5 w-5 text-[#C49A3C]" />}
-            description="Sells closed at a profit"
+        <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr_1fr_1fr] divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+          <Stat
+            hero
+            title="Total Invested"
+            value={formatCurrency(data.totalInvested, currency, 0)}
+            icon={<Wallet className="h-4.5 w-4.5 text-[#C49A3C]" />}
+            description={`Across ${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}`}
             color="gold"
           />
+          <Stat
+            title="Holdings"
+            value={data.holdingsCount.toString()}
+            icon={<Layers className="h-4 w-4 text-blue-600" />}
+            description={`Distinct assets in ${currency}`}
+            color="blue"
+          />
+          <Stat
+            title="Most Invested In"
+            value={topHolding?.ticker ?? "—"}
+            icon={<TrendingUp className="h-4 w-4 text-emerald-600" />}
+            description={topHolding ? `${formatCurrency(topHolding.investedValue, currency)} invested` : "No holdings yet"}
+            color="emerald"
+          />
+          <Stat
+            title="Total Fees Paid"
+            value={formatCurrency(data.totalFeesPaid, currency, 2)}
+            icon={<Receipt className="h-4 w-4 text-violet-600" />}
+            description={`Across all ${currency} transactions`}
+            color="violet"
+          />
         </div>
+      </Module>
 
-        <div className="bg-white p-6 md:p-8 rounded-4xl border border-slate-200 shadow-sm">
-          <h3 className="text-base font-black text-slate-900">Profit / loss by trade</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-6">Based on your recorded buy and sell prices for each closed position</p>
+      {/* MODULE 2 — ALLOCATION */}
+      <Module>
+        <ModuleHead
+          eyebrow="Allocation"
+          title="Where the money went"
+          desc={`Broker, asset class and cost — all scaled to the same ${formatCurrency(data.totalInvested, currency, 0)}`}
+        />
+        <div className={`grid grid-cols-1 divide-y divide-slate-100 md:divide-y-0 md:divide-x ${hasFees ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          <AllocPanel title="Purchases by broker" subtitle="Where your orders were placed">
+            <BarListBody
+              items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
+              currency={currency}
+            />
+          </AllocPanel>
+          <AllocPanel title="Purchases by asset class" subtitle="Stocks, ETFs, bonds, and the rest">
+            <BarListBody
+              items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
+              currency={currency}
+            />
+          </AllocPanel>
+          {hasFees && (
+            <AllocPanel title="Fees by broker" subtitle="Where your trading costs came from">
+              <DonutBody
+                data={data.feesByBroker.map(d => ({ label: d.broker, value: d.totalFees }))}
+                currency={currency}
+              />
+            </AllocPanel>
+          )}
+        </div>
+      </Module>
 
+      {/* MODULE 3 — REALIZED PERFORMANCE */}
+      <Module>
+        <ModuleHead
+          eyebrow="Closed positions"
+          title="Realized gains & losses"
+          desc="Based on your recorded buy and sell prices for each closed position."
+          right={
+            <Scoreboard
+              items={[
+                {
+                  label: "Total P&L",
+                  value: `${data.totalRealizedPl >= 0 ? "+" : ""}${formatCurrency(data.totalRealizedPl, currency, 2)}`,
+                  tone: data.totalRealizedPl >= 0 ? "good" : "bad",
+                },
+                { label: "Sell Transactions", value: data.sellCount.toString() },
+                { label: "Win Rate", value: data.sellCount > 0 ? `${data.winRate.toFixed(0)}%` : "—" },
+              ]}
+            />
+          }
+        />
+        <div className="p-6 md:p-7">
           {tradesWithPL.length === 0 ? (
             <p className="text-sm text-slate-400 py-6">No completed sells in {currency} yet.</p>
           ) : (
@@ -269,7 +279,8 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
             </div>
           )}
         </div>
-      </div>
+      </Module>
+
     </div>
   );
 }
@@ -289,17 +300,77 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 }
 
 /**
- * REUSABLE STAT CARD COMPONENT
+ * MODULE — the card shell every group of related content lives in. Restructured from the
+ * old one-card-per-metric layout: related stats/charts now share a single Module, separated
+ * by internal dividers, instead of each getting its own bordered/shadowed box.
  */
-interface StatCardProps {
+function Module({ children }: { children: React.ReactNode }) {
+  return (
+    <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+      {children}
+    </section>
+  );
+}
+
+function ModuleHead({
+  eyebrow, title, desc, right,
+}: {
+  eyebrow: string; title: string; desc?: string; right?: React.ReactNode;
+}) {
+  return (
+    <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
+        <h2
+          className="text-lg md:text-xl font-black text-slate-900"
+          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+        >
+          {title}
+        </h2>
+        {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/**
+ * SCOREBOARD — inline stat badges in a module head, used where the old design gave a metric
+ * its own full StatCard (e.g. P&L / win rate). Numbers stay neutral ink unless the value itself
+ * carries a sign (gain/loss), matching how the rest of the app already colors P&L text.
+ */
+function Scoreboard({ items }: { items: { label: string; value: string; tone?: "good" | "bad" }[] }) {
+  return (
+    <div className="flex gap-6 flex-wrap shrink-0">
+      {items.map((it) => (
+        <div key={it.label} className="text-right">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">{it.label}</p>
+          <p
+            className={`text-xl font-black tabular-nums ${it.tone === "good" ? "text-emerald-600" : it.tone === "bad" ? "text-rose-600" : "text-slate-900"}`}
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            {it.value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * STAT — one segment of a Module's stat strip. `hero` marks the single most important figure
+ * in the strip (larger type), giving real hierarchy instead of four equally-weighted boxes.
+ */
+interface StatProps {
   title: string;
   value: string;
   icon: React.ReactNode;
   description: string;
   color: "blue" | "emerald" | "violet" | "red" | "gold";
+  hero?: boolean;
 }
 
-function StatCard({ title, value, icon, description, color }: StatCardProps) {
+function Stat({ title, value, icon, description, color, hero }: StatProps) {
   const colorMap = {
     blue: "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -309,124 +380,117 @@ function StatCard({ title, value, icon, description, color }: StatCardProps) {
   };
 
   return (
-    <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`p-3 rounded-2xl border ${colorMap[color]}`}>
-          {icon}
-        </div>
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</span>
+    <div className="p-6 md:p-7 flex flex-col gap-2.5">
+      <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${colorMap[color]}`}>
+        {icon}
       </div>
-      <div>
-        <h3 className="text-2xl font-black text-slate-900">{value}</h3>
-        <p className="text-xs font-medium text-slate-500 mt-1">{description}</p>
-      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
+      <p
+        className={`font-black text-slate-900 ${hero ? "text-[28px] md:text-[32px]" : "text-xl md:text-2xl"}`}
+        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      >
+        {value}
+      </p>
+      <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>
     </div>
   );
 }
 
 /**
- * BAR LIST — magnitude comparison across a handful of named categories that all share
- * one currency (broker, asset class). Never fed cross-currency values: bar length directly
- * encodes size, so mixing units would visually imply a comparison that isn't real.
+ * ALLOC PANEL — one third of the "Where the money went" Module (was its own bordered card).
  */
-interface BarListProps {
-  title: string;
-  subtitle: string;
-  items: { label: string; value: number }[];
-  currency: string;
+function AllocPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return (
+    <div className="p-6 md:p-7">
+      <h3 className="text-sm font-black text-slate-900">{title}</h3>
+      <p className="text-xs text-slate-500 mt-1 mb-5">{subtitle}</p>
+      {children}
+    </div>
+  );
 }
 
-function BarList({ title, subtitle, items, currency }: BarListProps) {
+/**
+ * BAR LIST BODY — magnitude comparison across a handful of named categories that all share
+ * one currency (broker, asset class). Never fed cross-currency values: bar length directly
+ * encodes size, so mixing units would visually imply a comparison that isn't real. Lives inside
+ * an AllocPanel now rather than owning its own card.
+ */
+function BarListBody({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
   const max = Math.max(0, ...items.map(i => i.value));
 
+  if (items.length === 0) {
+    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
+  }
+
   return (
-    <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm">
-      <h3 className="text-sm font-black text-slate-900">{title}</h3>
-      <p className="text-xs text-slate-500 mt-1 mb-5">{subtitle}</p>
-      {items.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6">No data yet.</p>
-      ) : (
-        <div className="space-y-4">
-          {items.map((item) => {
-            const widthPct = max > 0 ? (item.value / max) * 100 : 0;
-            return (
-              <div key={item.label}>
-                <div className="flex items-baseline justify-between gap-4 mb-1">
-                  <span className="text-xs font-bold text-slate-900">{item.label}</span>
-                  <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(item.value, currency, 0)}</span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div className="space-y-4">
+      {items.map((item) => {
+        const widthPct = max > 0 ? (item.value / max) * 100 : 0;
+        return (
+          <div key={item.label}>
+            <div className="flex items-baseline justify-between gap-4 mb-1">
+              <span className="text-xs font-bold text-slate-900">{item.label}</span>
+              <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(item.value, currency, 0)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /**
- * DONUT BREAKDOWN — part-to-whole across a handful of named categories (≤ ~6-8).
+ * DONUT BODY — part-to-whole across a handful of named categories (≤ ~6-8).
  * Single categorical hue per slot, fixed order; every value also lives in the legend
  * as text (never color-only), which is the required relief for the low-contrast slots.
+ * Lives inside an AllocPanel now rather than owning its own card.
  */
-interface DonutBreakdownProps {
-  title: string;
-  subtitle: string;
-  data: { label: string; value: number }[];
-  currency: string;
-}
-
-function DonutBreakdown({ title, subtitle, data, currency }: DonutBreakdownProps) {
+function DonutBody({ data, currency }: { data: { label: string; value: number }[]; currency: string }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
-  return (
-    <div className="bg-white p-6 rounded-4xl border border-slate-200 shadow-sm">
-      <h3 className="text-sm font-black text-slate-900">{title}</h3>
-      <p className="text-xs text-slate-500 mt-1 mb-5">{subtitle}</p>
+  if (data.length === 0) {
+    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
+  }
 
-      {data.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6">No data yet.</p>
-      ) : (
-        <div className="flex flex-col items-center gap-5">
-          <div className="w-28 h-28 shrink-0">
-            <PieChart width={112} height={112}>
-              <Pie
-                data={data}
-                dataKey="value"
-                nameKey="label"
-                innerRadius={36}
-                outerRadius={56}
-                paddingAngle={2}
-                stroke="none"
-              >
-                {data.map((_, i) => (
-                  <Cell key={i} fill={CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => formatCurrency(Number(value), currency, 0)} />
-            </PieChart>
-          </div>
-          <div className="w-full space-y-2.5">
-            {data.map((d, i) => {
-              const pct = total > 0 ? (d.value / total) * 100 : 0;
-              return (
-                <div key={d.label} className="flex items-center gap-2.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length] }}
-                  />
-                  <span className="text-xs font-bold text-slate-900 flex-1 truncate">{d.label}</span>
-                  <span className="text-xs font-semibold text-slate-500 shrink-0">{formatCurrency(d.value, currency, 0)}</span>
-                  <span className="text-[11px] font-semibold text-slate-400 w-9 text-right shrink-0">{pct.toFixed(0)}%</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+  return (
+    <div className="flex flex-col items-center gap-5">
+      <div className="w-28 h-28 shrink-0">
+        <PieChart width={112} height={112}>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="label"
+            innerRadius={36}
+            outerRadius={56}
+            paddingAngle={2}
+            stroke="none"
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length]} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(value) => formatCurrency(Number(value), currency, 0)} />
+        </PieChart>
+      </div>
+      <div className="w-full space-y-2.5">
+        {data.map((d, i) => {
+          const pct = total > 0 ? (d.value / total) * 100 : 0;
+          return (
+            <div key={d.label} className="flex items-center gap-2.5">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length] }}
+              />
+              <span className="text-xs font-bold text-slate-900 flex-1 truncate">{d.label}</span>
+              <span className="text-xs font-semibold text-slate-500 shrink-0">{formatCurrency(d.value, currency, 0)}</span>
+              <span className="text-[11px] font-semibold text-slate-400 w-9 text-right shrink-0">{pct.toFixed(0)}%</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
