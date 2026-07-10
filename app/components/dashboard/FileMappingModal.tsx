@@ -1,18 +1,22 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, FileText, X, Check } from "lucide-react";
-import { ALL_FIELDS, REQUIRED_FIELDS } from "../../lib/parser";
+import { AlertCircle, AlertTriangle, CalendarClock, FileText, X, Check } from "lucide-react";
+import { ALL_FIELDS, REQUIRED_FIELDS, DATE_FORMAT_OPTIONS } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
 import { UploadedFileState } from "./uploaderTypes";
 
 interface FileMappingModalProps {
   file: UploadedFileState;
   onMappingChange: (field: keyof StandardTransaction, csvHeader: string) => void;
+  onDateFormatChange: (dateFormat: string) => void;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-export function FileMappingModal({ file, onMappingChange, onConfirm, onClose }: FileMappingModalProps) {
+export function FileMappingModal({ file, onMappingChange, onDateFormatChange, onConfirm, onClose }: FileMappingModalProps) {
+  // Shown once auto-detection isn't confident, and kept visible after the user picks a format
+  // explicitly (dateFormat stops being "auto") so they can still change their mind.
+  const showDateFormatPicker = file.dateFormatAmbiguous || file.dateFormat !== "auto";
   return (
     <div
       className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
@@ -39,20 +43,20 @@ export function FileMappingModal({ file, onMappingChange, onConfirm, onClose }: 
           </button>
         </div>
 
+        {file.missingFields.length > 0 && (
+          <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3">
+            <AlertCircle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-rose-800 font-medium leading-relaxed">
+              Still missing: <span className="font-bold">{file.missingFields.join(", ")}</span>. Map {file.missingFields.length === 1 ? "this field" : "these fields"} below before saving.
+            </p>
+          </div>
+        )}
+
         {file.hasOrdersWithoutTime && (
           <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
             <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-800 font-medium leading-relaxed">
               Some orders are missing execution times. For these transactions, the spread will be calculated as a daily approximation.
-            </p>
-          </div>
-        )}
-
-        {file.hasMissingExchangeMic && (
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800 font-medium leading-relaxed">
-              Some transactions are missing the <span className="font-bold">exchange MIC</span> code. The ticker from the first available exchange will be used, which may cause unexpected spread.
             </p>
           </div>
         )}
@@ -71,6 +75,26 @@ export function FileMappingModal({ file, onMappingChange, onConfirm, onClose }: 
                   {field}: {count} error{count !== 1 ? 's' : ''}
                 </span>
               ))}
+            </div>
+          </div>
+        )}
+
+        {showDateFormatPicker && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+            <CalendarClock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                Couldn&apos;t confidently tell which date format this file uses. Pick the right one below — the preview updates immediately.
+              </p>
+              <select
+                value={file.resolvedDateFormat}
+                onChange={(e) => onDateFormatChange(e.target.value)}
+                className="text-xs bg-white border border-amber-300 rounded-xl p-2.5 font-semibold outline-none transition-all focus:ring-4 focus:ring-amber-50"
+              >
+                {DATE_FORMAT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}

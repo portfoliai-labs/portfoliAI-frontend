@@ -16,6 +16,7 @@ import {
   validateMapping,
   validateTransactions,
   standardizeRow,
+  detectDateFormat,
   RawRow,
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
@@ -32,7 +33,6 @@ function pendingToDisplay(tx: StandardTransaction): DisplayTransaction {
   return {
     ticker: tx.ticker ?? null,
     isin: tx.isin ?? null,
-    exchange_mic: tx.exchange_mic ?? null,
     date: tx.date,
     operation: tx.operation,
     quantity: tx.quantity,
@@ -47,7 +47,6 @@ function existingToDisplay(tx: TransactionResponse): DisplayTransaction {
   return {
     ticker: tx.ticker,
     isin: tx.isin,
-    exchange_mic: tx.exchange_mic,
     date: tx.date,
     operation: tx.operation,
     quantity: tx.quantity,
@@ -70,7 +69,6 @@ function existingResponseToStandard(tx: TransactionResponse): StandardTransactio
     currency: tx.currency,
     fees: tx.fees,
     broker: tx.broker ?? "",
-    ...(tx.exchange_mic ? { exchange_mic: tx.exchange_mic } : {}),
   };
   return (tx.ticker
     ? { ...base, ticker: tx.ticker, ...(tx.isin ? { isin: tx.isin } : {}) }
@@ -85,7 +83,6 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
     asset_id: ticker,
     isin: tx.isin,
     ticker,
-    exchange_mic: tx.exchange_mic,
     date: tx.date,
     operation: tx.operation as TransactionInput["operation"],
     quantity: tx.quantity,
@@ -230,17 +227,36 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
 
   const canSubmit = pendingRows.length > 0 && confirmedFilesValid;
 
-  const processFileData = (rawData: RawRow[], mapping: Partial<Record<keyof StandardTransaction, string>>, brokerId: string) => {
-    const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId));
-    const { isValid: mappingValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic } = validateMapping(previewData);
+  const processFileData = (
+    rawData: RawRow[],
+    mapping: Partial<Record<keyof StandardTransaction, string>>,
+    brokerId: string,
+    dateFormat: string,
+  ) => {
+    // A broker with its own date formatter never needs auto-detection (none configured right now).
+    const hasCustomDateFormatter = !!BROKER_CONFIGS[brokerId]?.formatters?.date;
+    let resolvedDateFormat = dateFormat;
+    let dateFormatAmbiguous = false;
+
+    if (!hasCustomDateFormatter && dateFormat === "auto") {
+      const dateHeader = mapping.date;
+      const rawDateValues = dateHeader ? rawData.map(row => row[dateHeader] as string) : [];
+      const detected = detectDateFormat(rawDateValues);
+      resolvedDateFormat = detected.format;
+      dateFormatAmbiguous = detected.ambiguous;
+    }
+
+    const previewData = rawData.map(row => standardizeRow(row, mapping, brokerId, resolvedDateFormat));
+    const { isValid: mappingValid, missingFields, hasOrdersWithoutTime } = validateMapping(previewData);
     const validationErrors = validateTransactions(previewData);
     return {
       previewData,
       isValid: mappingValid && validationErrors.isValid,
       missingFields,
       hasOrdersWithoutTime,
-      hasMissingExchangeMic,
       validationErrors,
+      resolvedDateFormat,
+      dateFormatAmbiguous,
     };
   };
 
@@ -249,12 +265,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     const broker = identifyBroker(data);
     const initialMapping = BROKER_CONFIGS[broker]?.columns || {};
 
-    const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(data, initialMapping, broker);
+    const { previewData, isValid, missingFields, hasOrdersWithoutTime, validationErrors, resolvedDateFormat, dateFormatAmbiguous } =
+      processFileData(data, initialMapping, broker, "auto");
 
     const newFile: UploadedFileState = {
       id, fileName, rawData: data, previewData, manualMap: initialMapping,
-      detectedBroker: broker, isValid, missingFields: missingFields.map(String),
-      hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors, confirmed: false,
+      detectedBroker: broker, dateFormat: "auto", resolvedDateFormat, dateFormatAmbiguous,
+      isValid, missingFields: missingFields.map(String),
+      hasOrdersWithoutTime, validationErrors, confirmed: false,
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -267,10 +285,26 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     setFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const newMapping = { ...f.manualMap, [stdField]: csvHeader };
-      const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } = processFileData(f.rawData, newMapping, f.detectedBroker);
+      // The date column itself changed — any previously auto-detected/chosen format may no longer apply.
+      const dateFormat = stdField === "date" ? "auto" : f.dateFormat;
+      const { previewData, isValid, missingFields, hasOrdersWithoutTime, validationErrors, resolvedDateFormat, dateFormatAmbiguous } =
+        processFileData(f.rawData, newMapping, f.detectedBroker, dateFormat);
       return {
-        ...f, manualMap: newMapping, previewData, isValid,
-        missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
+        ...f, manualMap: newMapping, previewData, isValid, dateFormat, resolvedDateFormat, dateFormatAmbiguous,
+        missingFields: missingFields.map(String), hasOrdersWithoutTime, validationErrors,
+      };
+    }));
+  };
+
+  // The user overrides the auto-detected date format (e.g. auto-detection was ambiguous or wrong).
+  const handleDateFormatChange = (fileId: string, dateFormat: string) => {
+    setFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const { previewData, isValid, missingFields, hasOrdersWithoutTime, validationErrors, resolvedDateFormat, dateFormatAmbiguous } =
+        processFileData(f.rawData, f.manualMap, f.detectedBroker, dateFormat);
+      return {
+        ...f, previewData, isValid, dateFormat, resolvedDateFormat, dateFormatAmbiguous,
+        missingFields: missingFields.map(String), hasOrdersWithoutTime, validationErrors,
       };
     }));
   };
@@ -294,11 +328,11 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       for (const f of prev) {
         if (f.id !== fileId) { next.push(f); continue; }
         if (newRawData.length === 0) continue;
-        const { previewData, isValid, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors } =
-          processFileData(newRawData, f.manualMap, f.detectedBroker);
+        const { previewData, isValid, missingFields, hasOrdersWithoutTime, validationErrors, resolvedDateFormat, dateFormatAmbiguous } =
+          processFileData(newRawData, f.manualMap, f.detectedBroker, f.dateFormat);
         next.push({
-          ...f, rawData: newRawData, previewData, isValid,
-          missingFields: missingFields.map(String), hasOrdersWithoutTime, hasMissingExchangeMic, validationErrors,
+          ...f, rawData: newRawData, previewData, isValid, resolvedDateFormat, dateFormatAmbiguous,
+          missingFields: missingFields.map(String), hasOrdersWithoutTime, validationErrors,
         });
       }
       return next;
@@ -638,6 +672,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         <FileMappingModal
           file={mappingFile}
           onMappingChange={(field, header) => handleMappingChange(mappingFile.id, field, header)}
+          onDateFormatChange={(dateFormat) => handleDateFormatChange(mappingFile.id, dateFormat)}
           onConfirm={() => confirmMapping(mappingFile.id)}
           onClose={() => setMappingModalFileId(null)}
         />

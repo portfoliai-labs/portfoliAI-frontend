@@ -1,6 +1,7 @@
 import { StandardTransaction } from "../../models/Report";
 import { RawRow } from "./types";
 import { BROKER_CONFIGS } from "./config";
+import { parseDateValue } from "./dateFormat";
 
 export const identifyBroker = (data: RawRow[]): string => {
   if (!data.length) return "UNKNOWN";
@@ -23,6 +24,7 @@ export const standardizeRow = (
   row: RawRow,
   mapping: Partial<Record<keyof StandardTransaction, string>>,
   brokerId: string,
+  dateFormat: string,
 ): StandardTransaction => {
   const getVal = (field: keyof StandardTransaction): unknown => {
     const header = mapping[field];
@@ -46,13 +48,19 @@ export const standardizeRow = (
   const isin   = fmt.isin   ? fmt.isin(getVal("isin"), row)     : optStr(getVal("isin"));
   const ticker = fmt.ticker ? fmt.ticker(getVal("ticker"), row) : optStr(getVal("ticker"));
 
+  // A broker with its own date formatter always wins (none configured right now — see
+  // BROKER_CONFIGS); otherwise fall back to the flexible parser using the format
+  // detected/chosen for this file. If that can't parse the value either, keep the raw
+  // string so validation still shows the user what was there.
+  const rawDate = String(getVal("date") ?? "");
+  const parsedDate = fmt.date ? fmt.date(getVal("date"), row) : (parseDateValue(rawDate, dateFormat) || rawDate);
+
   return {
     // Locally-generated key, never mapped from a CSV column — prefers isin, falls back to ticker.
     id:           isin || ticker || "",
-    date:         fmt.date         ? fmt.date(getVal("date"), row)              : String(getVal("date") ?? ""),
+    date:         parsedDate,
     isin,
     ticker,
-    exchange_mic: fmt.exchange_mic ? fmt.exchange_mic(getVal("exchange_mic"), row) : optStr(getVal("exchange_mic")),
     operation:    fmt.operation    ? fmt.operation(getVal("operation"), row)    : fallbackOperation(getVal("operation")),
     quantity:     fmt.quantity     ? fmt.quantity(getVal("quantity"), row)      : Number(getVal("quantity")),
     price:        fmt.price        ? fmt.price(getVal("price"), row)            : Number(getVal("price")),

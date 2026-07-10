@@ -25,7 +25,6 @@ interface FormState {
   fees: string;
   ticker: string;
   isin: string;
-  exchangeMic: string;
   broker: string;
 }
 
@@ -39,7 +38,6 @@ const emptyForm: FormState = {
   fees: "",
   ticker: "",
   isin: "",
-  exchangeMic: "",
   broker: "Manual",
 };
 
@@ -65,7 +63,6 @@ function toFormState(tx?: StandardTransaction): FormState {
     fees: String(tx.fees ?? 0),
     ticker: tx.ticker ?? "",
     isin: tx.isin ?? "",
-    exchangeMic: tx.exchange_mic ?? "",
     broker: tx.broker,
   };
 }
@@ -146,7 +143,6 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
       broker: form.broker.trim() || "Manual",
       ...(isin ? { isin } : {}),
       ...(ticker ? { ticker } : {}),
-      ...(form.exchangeMic.trim() ? { exchange_mic: form.exchangeMic.trim().toUpperCase() } : {}),
     } as StandardTransaction;
 
     const { errors: validationErrors } = validateTransactions([transaction]);
@@ -208,7 +204,6 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
           <InputField label="Price" type="number" value={form.price} onChange={set("price")} placeholder="185.20" required />
           <InputField label="Currency" value={form.currency} onChange={set("currency")} placeholder="EUR" required />
           <InputField label="Fees" type="number" value={form.fees} onChange={set("fees")} placeholder="0" />
-          <InputField label="Exchange MIC" value={form.exchangeMic} onChange={set("exchangeMic")} placeholder="XMIL" />
           <InputField label="Broker" value={form.broker} onChange={set("broker")} placeholder="Manual" />
         </div>
 

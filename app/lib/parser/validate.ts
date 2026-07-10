@@ -12,7 +12,6 @@ const hasTimeComponent = (date: string): boolean =>
 // Date-only, or a datetime with an optional seconds/fractional-seconds/timezone suffix
 const ISO_DATE_RE   = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 const CURRENCY_RE   = /^[A-Z]{3}$/;
-const MIC_RE        = /^[A-Z]{4}$/;
 const ISIN_RE       = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
 const TICKER_RE     = /^[A-Z0-9.\-]{1,20}$/i;
 const VALID_OPS     = new Set<string>(["buy", "sell", "dividend"]);
@@ -21,14 +20,13 @@ const VALID_OPS     = new Set<string>(["buy", "sell", "dividend"]);
 
 /**
  * Checks that all required fields are mapped and that at least one of isin/ticker
- * is present. Also detects missing time components and exchange_mic.
+ * is present. Also detects missing time components.
  */
 export const validateMapping = (data: StandardTransaction[]) => {
   if (data.length === 0) return {
     isValid: false,
     missingFields: [...REQUIRED_FIELDS.map(String), "isin or ticker"],
     hasOrdersWithoutTime: false,
-    hasMissingExchangeMic: false,
   };
 
   const missingFields: string[] = REQUIRED_FIELDS.filter(field =>
@@ -45,9 +43,7 @@ export const validateMapping = (data: StandardTransaction[]) => {
     row => row.date && row.date !== "" && !hasTimeComponent(row.date),
   );
 
-  const hasMissingExchangeMic = data.some(row => !row.exchange_mic);
-
-  return { isValid: missingFields.length === 0, missingFields, hasOrdersWithoutTime, hasMissingExchangeMic };
+  return { isValid: missingFields.length === 0, missingFields, hasOrdersWithoutTime };
 };
 
 /**
@@ -66,9 +62,6 @@ export const validateTransactions = (data: StandardTransaction[]): TransactionVa
 
     if (row.ticker && !TICKER_RE.test(row.ticker))
       errors.push({ field: "ticker", row: i, message: `Invalid ticker format: "${row.ticker}"` });
-
-    if (row.exchange_mic && !MIC_RE.test(row.exchange_mic))
-      errors.push({ field: "exchange_mic", row: i, message: "MIC must be 4 uppercase letters (e.g. XMIL, XNYS)" });
 
     if (!VALID_OPS.has(row.operation))
       errors.push({ field: "operation", row: i, message: 'Must be "buy", "sell", or "dividend"' });

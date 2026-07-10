@@ -8,7 +8,6 @@ import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleDollarSi
 export interface DisplayTransaction {
   ticker: string | null;
   isin: string | null;
-  exchange_mic: string | null;
   date: string;
   operation: string;
   quantity: number;
@@ -122,7 +121,6 @@ export function TransactionsSection({
               `${Number.isNaN(tx.quantity) ? "-" : tx.quantity} @ ${formatMoney(tx.price, tx.currency)}`,
               !Number.isNaN(total) && `= ${formatMoney(total, tx.currency)}`,
               tx.isin && `ISIN ${tx.isin}`,
-              tx.exchange_mic && `MIC ${tx.exchange_mic}`,
               tx.broker,
               tx.fees > 0 && `fees ${formatMoney(tx.fees, tx.currency)}`,
               !isExisting && row.sourceLabel,

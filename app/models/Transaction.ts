@@ -9,7 +9,6 @@ interface TransactionInput {
   asset_id: string;
   isin?: string | null;
   ticker: string;
-  exchange_mic?: string | null;
   date: string;
   operation: TransactionOperation;
   quantity: number;
@@ -25,7 +24,6 @@ interface TransactionResponse {
   asset_id: string;
   isin: string | null;
   ticker: string | null;
-  exchange_mic: string | null;
   date: string;
   operation: TransactionOperation;
   quantity: number;
@@ -48,7 +46,6 @@ interface TransactionUpdatePayload {
   asset_id?: string | null;
   isin?: string | null;
   ticker?: string | null;
-  exchange_mic?: string | null;
   date?: string | null;
   operation?: TransactionOperation | null;
   quantity?: number | null;
