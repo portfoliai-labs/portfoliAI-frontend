@@ -22,6 +22,7 @@ import {
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
 import type { TransactionInput, TransactionResponse } from "../../models/Transaction";
+import { buildReportName } from "../../lib/format";
 import { TransactionModal } from "./TransactionModal";
 import { FileMappingModal } from "./FileMappingModal";
 import { UploadedFileState } from "./uploaderTypes";
@@ -94,7 +95,7 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
   };
 }
 
-export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
+export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: string | null; forUserName?: string | null } = {}) {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
@@ -527,13 +528,12 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     }
   };
 
-  // Kicks off analysis on demand, independent of saving. The backend has no filename
-  // of its own significance yet, so a random UUID is used as a placeholder.
+  // Kicks off analysis on demand, independent of saving.
   const handleStartAnalysis = async () => {
     if (reportsExhausted) return;
     try {
       setAnalyzing(true);
-      const filename = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+      const filename = buildReportName(forUserName);
       await reportService.processReport(filename, forUserUuid);
       setStatus("processing");
       setShowToast(true);

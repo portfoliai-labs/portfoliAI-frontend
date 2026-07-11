@@ -1,12 +1,29 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { 
-  FileText, Download, Search, Tag as TagIcon, 
-  Loader2, AlertCircle, X, Eye, Plus, Check, Rows, LayoutGrid 
+import {
+  FileText, Download, Search, Tag as TagIcon,
+  Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid
 } from "lucide-react";
 import { reportService } from "../../services/reportService";
 import type { Document } from "../../models/Report";
+
+// Buckets a report's created_at into a human-friendly date-group label ("Today",
+// "Yesterday", or a calendar date), used to break up the default archive view.
+function formatDateGroupLabel(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
+}
 
 // --- INTERFACES ---
 
@@ -158,7 +175,7 @@ export function ReportsList({
   }, [reports, searchTerm, selectedTag]);
 
   /**
-   * Groups filtered reports by their tags for the "Grouped View"
+   * Groups filtered reports by their tags for the "By Tag" view
    */
   const groupedDocuments = useMemo(() => {
     const groups: Record<string, Document[]> = {};
@@ -169,6 +186,25 @@ export function ReportsList({
         report.tags.forEach((tag: string) => {
           groups[tag] = [...(groups[tag] || []), report];
         });
+      }
+    });
+    return groups;
+  }, [filteredList]);
+
+  /**
+   * Groups filtered reports by creation date for the default "By Date" view — a flat,
+   * unbroken list gets hard to scan once there are more than a handful of reports.
+   * filteredList is already sorted newest-first, so a single pass keeps that order.
+   */
+  const groupedByDate = useMemo(() => {
+    const groups: { label: string; docs: Document[] }[] = [];
+    filteredList.forEach(report => {
+      const label = formatDateGroupLabel(report.created_at);
+      const currentGroup = groups[groups.length - 1];
+      if (currentGroup && currentGroup.label === label) {
+        currentGroup.docs.push(report);
+      } else {
+        groups.push({ label, docs: [report] });
       }
     });
     return groups;
@@ -215,21 +251,21 @@ export function ReportsList({
 
         {/* View Switcher */}
         <div className="flex bg-slate-100/80 p-1.5 rounded-xl border border-slate-200 shrink-0 w-full md:w-auto">
-          <button 
+          <button
             onClick={() => setViewMode("list")}
             className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-500 hover:text-slate-700"
             }`}
           >
-            <Rows className="h-4 w-4" /> List View
+            <Calendar className="h-4 w-4" /> By Date
           </button>
-          <button 
+          <button
             onClick={() => setViewMode("grouped")}
             className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === "grouped" ? "bg-white shadow-sm text-blue-600" : "text-slate-500 hover:text-slate-700"
             }`}
           >
-            <LayoutGrid className="h-4 w-4" /> Grouped
+            <LayoutGrid className="h-4 w-4" /> By Tag
           </button>
         </div>
       </div>
@@ -251,22 +287,36 @@ export function ReportsList({
             )}
           </div>
         ) : viewMode === "list" ? (
-          <div className="grid gap-4">
-            {filteredList.map(report => (
-              <DocumentCard
-                key={report.document_id}
-                report={report}
-                onDownload={handleDownload}
-                onView={handleView}
-                onRemoveTag={handleRemoveTag}
-                onAddTag={handleAddTag}
-                taggingDocId={taggingDocId}
-                setTaggingDocId={setTaggingDocId}
-                newTagName={newTagName}
-                setNewTagName={setNewTagName}
-              />
-            ))}
-          </div>
+          groupedByDate.map(({ label, docs }) => (
+            <div key={`date-${label}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">
+              <div className="flex items-center gap-3 px-2">
+                <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">{label}</h3>
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="text-xs font-bold text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+                  {docs.length} items
+                </span>
+              </div>
+              <div className="grid gap-4">
+                {docs.map(report => (
+                  <DocumentCard
+                    key={`date-${label}-${report.document_id}`}
+                    report={report}
+                    onDownload={handleDownload}
+                    onView={handleView}
+                    onRemoveTag={handleRemoveTag}
+                    onAddTag={handleAddTag}
+                    taggingDocId={taggingDocId}
+                    setTaggingDocId={setTaggingDocId}
+                    newTagName={newTagName}
+                    setNewTagName={setNewTagName}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
         ) : (
           Object.entries(groupedDocuments).map(([tag, docs]) => (
             <div key={`group-${tag}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">

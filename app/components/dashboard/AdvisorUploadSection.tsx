@@ -96,6 +96,10 @@ export function AdvisorUploadSection() {
     return <ClientPicker clients={clients} onSelect={setSelected} />;
   }
 
+  const selectedName = selected.first_name || selected.last_name
+    ? `${selected.first_name ?? ""} ${selected.last_name ?? ""}`.trim()
+    : selected.email;
+
   return (
     <div className="space-y-6 pb-12">
       {/* Client context bar */}
@@ -106,11 +110,7 @@ export function AdvisorUploadSection() {
           </div>
           <div>
             <p className="text-xs font-bold text-[#78716c] uppercase tracking-wider">Uploading for</p>
-            <p className="text-sm font-bold text-[#1c1917]">
-              {selected.first_name || selected.last_name
-                ? `${selected.first_name ?? ""} ${selected.last_name ?? ""}`.trim()
-                : selected.email}
-            </p>
+            <p className="text-sm font-bold text-[#1c1917]">{selectedName}</p>
           </div>
         </div>
         <button
@@ -122,7 +122,7 @@ export function AdvisorUploadSection() {
         </button>
       </div>
 
-      <FileUploader forUserUuid={selected.uuid} />
+      <FileUploader forUserUuid={selected.uuid} forUserName={selectedName} />
     </div>
   );
 }
