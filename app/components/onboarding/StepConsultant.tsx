@@ -23,41 +23,41 @@ export function StepConsultant({ formData, setFormData }: StepConsultantProps) {
           className="text-3xl font-bold text-[#1c1917]"
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
         >
-          Il tuo portafoglio clienti
+          Your client portfolio
         </h1>
         <p className="text-[#78716c] mt-2 text-sm">
-          Questi dati ci aiutano a dimensionare i servizi per le tue esigenze.
+          This data helps us size the service to your needs.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Numero di clienti
+            Number of clients
           </label>
           <input
             type="text"
             className={inputClass}
             value={formData.clients_count || ""}
             onChange={(e) => handleNumericChange('clients_count', e.target.value)}
-            placeholder="Es. 25"
+            placeholder="E.g. 25"
           />
         </div>
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Anni di esperienza
+            Years of experience
           </label>
           <input
             type="text"
             className={inputClass}
             value={formData.years_of_experience || ""}
             onChange={(e) => handleNumericChange('years_of_experience', e.target.value)}
-            placeholder="Es. 10"
+            placeholder="E.g. 10"
           />
         </div>
         <div className="md:col-span-2 space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Patrimonio gestito totale (AUM)
+            Total assets under management (AUM)
           </label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[#a8a29e]">€</span>
@@ -72,14 +72,14 @@ export function StepConsultant({ formData, setFormData }: StepConsultantProps) {
         </div>
         <div className="md:col-span-2 space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Specializzazione (opzionale)
+            Specialization (optional)
           </label>
           <input
             type="text"
             className={inputClass}
             value={formData.specialization || ""}
             onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-            placeholder="Es. Previdenza, ETF, Real Estate..."
+            placeholder="E.g. Retirement, ETFs, Real Estate..."
           />
         </div>
       </div>

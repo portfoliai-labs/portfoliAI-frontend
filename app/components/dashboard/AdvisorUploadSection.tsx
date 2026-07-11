@@ -22,11 +22,11 @@ function ClientPicker({
   return (
     <div className="space-y-8 pb-12">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Transazioni</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Transactions</p>
         <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          Seleziona un Cliente
+          Select a Client
         </h1>
-        <p className="text-sm text-[#78716c] mt-2">Scegli il cliente per cui vuoi caricare i documenti.</p>
+        <p className="text-sm text-[#78716c] mt-2">Choose the client you want to upload documents for.</p>
       </div>
 
       {clients.length === 0 ? (
@@ -35,9 +35,9 @@ function ClientPicker({
             <UploadCloud className="w-7 h-7 text-[#C49A3C]" />
           </div>
           <h3 className="text-lg font-bold text-[#1c1917] mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Nessun cliente registrato
+            No clients registered
           </h3>
-          <p className="text-sm text-[#78716c]">Aggiungi un cliente dalla sezione Clienti prima di caricare documenti.</p>
+          <p className="text-sm text-[#78716c]">Add a client from the Clients section before uploading documents.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -105,7 +105,7 @@ export function AdvisorUploadSection() {
             {initials(selected)}
           </div>
           <div>
-            <p className="text-xs font-bold text-[#78716c] uppercase tracking-wider">Caricamento per</p>
+            <p className="text-xs font-bold text-[#78716c] uppercase tracking-wider">Uploading for</p>
             <p className="text-sm font-bold text-[#1c1917]">
               {selected.first_name || selected.last_name
                 ? `${selected.first_name ?? ""} ${selected.last_name ?? ""}`.trim()
@@ -116,7 +116,7 @@ export function AdvisorUploadSection() {
         <button
           onClick={() => setSelected(null)}
           className="p-2 rounded-xl hover:bg-[#F7F5EF] text-[#78716c] hover:text-[#1c1917] transition-colors"
-          title="Cambia cliente"
+          title="Change client"
         >
           <X className="w-4 h-4" />
         </button>

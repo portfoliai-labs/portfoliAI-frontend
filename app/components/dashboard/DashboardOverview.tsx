@@ -14,21 +14,18 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
-import { useUser } from "../../context/UserContext";
 import { portfolioService } from "../../services/portfolioService";
 import { userService } from "../../services/userService";
 import type { PortfolioSummary, CurrencyBreakdown, Holding } from "../../models/Portfolio";
 import type { UserMetrics } from "../../models/User";
 import { formatCurrency } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
-import { QuotaBar, FREE_MONTHLY_REPORTS } from "./QuotaBar";
 
 export default function DashboardOverview({
   onNavigate,
 }: {
   onNavigate?: (section: string) => void;
 }) {
-  const { user } = useUser();
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [metrics, setMetrics] = useState<UserMetrics | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
@@ -65,6 +62,10 @@ export default function DashboardOverview({
   const holdings = portfolio?.holdings ?? [];
   const byCurrency = portfolio?.byCurrency ?? [];
 
+  // reports_remaining is null when the subscription has no monthly cap — never exhausted then.
+  const reportsRemaining = metrics?.reports_remaining ?? null;
+  const reportsExhausted = reportsRemaining !== null && reportsRemaining <= 0;
+
   // The top holding within each currency — a cross-currency "top holding" would need an
   // FX rate to compare, so this is computed per currency instead of once globally.
   const topHoldingByCurrency = new Map<string, Holding | undefined>(
@@ -97,7 +98,13 @@ export default function DashboardOverview({
           {onNavigate && (
             <button
               onClick={() => onNavigate("upload")}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-blue-600 transition-colors shadow-sm"
+              disabled={reportsExhausted}
+              title={reportsExhausted ? "Monthly report limit reached — upgrade to continue" : undefined}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-sm ${
+                reportsExhausted
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-slate-900 text-white hover:bg-blue-600"
+              }`}
             >
               <Sparkles className="h-3.5 w-3.5" />
               Generate Report
@@ -109,14 +116,6 @@ export default function DashboardOverview({
           </div>
         </div>
       </div>
-
-      {/* REPORT QUOTA — user-level, not per-currency, so it lives outside the currency loop.
-          Testers aren't capped, so there's no quota to show them. */}
-      {user?.subscription_tier !== "TESTER" && (
-        <div className="max-w-sm">
-          <QuotaBar used={metrics?.report_generated ?? 0} total={FREE_MONTHLY_REPORTS} />
-        </div>
-      )}
 
       {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
       {activeCurrencyData && (

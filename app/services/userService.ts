@@ -1,5 +1,5 @@
 // services/userService.ts
-import type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics } from "../models/User";
+import type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, SubscriptionResponse } from "../models/User";
 import { apiFetch } from "./apiClient";
 
 export const userService = {
@@ -25,5 +25,9 @@ export const userService = {
 
   async getUserMetrics(): Promise<UserMetrics> {
     return apiFetch<UserMetrics>('/users/metrics');
+  },
+
+  async getSubscription(): Promise<SubscriptionResponse> {
+    return apiFetch<SubscriptionResponse>('/users/subscription');
   },
 };

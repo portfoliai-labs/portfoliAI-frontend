@@ -23,10 +23,10 @@ function ClientAvatar({ client, size = "md" }: { client: Client; size?: "sm" | "
 const RISK_OPTIONS = ["low", "medium", "high"] as const;
 const CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
 const LANGUAGE_OPTIONS = [
-  { value: "it", label: "Italiano" },
+  { value: "it", label: "Italian" },
   { value: "en", label: "English" },
-  { value: "fr", label: "Français" },
-  { value: "de", label: "Deutsch" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
 ];
 
 interface AddClientForm {
@@ -146,7 +146,7 @@ function AddClientDrawer({
       const created = await advisorService.createClient(payload);
       onCreated(created);
     } catch {
-      setError("Impossibile creare il cliente. Riprova.");
+      setError("Unable to create client. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -161,7 +161,7 @@ function AddClientDrawer({
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Nuovo Cliente
+            New Client
           </h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5EF] text-[#78716c] transition-colors">
             <X className="w-5 h-5" />
@@ -169,45 +169,45 @@ function AddClientDrawer({
         </div>
 
         <div className="space-y-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Dati Anagrafici</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Personal Details</p>
           <div className="grid grid-cols-2 gap-3">
-            <InputField label="Nome" value={form.first_name} onChange={set("first_name")} required />
-            <InputField label="Cognome" value={form.last_name} onChange={set("last_name")} required />
+            <InputField label="First name" value={form.first_name} onChange={set("first_name")} required />
+            <InputField label="Last name" value={form.last_name} onChange={set("last_name")} required />
           </div>
           <InputField label="Email" value={form.email} onChange={set("email")} type="email" required />
           <SelectField
-            label="Lingua"
+            label="Language"
             value={form.language}
             onChange={set("language")}
             options={LANGUAGE_OPTIONS}
           />
 
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C] pt-2">Profilo Finanziario</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C] pt-2">Financial Profile</p>
           <div className="grid grid-cols-2 gap-3">
-            <InputField label="Patrimonio stimato" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" placeholder="es. 500000" />
-            <InputField label="Reddito annuo" value={form.annual_income} onChange={set("annual_income")} type="number" placeholder="es. 80000" />
+            <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" placeholder="e.g. 500000" />
+            <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" placeholder="e.g. 80000" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <SelectField
-              label="Valuta"
+              label="Currency"
               value={form.currency}
               onChange={set("currency")}
               options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
             />
             <SelectField
-              label="Tolleranza al rischio"
+              label="Risk tolerance"
               value={form.risk_tolerance}
               onChange={set("risk_tolerance")}
               options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Obiettivi finanziari</label>
+            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
             <textarea
               value={form.financial_goals}
               onChange={(e) => set("financial_goals")(e.target.value)}
               rows={3}
-              placeholder="es. Pensione anticipata, acquisto immobile..."
+              placeholder="e.g. Early retirement, buying a home..."
               className="w-full px-4 py-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] text-[#1c1917] text-sm font-medium placeholder:text-[#a8a29e] focus:outline-none focus:border-[#C49A3C] focus:ring-2 focus:ring-[#C49A3C]/10 transition-all resize-none"
             />
           </div>
@@ -219,7 +219,7 @@ function AddClientDrawer({
               onClick={onClose}
               className="flex-1 py-3 rounded-xl border border-[rgba(196,154,60,0.3)] text-[#78716c] font-bold text-sm hover:bg-[#F7F5EF] transition-colors"
             >
-              Annulla
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
@@ -227,7 +227,7 @@ function AddClientDrawer({
               className="flex-1 py-3 rounded-xl bg-[#1c1917] text-white font-bold text-sm hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Aggiungi Cliente
+              Add Client
             </button>
           </div>
         </div>
@@ -282,7 +282,7 @@ function EditClientDrawer({
         language: payload.language ?? client.language,
       });
     } catch {
-      setError("Impossibile aggiornare il profilo. Riprova.");
+      setError("Unable to update profile. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -312,31 +312,31 @@ function EditClientDrawer({
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <InputField label="Patrimonio stimato" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" />
-            <InputField label="Reddito annuo" value={form.annual_income} onChange={set("annual_income")} type="number" />
+            <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" />
+            <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <SelectField
-              label="Valuta"
+              label="Currency"
               value={form.currency}
               onChange={set("currency")}
               options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
             />
             <SelectField
-              label="Tolleranza al rischio"
+              label="Risk tolerance"
               value={form.risk_tolerance}
               onChange={set("risk_tolerance")}
               options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
             />
           </div>
           <SelectField
-            label="Lingua"
+            label="Language"
             value={form.language}
             onChange={set("language")}
             options={LANGUAGE_OPTIONS}
           />
           <div>
-            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Obiettivi finanziari</label>
+            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
             <textarea
               value={form.financial_goals}
               onChange={(e) => set("financial_goals")(e.target.value)}
@@ -352,7 +352,7 @@ function EditClientDrawer({
               onClick={onClose}
               className="flex-1 py-3 rounded-xl border border-[rgba(196,154,60,0.3)] text-[#78716c] font-bold text-sm hover:bg-[#F7F5EF] transition-colors"
             >
-              Annulla
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
@@ -360,7 +360,7 @@ function EditClientDrawer({
               className="flex-1 py-3 rounded-xl bg-[#1c1917] text-white font-bold text-sm hover:bg-[#C49A3C] transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Salva Modifiche
+              Save Changes
             </button>
           </div>
         </div>
@@ -422,7 +422,7 @@ function ClientCard({
             )}
             {client.estimated_wealth != null && (
               <span className="px-2 py-0.5 rounded-lg bg-[#F7F5EF] text-[10px] font-bold text-[#78716c]">
-                {new Intl.NumberFormat("it-IT", { style: "currency", currency: client.currency ?? "EUR", maximumFractionDigits: 0 }).format(client.estimated_wealth)}
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: client.currency ?? "EUR", maximumFractionDigits: 0 }).format(client.estimated_wealth)}
               </span>
             )}
           </div>
@@ -442,7 +442,7 @@ function ClientCard({
                 ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
                 : "hover:bg-[#F7F5EF] text-[#78716c] hover:text-rose-400"
             }`}
-            title={confirmDelete ? "Clicca di nuovo per confermare" : "Elimina cliente"}
+            title={confirmDelete ? "Click again to confirm" : "Delete client"}
             onBlur={() => setConfirmDelete(false)}
           >
             {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -490,16 +490,16 @@ export function ClientsSection() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Gestione Clienti</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Client Management</p>
           <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            I Tuoi Clienti
+            Your Clients
           </h1>
         </div>
         <button
           onClick={() => setShowAdd(true)}
           className="flex items-center gap-2 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-sm hover:bg-[#C49A3C] transition-colors shadow-sm"
         >
-          <Plus className="w-4 h-4" /> Aggiungi Cliente
+          <Plus className="w-4 h-4" /> Add Client
         </button>
       </div>
 
@@ -512,7 +512,7 @@ export function ClientsSection() {
             </div>
             <div>
               <p className="text-2xl font-bold text-[#1c1917]">{clients.length}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c]">Clienti totali</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c]">Total clients</p>
             </div>
           </div>
         </div>
@@ -529,14 +529,14 @@ export function ClientsSection() {
             <Users className="w-7 h-7 text-[#C49A3C]" />
           </div>
           <h3 className="text-lg font-bold text-[#1c1917] mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Nessun cliente ancora
+            No clients yet
           </h3>
-          <p className="text-sm text-[#78716c] mb-6">Aggiungi il tuo primo cliente per iniziare.</p>
+          <p className="text-sm text-[#78716c] mb-6">Add your first client to get started.</p>
           <button
             onClick={() => setShowAdd(true)}
             className="flex items-center gap-2 px-6 py-3 bg-[#1c1917] text-white rounded-xl font-bold text-sm hover:bg-[#C49A3C] transition-colors"
           >
-            <Plus className="w-4 h-4" /> Aggiungi Cliente
+            <Plus className="w-4 h-4" /> Add Client
           </button>
         </div>
       ) : (
@@ -555,7 +555,7 @@ export function ClientsSection() {
             className="bg-white rounded-[1.5rem] border-2 border-dashed border-[rgba(196,154,60,0.3)] p-5 hover:border-[#C49A3C]/60 hover:bg-[#F7F5EF]/50 transition-all flex flex-col items-center justify-center gap-2 text-[#a8a29e] hover:text-[#C49A3C] min-h-[120px]"
           >
             <Plus className="w-6 h-6" />
-            <span className="text-xs font-bold uppercase tracking-wider">Nuovo Cliente</span>
+            <span className="text-xs font-bold uppercase tracking-wider">New Client</span>
           </button>
         </div>
       )}

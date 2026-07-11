@@ -11,7 +11,6 @@ import { advisorService } from "../../services/advisorService";
 import { userService } from "../../services/userService";
 import type { Client, AdvisorProfile } from "../../models/Advisor";
 import type { UserMetrics } from "../../models/User";
-import { QuotaBar, FREE_MONTHLY_REPORTS } from "./QuotaBar";
 
 function formatCurrency(value: number, currency = "EUR") {
   if (value >= 1_000_000) {
@@ -130,16 +129,13 @@ export default function AdvisorDashboardOverview({
 
   const firstName = user?.first_name ?? user?.email?.split("@")[0] ?? "Advisor";
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Buongiorno" : hour < 18 ? "Buon pomeriggio" : "Buonasera";
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   // AUM: prefer advisor-set value; fallback to sum of client wealth
   const totalAum =
     advisorProfile?.aum != null
       ? advisorProfile.aum
       : clients.reduce((sum, c) => sum + (c.estimated_wealth ?? 0), 0);
-
-  const reportsUsed = metrics?.report_generated ?? 0;
-  const isTester = user?.subscription_tier === "TESTER";
 
   const recentClients = [...clients]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -158,7 +154,7 @@ export default function AdvisorDashboardOverview({
       {/* Header */}
       <div>
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">
-          {new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+          {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })}
         </p>
         <h1
           className="text-3xl font-bold text-[#1c1917]"
@@ -166,46 +162,40 @@ export default function AdvisorDashboardOverview({
         >
           {greeting}, {firstName}
         </h1>
-        <p className="text-sm text-[#78716c] mt-1">Ecco il riepilogo della tua attività.</p>
+        <p className="text-sm text-[#78716c] mt-1">Here&apos;s a summary of your activity.</p>
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         <StatCard
-          label="Clienti in gestione"
+          label="Clients managed"
           value={clients.length}
-          sub={clients.length === 1 ? "cliente registrato" : "clienti registrati"}
+          sub={clients.length === 1 ? "registered client" : "registered clients"}
           icon={<Users className="w-5 h-5 text-[#C49A3C]" />}
           iconBg="bg-[#C49A3C]/10"
         />
         <StatCard
-          label="Patrimonio gestito"
+          label="Assets under management"
           value={totalAum > 0 ? formatCurrency(totalAum) : "—"}
-          sub={advisorProfile?.aum != null ? "valore dichiarato" : "somma patrimoni clienti"}
+          sub={advisorProfile?.aum != null ? "declared value" : "sum of client assets"}
           icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-50"
         />
         <StatCard
-          label="Piano attivo"
+          label="Active plan"
           value={
             <span className="flex items-center gap-2">
               Free
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-[#F7F5EF] text-[#78716c] uppercase tracking-wider">
-                Piano base
+                Basic plan
               </span>
             </span>
           }
-          sub="Upgrade per report illimitati"
+          sub="Upgrade for unlimited reports"
           icon={<Crown className="w-5 h-5 text-[#C49A3C]" />}
           iconBg="bg-[#C49A3C]/10"
           accent
         />
-        {/* Quota card is wider / separate — testers aren't capped, so there's no quota to show */}
-        {!isTester && (
-          <div className="sm:col-span-2 xl:col-span-1">
-            <QuotaBar used={reportsUsed} total={FREE_MONTHLY_REPORTS} />
-          </div>
-        )}
       </div>
 
       {/* Bottom row */}
@@ -217,14 +207,14 @@ export default function AdvisorDashboardOverview({
               className="text-base font-bold text-[#1c1917]"
               style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
             >
-              Clienti recenti
+              Recent clients
             </h2>
             {onNavigate && (
               <button
                 onClick={() => onNavigate("clients")}
                 className="flex items-center gap-1 text-xs font-bold text-[#C49A3C] hover:text-[#d4aa4c] transition-colors"
               >
-                Vedi tutti <ArrowRight className="w-3.5 h-3.5" />
+                View all <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -233,14 +223,14 @@ export default function AdvisorDashboardOverview({
               <div className="w-12 h-12 rounded-2xl bg-[#1c1917] flex items-center justify-center mb-3">
                 <Users className="w-5 h-5 text-[#C49A3C]" />
               </div>
-              <p className="text-sm font-bold text-[#1c1917] mb-1">Nessun cliente ancora</p>
-              <p className="text-xs text-[#78716c] mb-4">Aggiungi il tuo primo cliente per iniziare.</p>
+              <p className="text-sm font-bold text-[#1c1917] mb-1">No clients yet</p>
+              <p className="text-xs text-[#78716c] mb-4">Add your first client to get started.</p>
               {onNavigate && (
                 <button
                   onClick={() => onNavigate("clients")}
                   className="px-4 py-2 bg-[#1c1917] text-white rounded-xl text-xs font-bold hover:bg-[#C49A3C] transition-colors"
                 >
-                  Aggiungi Cliente
+                  Add Client
                 </button>
               )}
             </div>
@@ -261,27 +251,27 @@ export default function AdvisorDashboardOverview({
               className="text-base font-bold text-[#1c1917] mb-4"
               style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
             >
-              Stato report
+              Report status
             </h2>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-[#78716c]">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  Completati
+                  Completed
                 </div>
                 <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_generated ?? 0}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-[#78716c]">
                   <Clock className="w-4 h-4 text-amber-500" />
-                  In elaborazione
+                  In progress
                 </div>
                 <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_in_progress ?? 0}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-[#78716c]">
                   <AlertCircle className="w-4 h-4 text-rose-400" />
-                  Errori
+                  Errors
                 </div>
                 <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_in_error ?? 0}</span>
               </div>
@@ -297,14 +287,14 @@ export default function AdvisorDashboardOverview({
                 <p className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro Version</p>
               </div>
               <p className="text-sm font-medium text-[#a8a29e] leading-tight mb-4">
-                Report illimitati e modelli AI avanzati per i tuoi clienti.
+                Unlimited reports and advanced AI models for your clients.
               </p>
               {onNavigate && (
                 <button
                   onClick={() => onNavigate("subscription")}
                   className="w-full py-2.5 bg-[#C49A3C] text-[#131210] rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#d4aa4c] transition-colors"
                 >
-                  Scopri Pro
+                  Discover Pro
                 </button>
               )}
             </div>

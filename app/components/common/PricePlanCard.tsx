@@ -77,7 +77,7 @@ const PricePlanCard: React.FC<PricePlanCardProps> = ({
         <div className="flex items-baseline gap-1 mb-2">
           <p className={`text-5xl font-extrabold ${styles.price}`}>{price}</p>
           {available && !['Free', 'Custom'].includes(price) && (
-            <span className="text-slate-500 font-medium">/mese</span>
+            <span className="text-slate-500 font-medium">/month</span>
           )}
         </div>
       </div>

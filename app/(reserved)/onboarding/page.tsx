@@ -66,7 +66,7 @@ function RoleCard({
       </h3>
       <p className={`text-sm leading-relaxed ${dark ? "text-[#a8a29e]" : "text-[#78716c]"}`}>{description}</p>
       <div className={`mt-6 flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${dark ? "text-[#C49A3C]" : "text-[#C49A3C]"}`}>
-        Inizia <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+        Get Started <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
       </div>
     </button>
   );
@@ -174,29 +174,29 @@ function OnboardingWizard() {
 
         <div className="w-full max-w-2xl">
           <div className="text-center mb-10">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-3">Benvenuto</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-3">Welcome</p>
             <h1
               className="text-3xl md:text-4xl font-bold text-[#1c1917] mb-3"
               style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
             >
-              Come utilizzerai PortfoliAI?
+              How will you use PortfoliAI?
             </h1>
             <p className="text-[#78716c] text-sm">
-              Seleziona il profilo più adatto a te. Potrai sempre modificarlo in seguito.
+              Select the profile that best fits you. You can always change it later.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <RoleCard
               icon={<User className="w-7 h-7" />}
-              title="Investitore Privato"
-              description="Gestisci il tuo patrimonio personale, analizza i tuoi investimenti e ottieni report fiscali."
+              title="Private Investor"
+              description="Manage your personal wealth, analyze your investments, and get tax reports."
               onClick={() => handleRoleSelect('investor')}
             />
             <RoleCard
               icon={<Briefcase className="w-7 h-7" />}
-              title="Consulente Finanziario"
-              description="Gestisci più clienti, carica le loro operazioni e personalizza l'analisi per ciascuno."
+              title="Financial Advisor"
+              description="Manage multiple clients, upload their transactions, and customize the analysis for each."
               dark
               onClick={() => handleRoleSelect('advisor')}
             />

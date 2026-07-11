@@ -50,6 +50,27 @@ interface UserMetrics {
   report_generated: number;
   report_in_error: number;
   report_in_progress: number;
+  report_generated_this_month: number;
+  // null means the subscription has no monthly cap (unlimited reports)
+  reports_remaining: number | null;
 }
 
-export type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, UserRole, SubscriptionTier };
+// Matches SubscriptionResponse DTO (GET /users/subscription, POST /users/subscription)
+interface SubscriptionResponse {
+  tier: SubscriptionTier;
+  plan_name: string;
+  monthly_reports_limit: number | null;
+  has_unlimited_reports: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type {
+  UserProfile,
+  ProfileCreatePayload,
+  ProfileUpdatePayload,
+  UserMetrics,
+  UserRole,
+  SubscriptionTier,
+  SubscriptionResponse,
+};

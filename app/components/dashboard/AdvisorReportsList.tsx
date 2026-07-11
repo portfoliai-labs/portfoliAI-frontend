@@ -22,11 +22,11 @@ function ClientPicker({
   return (
     <div className="space-y-8 pb-12">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Archivio Report</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Reports Archive</p>
         <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          Seleziona un Cliente
+          Select a Client
         </h1>
-        <p className="text-sm text-[#78716c] mt-2">Scegli il cliente di cui vuoi visualizzare i documenti.</p>
+        <p className="text-sm text-[#78716c] mt-2">Choose the client whose documents you want to view.</p>
       </div>
 
       {clients.length === 0 ? (
@@ -35,9 +35,9 @@ function ClientPicker({
             <FileText className="w-7 h-7 text-[#C49A3C]" />
           </div>
           <h3 className="text-lg font-bold text-[#1c1917] mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Nessun cliente registrato
+            No clients registered
           </h3>
-          <p className="text-sm text-[#78716c]">Aggiungi un cliente dalla sezione Clienti per visualizzarne i documenti.</p>
+          <p className="text-sm text-[#78716c]">Add a client from the Clients section to view their documents.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -105,7 +105,7 @@ export function AdvisorReportsList() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-white border border-transparent hover:border-[rgba(196,154,60,0.2)] text-[#78716c] hover:text-[#1c1917] font-bold text-sm transition-all"
         >
           <ArrowLeft className="w-4 h-4" />
-          Clienti
+          Clients
         </button>
         <span className="text-[#a8a29e]">/</span>
         <div className="flex items-center gap-2">

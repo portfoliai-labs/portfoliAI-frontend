@@ -9,6 +9,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { reportService } from "../../services/reportService";
 import { transactionService } from "../../services/transactionService";
+import { userService } from "../../services/userService";
 import {
   identifyBroker,
   BROKER_CONFIGS,
@@ -112,8 +113,23 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const [showExampleModal, setShowExampleModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  // null means the subscription has no monthly cap — analysis is never blocked then.
+  const [reportsRemaining, setReportsRemaining] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportsExhausted = reportsRemaining !== null && reportsRemaining <= 0;
+
+  // Re-fetches the remaining monthly report quota (used on mount and after a successful analysis run)
+  const refreshReportsRemaining = async () => {
+    try {
+      const m = await userService.getUserMetrics();
+      setReportsRemaining(m.reports_remaining);
+    } catch (error) {
+      console.error("Failed to fetch report quota:", error);
+    }
+  };
+
+  useEffect(() => { refreshReportsRemaining(); }, []);
 
   // Effetto per nascondere automaticamente il toast dopo 5 secondi
   useEffect(() => {
@@ -514,12 +530,14 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   // Kicks off analysis on demand, independent of saving. The backend has no filename
   // of its own significance yet, so a random UUID is used as a placeholder.
   const handleStartAnalysis = async () => {
+    if (reportsExhausted) return;
     try {
       setAnalyzing(true);
       const filename = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
       await reportService.processReport(filename, forUserUuid);
       setStatus("processing");
       setShowToast(true);
+      refreshReportsRemaining();
     } catch (error: unknown) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Failed to start analysis.");
@@ -787,16 +805,17 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         emptyMessage="No transactions yet. Add one manually or upload a file to get started."
         headerAction={
           <button
-            disabled={analyzing || loadingExisting || existingTotal === 0}
+            disabled={analyzing || loadingExisting || existingTotal === 0 || reportsExhausted}
             onClick={handleStartAnalysis}
+            title={reportsExhausted ? "Monthly report limit reached — upgrade to continue" : undefined}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm ${
-              !analyzing && !loadingExisting && existingTotal > 0
+              !analyzing && !loadingExisting && existingTotal > 0 && !reportsExhausted
                 ? "bg-slate-900 text-white hover:bg-blue-600"
                 : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
             }`}
           >
             {analyzing ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Run analysis
+            {reportsExhausted ? "Limit reached" : "Run analysis"}
           </button>
         }
       />

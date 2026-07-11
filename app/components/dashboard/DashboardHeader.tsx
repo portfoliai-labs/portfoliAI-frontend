@@ -5,7 +5,9 @@ import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
 import { useNotifications } from "../../hooks/useNotifications";
 import { NotificationPanel } from "./NotificationPanel";
-import type { SubscriptionTier } from "../../models/User";
+import { SubscriptionPopover } from "./SubscriptionPopover";
+import { userService } from "../../services/userService";
+import type { SubscriptionTier, SubscriptionResponse, UserMetrics } from "../../models/User";
 
 interface UserProfile {
   first_name: string;
@@ -38,6 +40,11 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
   } = useNotifications();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
+  const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
+  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
+  const [subscriptionMetrics, setSubscriptionMetrics] = useState<UserMetrics | null>(null);
+  const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
+
   const [user] = useState<UserProfile | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -69,6 +76,21 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
     if (opening) {
       loadNotifications();
       markAllRead();
+    }
+  }
+
+  function handleProfileClick() {
+    const opening = !isSubscriptionOpen;
+    setIsSubscriptionOpen(opening);
+    if (opening) {
+      setIsSubscriptionLoading(true);
+      Promise.all([userService.getSubscription(), userService.getUserMetrics()])
+        .then(([sub, metrics]) => {
+          setSubscription(sub);
+          setSubscriptionMetrics(metrics);
+        })
+        .catch((error) => console.error("Failed to fetch subscription:", error))
+        .finally(() => setIsSubscriptionLoading(false));
     }
   }
 
@@ -131,32 +153,46 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
         <div className="hidden md:block h-8 w-px bg-[#E0DACC] mx-2" />
 
         {/* Profile pill */}
-        <div className="flex items-center gap-3 p-1 md:p-1.5 md:pr-4 rounded-full md:rounded-[1.25rem] bg-white/70 border border-[rgba(196,154,60,0.25)] hover:shadow-sm transition-all cursor-pointer">
-          <div className="relative h-8 w-8 md:h-9 md:w-9 rounded-full md:rounded-xl bg-[#1c1917] flex items-center justify-center text-white shadow-inner overflow-hidden">
-            {user?.picture ? (
-              <Image
-                src={user.picture}
-                alt="Profile"
-                fill
-                sizes="36px"
-                className="object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <span className="font-bold text-xs">{initials}</span>
-            )}
-          </div>
-
-          <div className="hidden md:flex flex-col">
-            <span className="text-sm font-bold text-[#1c1917] leading-none mb-1">
-              {user?.full_name || "User Account"}
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-semibold text-[#C49A3C] uppercase tracking-wide">
-                {subscriptionTier ? TIER_LABEL[subscriptionTier] : 'Free Plan'}
-              </span>
+        <div className="relative">
+          <button
+            onClick={handleProfileClick}
+            className="flex items-center gap-3 p-1 md:p-1.5 md:pr-4 rounded-full md:rounded-[1.25rem] bg-white/70 border border-[rgba(196,154,60,0.25)] hover:shadow-sm transition-all cursor-pointer"
+          >
+            <div className="relative h-8 w-8 md:h-9 md:w-9 rounded-full md:rounded-xl bg-[#1c1917] flex items-center justify-center text-white shadow-inner overflow-hidden">
+              {user?.picture ? (
+                <Image
+                  src={user.picture}
+                  alt="Profile"
+                  fill
+                  sizes="36px"
+                  className="object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="font-bold text-xs">{initials}</span>
+              )}
             </div>
-          </div>
+
+            <div className="hidden md:flex flex-col">
+              <span className="text-sm font-bold text-[#1c1917] leading-none mb-1">
+                {user?.full_name || "User Account"}
+              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-semibold text-[#C49A3C] uppercase tracking-wide">
+                  {subscriptionTier ? TIER_LABEL[subscriptionTier] : 'Free Plan'}
+                </span>
+              </div>
+            </div>
+          </button>
+
+          {isSubscriptionOpen && (
+            <SubscriptionPopover
+              subscription={subscription}
+              metrics={subscriptionMetrics}
+              isLoading={isSubscriptionLoading}
+              onClose={() => setIsSubscriptionOpen(false)}
+            />
+          )}
         </div>
 
         <button
