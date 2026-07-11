@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Crown, Infinity as InfinityIcon, FileText, Loader2, AlertCircle } from "lucide-react";
+import { Crown, Infinity as InfinityIcon, FileText, Loader2, AlertCircle, ArrowRight } from "lucide-react";
 import type { SubscriptionResponse, UserMetrics } from "../../models/User";
 
 interface SubscriptionPopoverProps {
@@ -9,9 +9,10 @@ interface SubscriptionPopoverProps {
   metrics: UserMetrics | null;
   isLoading: boolean;
   onClose: () => void;
+  onManage?: () => void;
 }
 
-export function SubscriptionPopover({ subscription, metrics, isLoading, onClose }: SubscriptionPopoverProps) {
+export function SubscriptionPopover({ subscription, metrics, isLoading, onClose, onManage }: SubscriptionPopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,6 +86,14 @@ export function SubscriptionPopover({ subscription, metrics, isLoading, onClose 
                   </p>
                 </div>
               </div>
+              {onManage && (
+                <button
+                  onClick={onManage}
+                  className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-xl bg-[#1c1917] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#C49A3C] transition-colors"
+                >
+                  Manage Subscription <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
         </div>

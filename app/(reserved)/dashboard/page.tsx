@@ -13,7 +13,7 @@ import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSe
 import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsList";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
-import SubscriptionSection from "../../components/dashboard/SubscriptionSection";
+import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { Loader2 } from "lucide-react";
 
 /**
@@ -42,8 +42,8 @@ export default function DashboardPage() {
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
       case 'profile':
         return <ProfileSection />;
-      case 'subscription':
-        return <SubscriptionSection />;
+      case 'settings':
+        return <SettingsSection />;
       default:
         return <DashboardOverview />;
     }
@@ -71,6 +71,7 @@ export default function DashboardPage() {
         isMenuOpen={isSidebarOpen}
         onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         subscriptionTier={user.subscription_tier}
+        onNavigate={setActiveSection}
       />
 
       <div className="flex flex-1 overflow-hidden">

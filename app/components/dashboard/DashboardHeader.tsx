@@ -27,9 +27,10 @@ interface DashboardHeaderProps {
   onMenuToggle?: () => void;
   isMenuOpen?: boolean;
   subscriptionTier?: SubscriptionTier | null;
+  onNavigate?: (section: string) => void;
 }
 
-export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscriptionTier }: DashboardHeaderProps) {
+export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscriptionTier, onNavigate }: DashboardHeaderProps) {
   const {
     notifications,
     hasUnread,
@@ -191,6 +192,7 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
               metrics={subscriptionMetrics}
               isLoading={isSubscriptionLoading}
               onClose={() => setIsSubscriptionOpen(false)}
+              onManage={onNavigate ? () => { setIsSubscriptionOpen(false); onNavigate("settings"); } : undefined}
             />
           )}
         </div>

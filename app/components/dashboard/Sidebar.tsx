@@ -18,6 +18,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'reports', label: 'Reports Archive', icon: FileText },
     { id: 'profile', label: 'Profile', icon: User2Icon },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const consultantItems = [
@@ -25,6 +26,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'reports', label: 'Reports Archive', icon: FileText },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const menuItems = role === 'ADVISOR' ? consultantItems : investorItems;
@@ -85,10 +87,10 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
                   <p className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro Version</p>
                 </div>
                 <p className="text-[13px] font-medium text-[#a8a29e] leading-tight mb-4">
-                  Unlock unlimited analysis and tax insights.
+                  Unlock unlimited analysis and a more advanced AI model.
                 </p>
                 <button
-                  onClick={() => handleNavClick('subscription')}
+                  onClick={() => handleNavClick('settings')}
                   className="w-full py-2.5 bg-[#C49A3C] text-[#131210] rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-[#d4aa4c] transition-colors"
                 >
                   Upgrade Now

@@ -291,7 +291,7 @@ export default function AdvisorDashboardOverview({
               </p>
               {onNavigate && (
                 <button
-                  onClick={() => onNavigate("subscription")}
+                  onClick={() => onNavigate("settings")}
                   className="w-full py-2.5 bg-[#C49A3C] text-[#131210] rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#d4aa4c] transition-colors"
                 >
                   Discover Pro
