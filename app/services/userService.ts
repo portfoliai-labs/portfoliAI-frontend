@@ -1,5 +1,13 @@
 // services/userService.ts
-import type { UserProfile, ProfileCreatePayload, ProfileUpdatePayload, UserMetrics, SubscriptionResponse } from "../models/User";
+import type {
+  UserProfile,
+  ProfileCreatePayload,
+  ProfileUpdatePayload,
+  UserMetrics,
+  SubscriptionResponse,
+  NotificationPreferences,
+  NotificationPreferencesUpdatePayload,
+} from "../models/User";
 import { apiFetch } from "./apiClient";
 
 export const userService = {
@@ -29,5 +37,16 @@ export const userService = {
 
   async getSubscription(): Promise<SubscriptionResponse> {
     return apiFetch<SubscriptionResponse>('/users/subscription');
+  },
+
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    return apiFetch<NotificationPreferences>('/users/notification-preferences');
+  },
+
+  async updateNotificationPreferences(payload: NotificationPreferencesUpdatePayload): Promise<NotificationPreferences> {
+    return apiFetch<NotificationPreferences>('/users/notification-preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
   },
 };

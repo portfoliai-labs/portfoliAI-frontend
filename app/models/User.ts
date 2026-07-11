@@ -65,6 +65,23 @@ interface SubscriptionResponse {
   updated_at: string;
 }
 
+// Matches NotificationPreferencesResponse DTO (GET /users/notification-preferences)
+interface NotificationPreferences {
+  report_status_email: boolean;
+  marketing_email: boolean;
+  product_updates_email: boolean;
+  in_app_notifications: boolean;
+  updated_at: string | null;
+}
+
+// Matches NotificationPreferencesUpdatePayload DTO (PATCH /users/notification-preferences)
+interface NotificationPreferencesUpdatePayload {
+  report_status_email?: boolean | null;
+  marketing_email?: boolean | null;
+  product_updates_email?: boolean | null;
+  in_app_notifications?: boolean | null;
+}
+
 export type {
   UserProfile,
   ProfileCreatePayload,
@@ -73,4 +90,6 @@ export type {
   UserRole,
   SubscriptionTier,
   SubscriptionResponse,
+  NotificationPreferences,
+  NotificationPreferencesUpdatePayload,
 };
