@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, Loader2, Bell, Save, CheckCircle2 } from "lucide-react";
+import Script from "next/script";
+import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, Loader2, Bell, Save, CheckCircle2, FlaskConical } from "lucide-react";
 import { userService } from "../../services/userService";
 import type { SubscriptionResponse, UserMetrics, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
+
+// Tally form used for tester applications: https://tally.so/r/QKWeYg
+const TESTER_APPLICATION_FORM_ID = "QKWeYg";
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -112,6 +116,8 @@ export function SettingsSection() {
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-500">
+      <Script src="https://tally.so/widgets/embed.js" strategy="lazyOnload" />
+
       <div>
         <h2
           className="text-2xl md:text-3xl font-bold text-[#1c1917] tracking-tight"
@@ -196,6 +202,31 @@ export function SettingsSection() {
               </div>
             )}
           </div>
+
+          {/* Tester program CTA — only relevant while still on the free tier */}
+          {!loading && subscription?.tier === "FREE" && (
+            <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-[#C49A3C]/10 shrink-0">
+                <FlaskConical className="w-6 h-6 text-[#C49A3C]" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-[#1c1917]">Want to become a tester?</p>
+                <p className="text-xs text-[#78716c] mt-0.5">
+                  Fill out a short form and we&apos;ll review your request for early, unlimited access.
+                </p>
+              </div>
+              <button
+                data-tally-open={TESTER_APPLICATION_FORM_ID}
+                data-tally-layout="modal"
+                data-tally-width="600"
+                data-tally-emoji-text="🧪"
+                data-tally-emoji-animation="wave"
+                className="shrink-0 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#C49A3C] transition-colors"
+              >
+                Apply Now
+              </button>
+            </div>
+          )}
 
           {/* Available plans */}
           <SubscriptionSection />
