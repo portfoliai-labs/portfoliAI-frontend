@@ -228,8 +228,10 @@ export function SettingsSection() {
             </div>
           )}
 
-          {/* Available plans */}
-          <SubscriptionSection />
+          {/* Available plans — testers already have the best available access, nothing to upgrade to.
+              Waits on `loading` too: subscription is null until the fetch resolves, so checking
+              tier alone would flash the table on for a moment before hiding it for testers. */}
+          {!loading && subscription?.tier !== "TESTER" && <SubscriptionSection />}
         </div>
       )}
 
