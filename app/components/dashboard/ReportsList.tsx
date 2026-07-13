@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   FileText, Download, Search, Tag as TagIcon,
-  Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid, Link2
+  Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid
 } from "lucide-react";
 import { reportService } from "../../services/reportService";
 import type { Document } from "../../models/Report";
@@ -34,8 +34,6 @@ interface DocumentCardProps {
   report: Document;
   onDownload: (docId: string, fileName: string) => void;
   onView: (docId: string) => void;
-  onCopyLink: (docId: string) => void;
-  copiedDocId: string | null;
   onRemoveTag: (docId: string, tagName: string) => void;
   onAddTag: (docId: string) => void;
   taggingDocId: string | null;
@@ -64,9 +62,6 @@ export function ReportsList({
   const [taggingDocId, setTaggingDocId] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState<string>("");
 
-  // Transient feedback state for the "copy link" action
-  const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
-
   /**
    * Fetches all documents from the backend on component mount
    */
@@ -90,21 +85,10 @@ export function ReportsList({
 
   // --- ACTIONS ---
 
-  // Opens the standalone, shareable viewer route (app/(reserved)/dashboard/reports/[documentId])
-  // instead of a throwaway blob URL, so the same link can be copied and reopened later.
+  // Opens the standalone viewer route (app/(reserved)/dashboard/reports/[documentId])
+  // instead of a throwaway blob URL.
   const handleView = (docId: string) => {
     window.open(`/dashboard/reports/${docId}`, "_blank");
-  };
-
-  const handleCopyLink = async (docId: string) => {
-    try {
-      const shareUrl = `${window.location.origin}/dashboard/reports/${docId}`;
-      await navigator.clipboard.writeText(shareUrl);
-      setCopiedDocId(docId);
-      setTimeout(() => setCopiedDocId(prev => (prev === docId ? null : prev)), 1500);
-    } catch {
-      alert("Could not copy link");
-    }
   };
 
   const handleDownload = async (docId: string, fileName: string) => {
@@ -311,8 +295,6 @@ export function ReportsList({
                     report={report}
                     onDownload={handleDownload}
                     onView={handleView}
-                    onCopyLink={handleCopyLink}
-                    copiedDocId={copiedDocId}
                     onRemoveTag={handleRemoveTag}
                     onAddTag={handleAddTag}
                     taggingDocId={taggingDocId}
@@ -344,8 +326,6 @@ export function ReportsList({
                     report={report}
                     onDownload={handleDownload}
                     onView={handleView}
-                    onCopyLink={handleCopyLink}
-                    copiedDocId={copiedDocId}
                     onRemoveTag={handleRemoveTag}
                     onAddTag={handleAddTag}
                     taggingDocId={taggingDocId}
@@ -370,8 +350,6 @@ function DocumentCard({
   report,
   onDownload,
   onView,
-  onCopyLink,
-  copiedDocId,
   onRemoveTag,
   onAddTag,
   taggingDocId,
@@ -442,17 +420,6 @@ function DocumentCard({
           className="flex-1 md:flex-none flex justify-center items-center px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200 rounded-xl hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all"
         >
           <Eye className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => onCopyLink(report.document_id)}
-          title="Copy shareable link"
-          className="flex-1 md:flex-none flex justify-center items-center px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200 rounded-xl hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all"
-        >
-          {copiedDocId === report.document_id ? (
-            <Check className="h-4 w-4 text-emerald-500" />
-          ) : (
-            <Link2 className="h-4 w-4" />
-          )}
         </button>
         <button
           // Trigger the secure download workflow
