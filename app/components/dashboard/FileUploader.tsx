@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import { reportService } from "../../services/reportService";
 import { transactionService } from "../../services/transactionService";
 import { userService } from "../../services/userService";
+import { useNotificationsContext } from "../../context/NotificationsContext";
 import {
   identifyBroker,
   BROKER_CONFIGS,
@@ -116,6 +117,14 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
   const [editingKey, setEditingKey] = useState<string | null>(null);
   // null means the subscription has no monthly cap — analysis is never blocked then.
   const [reportsRemaining, setReportsRemaining] = useState<number | null>(null);
+  // True from the moment "Run analysis" is clicked (optimistic — before the request even
+  // resolves) until a SUCCESS/FAILED job notification arrives. Backed by the shared SSE
+  // stream rather than polling, so it unlocks the instant the backend reports completion.
+  const [isReportPending, setIsReportPending] = useState(false);
+  // Only notifications created at/after this instant count as "ours" — avoids unlocking
+  // the button because of a stale, already-read notification from a previous job.
+  const watchSinceRef = useRef<number>(0);
+  const { notifications } = useNotificationsContext();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportsExhausted = reportsRemaining !== null && reportsRemaining <= 0;
@@ -125,12 +134,30 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
     try {
       const m = await userService.getUserMetrics();
       setReportsRemaining(m.reports_remaining);
+      // A report was already in progress before this component ever mounted (e.g. page
+      // reload mid-generation) — start watching for its completion notification too.
+      if (m.report_in_progress > 0) {
+        watchSinceRef.current = Date.now();
+        setIsReportPending(true);
+      }
     } catch (error) {
       console.error("Failed to fetch report quota:", error);
     }
   };
 
   useEffect(() => { refreshReportsRemaining(); }, []);
+
+  // Unlocks as soon as a job-status notification (success or failure) shows up for the
+  // report we're watching — no reliance on re-fetching /users/metrics.
+  useEffect(() => {
+    if (!isReportPending) return;
+    const completed = notifications.some(n => {
+      const jobStatus = (n.payload as Record<string, unknown> | undefined)?.status;
+      if (jobStatus !== "SUCCESS" && jobStatus !== "FAILED") return false;
+      return new Date(n.created_at).getTime() >= watchSinceRef.current;
+    });
+    if (completed) setIsReportPending(false);
+  }, [notifications, isReportPending]);
 
   // Effetto per nascondere automaticamente il toast dopo 5 secondi
   useEffect(() => {
@@ -530,7 +557,10 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
 
   // Kicks off analysis on demand, independent of saving.
   const handleStartAnalysis = async () => {
-    if (reportsExhausted) return;
+    if (reportsExhausted || isReportPending) return;
+    // Lock immediately — don't wait for the request (or a metrics refetch) to confirm it.
+    watchSinceRef.current = Date.now();
+    setIsReportPending(true);
     try {
       setAnalyzing(true);
       const filename = buildReportName(forUserName);
@@ -539,6 +569,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
       setShowToast(true);
       refreshReportsRemaining();
     } catch (error: unknown) {
+      // The job never actually started — release the lock.
+      setIsReportPending(false);
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Failed to start analysis.");
       setShowToast(true);
@@ -805,17 +837,23 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
         emptyMessage="No transactions yet. Add one manually or upload a file to get started."
         headerAction={
           <button
-            disabled={analyzing || loadingExisting || existingTotal === 0 || reportsExhausted}
+            disabled={analyzing || loadingExisting || existingTotal === 0 || reportsExhausted || isReportPending}
             onClick={handleStartAnalysis}
-            title={reportsExhausted ? "Monthly report limit reached — upgrade to continue" : undefined}
+            title={
+              reportsExhausted
+                ? "Monthly report limit reached — upgrade to continue"
+                : isReportPending
+                ? "A report is already being generated — please wait for it to finish"
+                : undefined
+            }
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm ${
-              !analyzing && !loadingExisting && existingTotal > 0 && !reportsExhausted
+              !analyzing && !loadingExisting && existingTotal > 0 && !reportsExhausted && !isReportPending
                 ? "bg-slate-900 text-white hover:bg-blue-600"
                 : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
             }`}
           >
-            {analyzing ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {reportsExhausted ? "Limit reached" : "Run analysis"}
+            {analyzing || isReportPending ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {reportsExhausted ? "Limit reached" : isReportPending ? "Report in progress..." : "Run analysis"}
           </button>
         }
       />

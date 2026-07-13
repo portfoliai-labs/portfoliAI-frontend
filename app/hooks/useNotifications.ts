@@ -71,20 +71,15 @@ export function useNotifications() {
         es.onopen = () => console.info("[useNotifications] SSE connection opened");
 
         const handleEvent = () => {
-          // A new event arrived: mark badge as unread and let the panel
-          // refresh from REST when it opens next time.
+          // A new event arrived: mark badge as unread and always refresh the list in the
+          // background, regardless of whether it was ever loaded — consumers other than the
+          // notification panel (e.g. a "report in progress" button) rely on `notifications`
+          // staying current even when the panel has never been opened.
           setHasUnread(true);
-          // If the panel is already open (notifications loaded), reload silently.
-          setNotifications((prev) => {
-            if (prev.length > 0) {
-              // Trigger a background refresh without blocking render
-              notificationService
-                .listNotifications()
-                .then(setNotifications)
-                .catch(() => undefined);
-            }
-            return prev;
-          });
+          notificationService
+            .listNotifications()
+            .then(setNotifications)
+            .catch(() => undefined);
         };
 
         es.onmessage = handleEvent;

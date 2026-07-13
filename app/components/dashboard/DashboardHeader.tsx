@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
-import { useNotifications } from "../../hooks/useNotifications";
+import { useNotificationsContext } from "../../context/NotificationsContext";
 import { NotificationPanel } from "./NotificationPanel";
 import { SubscriptionPopover } from "./SubscriptionPopover";
 import { userService } from "../../services/userService";
@@ -38,7 +38,7 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
     loadNotifications,
     markAllRead,
     dismissAll,
-  } = useNotifications();
+  } = useNotificationsContext();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);

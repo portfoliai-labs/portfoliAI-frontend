@@ -2,6 +2,7 @@
 "use client";
 
 import React from "react";
+import { NotificationsProvider } from "../../context/NotificationsContext";
 
 /**
  * DashboardLayout component
@@ -16,11 +17,10 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="dashboard-container">
-      {/* You can add dashboard-wide components here, 
-          like a persistent global notification bar 
-      */}
-      {children}
-    </div>
+    <NotificationsProvider>
+      <div className="dashboard-container">
+        {children}
+      </div>
+    </NotificationsProvider>
   );
 }
