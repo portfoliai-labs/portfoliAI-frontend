@@ -52,8 +52,6 @@ const audienceData = [
   },
 ];
 
-const BROKERS = ["Interactive Brokers", "DeGiro", "Fineco", "Scalable Capital", "Trade Republic", "Revolut", "Saxo Bank", "Flatex", "Conio"];
-
 function SectionEyebrow({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
   return (
     <div className="flex items-center gap-2 mb-4">
@@ -168,24 +166,6 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
   );
 }
 
-// ─── BROKER STRIP ──────────────────────────────────────────────────────────────
-
-function BrokerStrip() {
-  const items = [...BROKERS, ...BROKERS];
-  return (
-    <div className="overflow-hidden border-y" style={{ background: "#0D0C09", borderColor: "rgba(255,255,255,0.05)" }}>
-      <div className="flex whitespace-nowrap py-3.5" style={{ animation: "portfoliai-marquee 28s linear infinite" }}>
-        {items.map((b, i) => (
-          <span key={i} className="text-[10px] tracking-[0.14em] uppercase shrink-0 px-9 border-r" style={{ color: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.06)" }}>
-            <span style={{ color: "rgba(196,154,60,0.5)", marginRight: 6 }}>✦</span>{b}
-          </span>
-        ))}
-      </div>
-      <style>{`@keyframes portfoliai-marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
-    </div>
-  );
-}
-
 // ─── FOR WHOM ──────────────────────────────────────────────────────────────────
 
 function ForWhomSection() {
@@ -235,22 +215,6 @@ function ForWhomSection() {
   );
 }
 
-// ─── QUOTE ─────────────────────────────────────────────────────────────────────
-
-function QuoteSection() {
-  return (
-    <div className="border-b border-stone-200 py-16 px-6 text-center" style={{ background: "#FAF8F2" }}>
-      <blockquote className="text-[clamp(18px,2.5vw,30px)] font-bold italic leading-snug tracking-tight max-w-160 mx-auto mb-4"
-        style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
-        `&quot;`I used to spend hours building client reports in Excel. Now I generate them in 30 seconds.`&quot;`
-      </blockquote>
-      <p className="text-[11px] uppercase tracking-widest" style={{ color: "#a8a29e" }}>
-        Luca M. — Independent Financial Advisor, Milan
-      </p>
-    </div>
-  );
-}
-
 // ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -296,7 +260,6 @@ export default function HomePage() {
 
       <HeroSection onLogin={login} onViewSample={() => setDemoOpen(true)} />
       <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
-      <BrokerStrip />
       <ForWhomSection />
 
       {/* FEATURES — light */}
@@ -327,7 +290,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <QuoteSection />
       <SubscriptionSection />
       <FaqSection />
 
@@ -341,11 +303,11 @@ export default function HomePage() {
             © {new Date().getFullYear()} PortfoliAI. All rights reserved.
           </p>
           <div className="flex gap-6">
-            {["Privacy Policy", "Terms of Service"].map((l) => (
-              <a key={l} href="#" className="text-[11px] uppercase tracking-wider transition-colors duration-200" style={{ color: "rgba(255,255,255,0.25)" }}
+            {[{ label: "Privacy Policy", href: "/privacy-policy" }, { label: "Terms of Service", href: "/terms-of-service" }].map((l) => (
+              <a key={l.label} href={l.href} className="text-[11px] uppercase tracking-wider transition-colors duration-200" style={{ color: "rgba(255,255,255,0.25)" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.25)")}
-              >{l}</a>
+              >{l.label}</a>
             ))}
           </div>
         </div>
