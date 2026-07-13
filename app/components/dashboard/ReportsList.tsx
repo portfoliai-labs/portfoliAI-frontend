@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   FileText, Download, Search, Tag as TagIcon,
-  Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid
+  Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid, Link2
 } from "lucide-react";
 import { reportService } from "../../services/reportService";
 import type { Document } from "../../models/Report";
@@ -34,6 +34,8 @@ interface DocumentCardProps {
   report: Document;
   onDownload: (docId: string, fileName: string) => void;
   onView: (docId: string) => void;
+  onCopyLink: (docId: string) => void;
+  copiedDocId: string | null;
   onRemoveTag: (docId: string, tagName: string) => void;
   onAddTag: (docId: string) => void;
   taggingDocId: string | null;
@@ -62,6 +64,9 @@ export function ReportsList({
   const [taggingDocId, setTaggingDocId] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState<string>("");
 
+  // Transient feedback state for the "copy link" action
+  const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
+
   /**
    * Fetches all documents from the backend on component mount
    */
@@ -85,20 +90,20 @@ export function ReportsList({
 
   // --- ACTIONS ---
 
-  const handleView = async (docId: string) => {
+  // Opens the standalone, shareable viewer route (app/(reserved)/dashboard/reports/[documentId])
+  // instead of a throwaway blob URL, so the same link can be copied and reopened later.
+  const handleView = (docId: string) => {
+    window.open(`/dashboard/reports/${docId}`, "_blank");
+  };
+
+  const handleCopyLink = async (docId: string) => {
     try {
-      const { url } = await reportService.downloadReport(docId);
-      if (!url) throw new Error("Invalid URL received from server");
-
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Could not fetch file data from storage");
-
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-      window.open(blobUrl, "_blank");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not open file";
-      alert(`Error: ${msg}`);
+      const shareUrl = `${window.location.origin}/dashboard/reports/${docId}`;
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedDocId(docId);
+      setTimeout(() => setCopiedDocId(prev => (prev === docId ? null : prev)), 1500);
+    } catch {
+      alert("Could not copy link");
     }
   };
 
@@ -306,6 +311,8 @@ export function ReportsList({
                     report={report}
                     onDownload={handleDownload}
                     onView={handleView}
+                    onCopyLink={handleCopyLink}
+                    copiedDocId={copiedDocId}
                     onRemoveTag={handleRemoveTag}
                     onAddTag={handleAddTag}
                     taggingDocId={taggingDocId}
@@ -337,6 +344,8 @@ export function ReportsList({
                     report={report}
                     onDownload={handleDownload}
                     onView={handleView}
+                    onCopyLink={handleCopyLink}
+                    copiedDocId={copiedDocId}
                     onRemoveTag={handleRemoveTag}
                     onAddTag={handleAddTag}
                     taggingDocId={taggingDocId}
@@ -361,6 +370,8 @@ function DocumentCard({
   report,
   onDownload,
   onView,
+  onCopyLink,
+  copiedDocId,
   onRemoveTag,
   onAddTag,
   taggingDocId,
@@ -432,7 +443,18 @@ function DocumentCard({
         >
           <Eye className="h-4 w-4" />
         </button>
-        <button 
+        <button
+          onClick={() => onCopyLink(report.document_id)}
+          title="Copy shareable link"
+          className="flex-1 md:flex-none flex justify-center items-center px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200 rounded-xl hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all"
+        >
+          {copiedDocId === report.document_id ? (
+            <Check className="h-4 w-4 text-emerald-500" />
+          ) : (
+            <Link2 className="h-4 w-4" />
+          )}
+        </button>
+        <button
           // Trigger the secure download workflow
           onClick={() => onDownload(report.document_id, report.name)} 
           className="flex-1 md:flex-none flex justify-center items-center gap-2 px-6 py-3.5 text-sm font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl hover:bg-blue-600 shadow-md shadow-slate-200 hover:shadow-blue-200 transition-all"
