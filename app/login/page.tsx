@@ -315,7 +315,7 @@ export default function LoginPage() {
           })}
 
           <div className="flex gap-0 mt-4 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-            {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "<5m", label: "per report" }].map((s, i) => (
+            {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "1", label: "click away" }].map((s, i) => (
               <div key={i} className={`flex-1 ${i > 0 ? "pl-4 border-l" : ""} ${i < 2 ? "pr-4" : ""}`} style={{ borderColor: "rgba(255,255,255,0.06)" }}>
                 <div className="text-[22px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fafaf9" }}>{s.num}</div>
                 <div className="text-[9px] uppercase tracking-[0.09em]" style={{ color: "rgba(255,255,255,0.22)" }}>{s.label}</div>

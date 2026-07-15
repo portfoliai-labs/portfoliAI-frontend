@@ -143,7 +143,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
 
         <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "<5m", label: "per report" }].map((s, i) => (
+          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "1", label: "click away" }].map((s, i) => (
             <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
               <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
               <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
