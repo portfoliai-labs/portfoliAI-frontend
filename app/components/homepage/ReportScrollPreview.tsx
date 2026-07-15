@@ -10,7 +10,7 @@ import {
 // ─── DATA ──────────────────────────────────────────────────────────────────────
 // Figures below are a point-in-time snapshot from a generated PortfoliAI report
 // (2026-06-28) — portfolio values move with market prices, so they're not an
-// evergreen "real" number, hence the "Esempio illustrativo" badge rather than
+// evergreen "real" number, hence the "Illustrative example" badge rather than
 // any claim of live/current data. This card recreates that report in the
 // site's own visual language, not a screenshot of the PDF.
 
@@ -43,7 +43,7 @@ const ASSETS = [
   { name: "Bitcoin EUR",                    roi: "−447.19%", weight: "4.08%",  positive: false },
 ];
 
-const CHAPTERS = ["Overview", "Costi", "Composizione", "Performance", "Rischio"];
+const CHAPTERS = ["Overview", "Costs", "Composition", "Performance", "Risk"];
 
 // ─── TOOLTIP ───────────────────────────────────────────────────────────────────
 
@@ -149,22 +149,22 @@ const ReportContent = () => (
     {/* Overview */}
     <div className="px-6 pt-6 pb-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <div className="text-[8px] uppercase tracking-[0.14em] mb-1 font-medium" style={{ color: "#C49A3C" }}>
-        PortfoliAI · Report generato 2026-06-28
+        PortfoliAI · Report generated 2026-06-28
       </div>
       <div className="text-[18px] font-bold leading-tight mb-0.5" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
-        Capitolo 1 — Panoramica
+        Chapter 1 — Overview
       </div>
       <div className="text-[8px] font-mono mb-4" style={{ color: "#c4bdb5" }}>
-        Periodo: Sep 2023 → Mag 2026 · Broker: Fineco, Conio
+        Period: Sep 2023 → May 2026 · Brokers: Fineco, Conio
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
-        <KpiTile label="Capitale Investito" value="€ 29,874.57" sub="Cumulativo" />
-        <KpiTile label="Valore Attuale"     value="€ 44,232.07" sub="Valore di mercato" valueColor="#8A6A28" />
-        <KpiTile label="P/L Non Realizzato" value="+€ 14,357.50" sub="vs base di costo" valueColor="#2D6A4F" />
-        <KpiTile label="ROI Complessivo"    value="+48.06%"     sub="Rendimento capitale" valueColor="#2D6A4F" />
+        <KpiTile label="Capital Invested" value="€ 29,874.57" sub="Cumulative" />
+        <KpiTile label="Current Value"    value="€ 44,232.07" sub="Market value" valueColor="#8A6A28" />
+        <KpiTile label="Unrealized P/L"   value="+€ 14,357.50" sub="vs cost basis" valueColor="#2D6A4F" />
+        <KpiTile label="Overall ROI"      value="+48.06%"     sub="Return on capital" valueColor="#2D6A4F" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
-        <div className="text-[8px] uppercase tracking-widest mb-2" style={{ color: "#a8a29e" }}>Valore del Portafoglio nel Tempo</div>
+        <div className="text-[8px] uppercase tracking-widest mb-2" style={{ color: "#a8a29e" }}>Portfolio Value Over Time</div>
         <ResponsiveContainer width="100%" height={56}>
           <LineChart data={portfolioOverTime} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <Line type="monotone" dataKey="v" stroke="#C49A3C" strokeWidth={1.5} dot={false} />
@@ -175,45 +175,45 @@ const ReportContent = () => (
       <AnalysisPanel>
         <AnalysisHeading>Growth Narrative</AnalysisHeading>
         <AnalysisP>
-          Il capitale investito di €29.874,57 si è tradotto in un valore di mercato di €44.232,07 — un
-          ROI complessivo del 48,06%. L&apos;unica correzione rilevante del periodo, tra febbraio e
-          aprile 2025, è stata riassorbita entro l&apos;anno senza cambi di strategia.
+          The €29,874.57 invested grew into a market value of €44,232.07 — an overall ROI of 48.06%.
+          The period&apos;s only notable pullback, between February and April 2025, was fully recovered
+          within the year without any change in strategy.
         </AnalysisP>
       </AnalysisPanel>
     </div>
 
     {/* Costs */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Capitolo 3 — Costi & Commissioni</DocHeading>
-      <CostRow label="Commissioni esplicite"    value="€ 59.00"  />
-      <CostRow label="Costi impliciti (spread)" value="€ 342.39" />
-      <CostRow label="Conio (33.8%)"            value="€ 135.69" />
-      <CostRow label="Fineco (66.2%)"           value="€ 265.70" />
+      <DocHeading>Chapter 3 — Costs &amp; Fees</DocHeading>
+      <CostRow label="Explicit commissions"      value="€ 59.00"  />
+      <CostRow label="Implicit costs (spread)"   value="€ 342.39" />
+      <CostRow label="Conio (33.8%)"             value="€ 135.69" />
+      <CostRow label="Fineco (66.2%)"            value="€ 265.70" />
       <div className="flex justify-between items-center mt-3 rounded-[4px] px-3 py-2.5"
         style={{ background: "rgba(196,154,60,0.07)", border: "1px solid rgba(196,154,60,0.2)" }}>
-        <span className="text-[9px]" style={{ color: "#8A6A28" }}>TER Simulato · Costo-Valore</span>
+        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Simulated TER · Cost-to-Value</span>
         <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.22%</span>
       </div>
       <AnalysisPanel>
-        <AnalysisHeading>Composizione dei Costi</AnalysisHeading>
+        <AnalysisHeading>Cost Composition</AnalysisHeading>
         <AnalysisP>
-          L&apos;85,3% del costo totale di €401,39 deriva da spread impliciti, non da commissioni. I due
-          driver principali sono Bitcoin EUR via Conio (€99,27) e l&apos;ETF Asia Pacific ex Japan via
-          Fineco (€98,21) — entrambi strumenti a liquidità più sottile.
+          85.3% of the €401.39 total cost comes from implicit spreads, not commissions. The two main
+          drivers are Bitcoin EUR via Conio (€99.27) and the Asia Pacific ex Japan ETF via Fineco
+          (€98.21) — both thinner-liquidity instruments.
         </AnalysisP>
       </AnalysisPanel>
     </div>
 
     {/* Composition */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Capitolo 4.1 — Composizione del Portafoglio</DocHeading>
+      <DocHeading>Chapter 4.1 — Portfolio Composition</DocHeading>
       <div className="rounded-[4px] overflow-hidden mb-3" style={{ border: "1px solid #E8E4DC" }}>
         <table className="w-full">
           <thead>
             <tr style={{ borderBottom: "1px solid #E8E4DC", background: "#F7F5EF" }}>
               <th className="text-left text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Asset</th>
               <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>ROI</th>
-              <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Peso</th>
+              <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Weight</th>
             </tr>
           </thead>
           <tbody>
@@ -228,25 +228,25 @@ const ReportContent = () => (
         </table>
       </div>
       <div className="flex flex-col gap-2">
-        <AllocBar name="ETF (6 strumenti)" pct={95.3} color="#C49A3C" />
-        <AllocBar name="Cryptocurrency"    pct={4.7}  color="rgba(196,154,60,0.35)" />
+        <AllocBar name="ETF (6 holdings)" pct={95.3} color="#C49A3C" />
+        <AllocBar name="Cryptocurrency"   pct={4.7}  color="rgba(196,154,60,0.35)" />
       </div>
       <AnalysisPanel>
         <AnalysisHeading>Executive Summary</AnalysisHeading>
         <AnalysisP>
-          Oltre il 95% del valore è in ETF Vanguard su mercati sviluppati ed emergenti; la componente
-          crypto pesa solo il 4,7% ma ha reso in media −414,43%, segnalando un rischio idiosincratico
-          isolato rispetto al resto dell&apos;allocazione.
+          Over 95% of the value sits in Vanguard ETFs across developed and emerging markets; the
+          crypto sleeve is only 4.7% of the book but has averaged −414.43%, an isolated idiosyncratic
+          risk relative to the rest of the allocation.
         </AnalysisP>
         <div className="mt-3">
           <AnalysisHeading>Risk Alerts</AnalysisHeading>
           <ul className="flex flex-col gap-2">
-            <RiskAlert lead="Concentrazione nei top 5 holdings.">
-              I primi cinque strumenti pesano l&apos;88,51% del portafoglio, tutti nella stessa famiglia
-              di indici FTSE — stesso provider, stessa metodologia di replica.
+            <RiskAlert lead="Concentration in the top 5 holdings.">
+              The top five instruments make up 88.51% of the portfolio, all within the same FTSE index
+              family — same provider, same replication methodology.
             </RiskAlert>
-            <RiskAlert lead="Nord America è la scommessa singola più grande.">
-              Il Vanguard FTSE North America pesa da solo il 41,99% del totale.
+            <RiskAlert lead="North America is the single biggest bet.">
+              The Vanguard FTSE North America position alone accounts for 41.99% of the total.
             </RiskAlert>
           </ul>
         </div>
@@ -255,10 +255,10 @@ const ReportContent = () => (
 
     {/* Performance */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Capitolo 4.2 — Performance & ROI</DocHeading>
+      <DocHeading>Chapter 4.2 — Performance &amp; ROI</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <RiskBadge label="Return Totale"  value="48.06%" valueColor="#2D6A4F" />
-        <RiskBadge label="Return / Rischio" value="4.3×"  valueColor="#8A6A28" />
+        <RiskBadge label="Total Return"  value="48.06%" valueColor="#2D6A4F" />
+        <RiskBadge label="Return / Risk" value="4.3×"  valueColor="#8A6A28" />
         <RiskBadge label="Beta"          value="0.78"   valueColor="#1c1917" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
@@ -282,48 +282,48 @@ const ReportContent = () => (
       <AnalysisPanel>
         <AnalysisHeading>Efficiency Audit</AnalysisHeading>
         <AnalysisP>
-          Il rendimento non realizzato del 48,06% si accompagna a una volatilità annualizzata
-          dell&apos;11,04% — un rapporto rendimento-rischio di circa 4,3×. Il Vanguard FTSE North
-          America da solo genera circa il 37% del profitto totale.
+          The unrealized 48.06% return comes with an annualized volatility of 11.04% — a return/risk
+          ratio of roughly 4.3×. The Vanguard FTSE North America position alone generates about 37%
+          of total profit.
         </AnalysisP>
       </AnalysisPanel>
     </div>
 
     {/* Risk */}
     <div className="px-6 py-5 pb-10">
-      <DocHeading>Capitolo 4.3 — Rischio & Volatilità</DocHeading>
+      <DocHeading>Chapter 4.3 — Risk &amp; Volatility</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <RiskBadge label="Max Drawdown"    value="−18.83%" valueColor="#9B2226" />
-        <RiskBadge label="Volatilità Ann." value="11.04%"  valueColor="#8A6A28" />
+        <RiskBadge label="Ann. Volatility" value="11.04%"  valueColor="#8A6A28" />
         <RiskBadge label="Beta"            value="0.78"    valueColor="#1c1917" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
-        <div className="text-[8px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>Volatilità Realizzata · Finestra 21gg</div>
+        <div className="text-[8px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>Realized Volatility · 21-Day Window</div>
         <ResponsiveContainer width="100%" height={56}>
           <BarChart data={volatilityData} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="#F0EDE6" />
             <Bar dataKey="v" fill="rgba(196,154,60,0.25)" radius={[2, 2, 0, 0]} />
-            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v)}%`, "Volatilità"]} />
+            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v)}%`, "Volatility"]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
       <AnalysisPanel>
         <AnalysisHeading>Risk Profile</AnalysisHeading>
         <AnalysisP>
-          La volatilità annualizzata resta contenuta all&apos;11,04%, ma con code pronunciate: il picco
-          del 26,36% in aprile 2025 coincide con lo shock tariffario del &quot;Liberation Day&quot;, poi
-          riassorbito nei mesi successivi.
+          Annualized volatility stays contained at 11.04%, but with pronounced tails: the 26.36% spike
+          in April 2025 coincides with the &quot;Liberation Day&quot; tariff shock, then fully absorbed
+          over the following months.
         </AnalysisP>
         <div className="mt-3">
           <AnalysisHeading>Strategic Risk Alerts</AnalysisHeading>
           <ul className="flex flex-col gap-2">
-            <RiskAlert lead="Sensibilità agli shock macro.">
-              Il picco di volatilità del 26,36% nell&apos;aprile 2025 conferma l&apos;esposizione a eventi
-              tariffari e geopolitici sistemici.
+            <RiskAlert lead="Sensitive to macro shocks.">
+              The 26.36% volatility spike in April 2025 confirms exposure to systemic tariff and
+              geopolitical events.
             </RiskAlert>
-            <RiskAlert lead="Gli ETF guidano la volatilità.">
-              La componente cryptocurrency contribuisce solo lo 0,02% contro lo 0,11% degli ETF — non è
-              un driver di rischio materiale.
+            <RiskAlert lead="ETFs drive the volatility.">
+              The cryptocurrency sleeve contributes just 0.02% against 0.11% for ETFs — not a
+              material risk driver.
             </RiskAlert>
           </ul>
         </div>
@@ -428,7 +428,7 @@ export default function ReportScrollPreview() {
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#C49A3C" }} />
             <span className="text-[7.5px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "#8A6A28" }}>
-              Esempio illustrativo
+              Illustrative example
             </span>
           </div>
 

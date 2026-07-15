@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, ArrowRight, ArrowLeft, UploadCloud, FileText, CheckCircle2,
+  X, ArrowRight, ArrowLeft, UploadCloud, FileText,
   LayoutDashboard, Settings, BarChart3, Download, Eye,
-  ChevronRight, Sparkles, Search, Plus,
+  ChevronRight, Sparkles, Search, Plus, Receipt, PlusCircle,
+  User2, Globe, ShieldAlert, Wallet, Save,
 } from "lucide-react";
 
 interface DemoTourModalProps {
@@ -16,13 +17,13 @@ interface DemoTourModalProps {
 const STEPS = [
   {
     activeNav: "upload",
-    title: "Upload your broker export",
-    description: "Export your transaction history from any major broker — Interactive Brokers, DeGiro, Fineco and 6 more. CSV or Excel.",
+    title: "Import your transactions",
+    description: "Upload a CSV or Excel export from any broker, or add transactions manually — one at a time.",
   },
   {
-    activeNav: "upload",
-    title: "Your transactions, instantly parsed",
-    description: "PortfoliAI identifies the broker and maps every column automatically. Review the data, then send it for analysis.",
+    activeNav: "profile",
+    title: "Set your investor profile",
+    description: "Language, currency, risk tolerance and financial goals — kept on your account for a more personalized experience.",
   },
   {
     activeNav: "reports",
@@ -78,14 +79,6 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
           />
         </div>
 
-        {/* Close */}
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 z-20 w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:bg-black/5"
-        >
-          <X className="w-4 h-4" style={{ color: "#78716c" }} />
-        </button>
-
         {/* Dashboard shell */}
         <div className="flex flex-1 overflow-hidden">
           <DemoSidebar activeNav={current.activeNav} />
@@ -113,8 +106,8 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {step === 0 && <ScreenUploadIdle />}
-                  {step === 1 && <ScreenFileDetected />}
+                  {step === 0 && <ScreenTransactions />}
+                  {step === 1 && <ScreenProfile />}
                   {step === 2 && <ScreenReportReady />}
                 </motion.div>
               </AnimatePresence>
@@ -171,8 +164,9 @@ export default function DemoTourModal({ isOpen, onClose }: DemoTourModalProps) {
 function DemoSidebar({ activeNav }: { activeNav: string }) {
   const items = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
-    { id: "upload", label: "Upload Documents", icon: UploadCloud },
+    { id: "upload", label: "Transactions", icon: Receipt },
     { id: "reports", label: "Reports Archive", icon: FileText },
+    { id: "profile", label: "Profile", icon: User2 },
     { id: "settings", label: "Settings", icon: Settings },
   ];
   return (
@@ -215,25 +209,6 @@ function DemoSidebar({ activeNav }: { activeNav: string }) {
 
 // ── Step screens ──────────────────────────────────────────────────────────────
 
-function ScreenUploadIdle() {
-  return (
-    <div className="flex flex-col">
-      <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-0.5">Upload Documents</h2>
-      <p className="text-sm text-slate-500 font-medium mb-6">Upload your broker export to generate a report.</p>
-      <div
-        className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed p-16 text-center cursor-pointer group transition-all"
-        style={{ borderColor: "#e7e5e0", background: "rgba(255,255,255,0.5)", ...SPOTLIGHT }}
-      >
-        <div className="bg-slate-100 w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-100 transition-colors">
-          <UploadCloud className="h-6 w-6 text-slate-500 group-hover:text-blue-600 transition-colors" />
-        </div>
-        <p className="font-bold text-sm text-slate-700 mb-1">Browse Files</p>
-        <p className="text-xs text-slate-400">CSV or Excel formats — Interactive Brokers, DeGiro, Fineco and more</p>
-      </div>
-    </div>
-  );
-}
-
 const FAKE_TRANSACTIONS = [
   { date: "2024-01-15, 08:30:22", type: "BUY",  ticker: "AAPL", qty: "10", price: "182.50", currency: "USD" },
   { date: "2024-02-03, 14:12:07", type: "BUY",  ticker: "MSFT", qty: "5",  price: "415.20", currency: "USD" },
@@ -242,67 +217,127 @@ const FAKE_TRANSACTIONS = [
   { date: "2024-05-21, 15:05:44", type: "BUY",  ticker: "VOO",  qty: "8",  price: "488.90", currency: "USD" },
 ];
 
-function ScreenFileDetected() {
+function ScreenTransactions() {
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 pb-4">
-      {/* LEFT: file list */}
-      <div className="xl:col-span-1 space-y-3">
-        <div className="p-4 rounded-2xl border border-blue-500 bg-blue-50/30 ring-4 ring-blue-500/10 flex items-center justify-between shadow-sm cursor-pointer">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <FileText className="h-5 w-5 shrink-0 text-slate-700" />
-            <span className="text-sm font-semibold text-slate-700 truncate">ib_transactions_2024.csv</span>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-0.5">Transactions</h2>
+        <p className="text-sm text-slate-500 font-medium">Import a file or add trades manually to generate a report.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div
+          className="p-5 border-2 border-dashed rounded-3xl bg-white/50 cursor-pointer flex items-center gap-4 group"
+          style={{ borderColor: "#e7e5e0", ...SPOTLIGHT }}
+        >
+          <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
           </div>
-          <span className="ml-2 text-[10px] font-bold shrink-0" style={{ color: "#4a7c31" }}>✓</span>
+          <div className="text-left overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
+            <p className="text-xs text-slate-400 truncate">CSV or Excel formats</p>
+          </div>
         </div>
-        <button className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 bg-slate-900 text-white shadow-md shadow-slate-200">
-          Analyze File
+
+        <div className="p-5 rounded-3xl border border-slate-200 bg-white flex items-center gap-4">
+          <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+            <PlusCircle className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
+            <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-140">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                {["date", "type", "ticker", "quantity", "price", "currency"].map((col) => (
+                  <th key={col} className="px-5 py-4">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{col}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {FAKE_TRANSACTIONS.map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.date}</td>
+                  <td className="px-5 py-3.5">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                      row.type === "BUY" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                    }`}>{row.type}</span>
+                  </td>
+                  <td className="px-5 py-3.5 text-sm font-bold text-slate-900">{row.ticker}</td>
+                  <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.qty}</td>
+                  <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.price}</td>
+                  <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.currency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenProfile() {
+  return (
+    <div className="space-y-6 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-0.5">Profile</h2>
+          <p className="text-sm text-slate-500 font-medium">Manage your preferences and financial profile.</p>
+        </div>
+        <button className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-slate-900 text-white shadow-sm shrink-0">
+          <Save className="h-4 w-4" /> Save Changes
         </button>
       </div>
 
-      {/* RIGHT: preview */}
-      <div className="xl:col-span-3 space-y-4">
-        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-black text-slate-900">ib_transactions_2024.csv</h3>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Detected Broker: <span className="ml-1 px-2 py-0.5 bg-slate-100 rounded-md text-slate-700 font-bold">Interactive Brokers</span>
-            </p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4" style={SPOTLIGHT}>
+          <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
+            <Globe className="h-4 w-4" style={{ color: "#C49A3C" }} /> Preferences
           </div>
-          <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200/50 shrink-0">
-            <CheckCircle2 className="h-4 w-4" />
-            <span className="text-xs font-bold">All columns mapped</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Language</span>
+              <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">🇬🇧 English</div>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Currency</span>
+              <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">EUR (€)</div>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden" style={SPOTLIGHT}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-140">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  {["date", "type", "ticker", "quantity", "price", "currency"].map((col) => (
-                    <th key={col} className="px-5 py-4">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{col}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {FAKE_TRANSACTIONS.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.date}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                        row.type === "BUY" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                      }`}>{row.type}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-slate-900">{row.ticker}</td>
-                    <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.qty}</td>
-                    <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.price}</td>
-                    <td className="px-5 py-3.5 text-sm font-medium text-slate-600">{row.currency}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
+            <ShieldAlert className="h-4 w-4" style={{ color: "#C49A3C" }} /> Risk Profile
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Risk Tolerance</span>
+            <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-bold text-amber-600">Moderate</div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
+            <Wallet className="h-4 w-4" style={{ color: "#C49A3C" }} /> Financial Data
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Estimated Wealth (EUR)</span>
+              <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">€ 120,000</div>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Annual Income (EUR)</span>
+              <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">€ 45,000</div>
+            </div>
           </div>
         </div>
       </div>
