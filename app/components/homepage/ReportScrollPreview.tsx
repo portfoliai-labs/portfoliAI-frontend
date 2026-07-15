@@ -2,44 +2,48 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 
 // ─── DATA ──────────────────────────────────────────────────────────────────────
+// Figures below are a point-in-time snapshot from a generated PortfoliAI report
+// (2026-06-28) — portfolio values move with market prices, so they're not an
+// evergreen "real" number, hence the "Esempio illustrativo" badge rather than
+// any claim of live/current data. This card recreates that report in the
+// site's own visual language, not a screenshot of the PDF.
 
 const portfolioOverTime = [
-  { d: "Sep'23", v: 10200 }, { d: "Jan'24", v: 13800 }, { d: "May'24", v: 19400 },
-  { d: "Sep'24", v: 25100 }, { d: "Jan'25", v: 29800 }, { d: "May'25", v: 27200 },
-  { d: "Sep'25", v: 34600 }, { d: "Jan'26", v: 38900 }, { d: "May'26", v: 41742 },
+  { d: "Sep'23", v: 7600 },  { d: "Jan'24", v: 8300 },  { d: "Feb'24", v: 17000 },
+  { d: "Sep'24", v: 22400 }, { d: "Jan'25", v: 26200 }, { d: "Apr'25", v: 26600 },
+  { d: "Sep'25", v: 34400 }, { d: "Jan'26", v: 38700 }, { d: "May'26", v: 44232 },
 ];
 
 const roiVsBenchmark = [
-  { d: "Sep'23", p: 0,     b: 0    }, { d: "Jan'24", p: 4.7,  b: 5.1  },
-  { d: "May'24", p: 12.3,  b: 13.8 }, { d: "Sep'24", p: 18.6, b: 22.4 },
-  { d: "Jan'25", p: 26.1,  b: 30.2 }, { d: "May'25", p: 18.4, b: 24.1 },
-  { d: "Sep'25", p: 34.8,  b: 37.6 }, { d: "Jan'26", p: 43.2, b: 44.9 },
-  { d: "May'26", p: 47.48, b: 48.56 },
+  { d: "Sep'23", p: 0,     b: 0    }, { d: "Jan'24", p: 5.1,  b: 5.6  },
+  { d: "Feb'24", p: 13.9,  b: 15.2 }, { d: "Sep'24", p: 21.2, b: 23.8 },
+  { d: "Jan'25", p: 27.4,  b: 30.1 }, { d: "Apr'25", p: 19.6, b: 22.9 },
+  { d: "Sep'25", p: 35.1,  b: 38.4 }, { d: "Jan'26", p: 43.8, b: 46.5 },
+  { d: "May'26", p: 50.11, b: 52.67 },
 ];
 
 const volatilityData = [
-  { d: "Sep'23", v: 5.2  }, { d: "Jan'24", v: 7.1  }, { d: "May'24", v: 9.8  },
-  { d: "Sep'24", v: 14.3 }, { d: "Jan'25", v: 12.1 }, { d: "May'25", v: 35.7 },
-  { d: "Sep'25", v: 11.4 }, { d: "Jan'26", v: 13.2 }, { d: "May'26", v: 8.9  },
+  { d: "Sep'23", v: 4.1  }, { d: "Jan'24", v: 5.8  }, { d: "Aug'24", v: 9.2  },
+  { d: "Nov'24", v: 9.5  }, { d: "Jan'25", v: 6.4  }, { d: "Apr'25", v: 26.4 },
+  { d: "Sep'25", v: 8.1  }, { d: "Jan'26", v: 6.9  }, { d: "May'26", v: 5.0  },
 ];
 
 const ASSETS = [
-  { name: "Vanguard North America ETF",    roi: "+34.66%", weight: "39.3%", positive: true  },
-  { name: "Vanguard Emerging Markets ETF", roi: "+38.76%", weight: "16.6%", positive: true  },
-  { name: "Vanguard Developed Europe ETF", roi: "+33.66%", weight: "12.0%", positive: true  },
-  { name: "Bitcoin EUR",                   roi: "−4.25%",  weight: "10.5%", positive: false },
-  { name: "Vanguard Japan ETF",            roi: "+36.75%", weight: "8.9%",  positive: true  },
-  { name: "Vanguard Asia Pacific ETF",     roi: "+62.82%", weight: "6.9%",  positive: true  },
+  { name: "Vanguard FTSE North America",   roi: "+40.87%",  weight: "41.99%", positive: true  },
+  { name: "Vanguard FTSE Emerging Markets", roi: "+42.42%",  weight: "16.67%", positive: true  },
+  { name: "Vanguard FTSE Developed Europe", roi: "+38.65%",  weight: "12.56%", positive: true  },
+  { name: "Vanguard FTSE Japan",            roi: "+43.06%",  weight: "9.59%",  positive: true  },
+  { name: "Vanguard Asia Pacific ex Japan", roi: "+90.82%",  weight: "7.70%",  positive: true  },
+  { name: "Bitcoin EUR",                    roi: "−447.19%", weight: "4.08%",  positive: false },
 ];
 
-const CHAPTERS = ["Overview", "Costs", "Composition", "Performance", "Risk"];
+const CHAPTERS = ["Overview", "Costi", "Composizione", "Performance", "Rischio"];
 
 // ─── TOOLTIP ───────────────────────────────────────────────────────────────────
 
@@ -113,17 +117,8 @@ const RiskBadge = ({ label, value, valueColor }: { label: string; value: string;
   </div>
 );
 
-// The AI narrative is the product's flagship feature, not a caption under the charts —
-// every AnalysisPanel below stands in for the dense, multi-section written analysis
-// (named, verdict-style subheadings) that makes up most of a real PortfoliAI report.
 const AnalysisPanel = ({ children }: { children: React.ReactNode }) => (
-  <div className="mt-4 rounded-[4px] p-3.5" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
-    <div className="flex items-center gap-1.5 mb-3">
-      <Sparkles className="w-3 h-3" style={{ color: "#C49A3C" }} />
-      <span className="text-[8px] font-bold uppercase tracking-[0.16em]" style={{ color: "#C49A3C" }}>
-        AI Analysis
-      </span>
-    </div>
+  <div className="mt-4">
     {children}
   </div>
 );
@@ -146,6 +141,7 @@ const RiskAlert = ({ lead, children }: { lead: string; children: React.ReactNode
 );
 
 // ─── REPORT CONTENT ────────────────────────────────────────────────────────────
+// Real figures from the report generated 2026-06-28 (period Sep 2023 – May 2026).
 
 const ReportContent = () => (
   <div style={{ background: "#FAFAF8" }}>
@@ -153,22 +149,22 @@ const ReportContent = () => (
     {/* Overview */}
     <div className="px-6 pt-6 pb-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <div className="text-[8px] uppercase tracking-[0.14em] mb-1 font-medium" style={{ color: "#C49A3C" }}>
-        PortfoliAI · Report generated 2026-05-04
+        PortfoliAI · Report generato 2026-06-28
       </div>
       <div className="text-[18px] font-bold leading-tight mb-0.5" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
-        Chapter 1 — Overview
+        Capitolo 1 — Panoramica
       </div>
       <div className="text-[8px] font-mono mb-4" style={{ color: "#c4bdb5" }}>
-        Analysis period: Sep 2023 → May 2026 · Brokers: Fineco, Conio
+        Periodo: Sep 2023 → Mag 2026 · Broker: Fineco, Conio
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
-        <KpiTile label="Total Invested"  value="€ 32,336" sub="Cumulative" />
-        <KpiTile label="Current Value"   value="€ 41,742" sub="Market value"     valueColor="#8A6A28" />
-        <KpiTile label="Unrealized P/L"  value="+€ 9,405" sub="vs cost basis"    valueColor="#2D6A4F" />
-        <KpiTile label="Overall ROI"     value="+29.09%"  sub="Return on capital" valueColor="#2D6A4F" />
+        <KpiTile label="Capitale Investito" value="€ 29,874.57" sub="Cumulativo" />
+        <KpiTile label="Valore Attuale"     value="€ 44,232.07" sub="Valore di mercato" valueColor="#8A6A28" />
+        <KpiTile label="P/L Non Realizzato" value="+€ 14,357.50" sub="vs base di costo" valueColor="#2D6A4F" />
+        <KpiTile label="ROI Complessivo"    value="+48.06%"     sub="Rendimento capitale" valueColor="#2D6A4F" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
-        <div className="text-[8px] uppercase tracking-widest mb-2" style={{ color: "#a8a29e" }}>Portfolio Value Over Time</div>
+        <div className="text-[8px] uppercase tracking-widest mb-2" style={{ color: "#a8a29e" }}>Valore del Portafoglio nel Tempo</div>
         <ResponsiveContainer width="100%" height={56}>
           <LineChart data={portfolioOverTime} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <Line type="monotone" dataKey="v" stroke="#C49A3C" strokeWidth={1.5} dot={false} />
@@ -179,54 +175,45 @@ const ReportContent = () => (
       <AnalysisPanel>
         <AnalysisHeading>Growth Narrative</AnalysisHeading>
         <AnalysisP>
-          Growth has been steady since late 2023, interrupted only by a single correction in
-          mid-2025 when the portfolio rotated into broader regional ETFs. That pullback fully
-          reversed within two quarters, and compounding has continued uninterrupted since —
-          bringing cumulative ROI to +29.09% without any change in underlying strategy.
+          Il capitale investito di €29.874,57 si è tradotto in un valore di mercato di €44.232,07 — un
+          ROI complessivo del 48,06%. L&apos;unica correzione rilevante del periodo, tra febbraio e
+          aprile 2025, è stata riassorbita entro l&apos;anno senza cambi di strategia.
         </AnalysisP>
       </AnalysisPanel>
     </div>
 
     {/* Costs */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Chapter 3 — Cost Analysis & Fees</DocHeading>
-      <CostRow label="Explicit commissions"     value="€ 0.00"   />
-      <CostRow label="Implicit bid-ask spreads" value="€ 524.59" />
-      <CostRow label="Conio (50.77%)"           value="€ 266.33" />
-      <CostRow label="Fineco (49.23%)"          value="€ 258.26" />
+      <DocHeading>Capitolo 3 — Costi & Commissioni</DocHeading>
+      <CostRow label="Commissioni esplicite"    value="€ 59.00"  />
+      <CostRow label="Costi impliciti (spread)" value="€ 342.39" />
+      <CostRow label="Conio (33.8%)"            value="€ 135.69" />
+      <CostRow label="Fineco (66.2%)"           value="€ 265.70" />
       <div className="flex justify-between items-center mt-3 rounded-[4px] px-3 py-2.5"
         style={{ background: "rgba(196,154,60,0.07)", border: "1px solid rgba(196,154,60,0.2)" }}>
-        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Simulated TER · Cost-to-Value</span>
-        <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.38%</span>
+        <span className="text-[9px]" style={{ color: "#8A6A28" }}>TER Simulato · Costo-Valore</span>
+        <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.22%</span>
       </div>
       <AnalysisPanel>
-        <AnalysisHeading>Cost Composition</AnalysisHeading>
+        <AnalysisHeading>Composizione dei Costi</AnalysisHeading>
         <AnalysisP>
-          No explicit commissions were charged this period — the entire 1.38% cost ratio comes
-          from bid-ask spreads, split almost evenly between Conio (50.8%) and Fineco (49.2%). The
-          inefficiency traces back to instrument liquidity rather than broker fees.
+          L&apos;85,3% del costo totale di €401,39 deriva da spread impliciti, non da commissioni. I due
+          driver principali sono Bitcoin EUR via Conio (€99,27) e l&apos;ETF Asia Pacific ex Japan via
+          Fineco (€98,21) — entrambi strumenti a liquidità più sottile.
         </AnalysisP>
-        <div className="mt-3">
-          <AnalysisHeading>Materiality Check</AnalysisHeading>
-          <AnalysisP>
-            At 1.38% of portfolio value, the drag is moderate but measurable over a multi-year
-            holding period. Executing larger orders in fewer, better-timed trades is the main
-            lever left to bring it down further.
-          </AnalysisP>
-        </div>
       </AnalysisPanel>
     </div>
 
     {/* Composition */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Chapter 4.1 — Portfolio Composition</DocHeading>
+      <DocHeading>Capitolo 4.1 — Composizione del Portafoglio</DocHeading>
       <div className="rounded-[4px] overflow-hidden mb-3" style={{ border: "1px solid #E8E4DC" }}>
         <table className="w-full">
           <thead>
             <tr style={{ borderBottom: "1px solid #E8E4DC", background: "#F7F5EF" }}>
               <th className="text-left text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Asset</th>
               <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>ROI</th>
-              <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Weight</th>
+              <th className="text-right text-[7px] uppercase tracking-wider px-3 py-2" style={{ color: "#a8a29e" }}>Peso</th>
             </tr>
           </thead>
           <tbody>
@@ -241,30 +228,25 @@ const ReportContent = () => (
         </table>
       </div>
       <div className="flex flex-col gap-2">
-        <AllocBar name="ETF (6 positions)" pct={88.7} color="#C49A3C" />
-        <AllocBar name="Cryptocurrency"    pct={11.3} color="rgba(196,154,60,0.35)" />
+        <AllocBar name="ETF (6 strumenti)" pct={95.3} color="#C49A3C" />
+        <AllocBar name="Cryptocurrency"    pct={4.7}  color="rgba(196,154,60,0.35)" />
       </div>
       <AnalysisPanel>
         <AnalysisHeading>Executive Summary</AnalysisHeading>
         <AnalysisP>
-          The portfolio is built almost entirely on regional equity ETFs, with Bitcoin as its only
-          non-equity exposure. North America and Emerging Markets alone account for 56% of total
-          weight — a growth-oriented, globally diversified stance rather than a defensive one.
+          Oltre il 95% del valore è in ETF Vanguard su mercati sviluppati ed emergenti; la componente
+          crypto pesa solo il 4,7% ma ha reso in media −414,43%, segnalando un rischio idiosincratico
+          isolato rispetto al resto dell&apos;allocazione.
         </AnalysisP>
         <div className="mt-3">
           <AnalysisHeading>Risk Alerts</AnalysisHeading>
           <ul className="flex flex-col gap-2">
-            <RiskAlert lead="Single-provider concentration.">
-              All six ETF positions sit inside the same fund family — an index or methodology
-              issue would propagate across 88.7% of the portfolio at once.
+            <RiskAlert lead="Concentrazione nei top 5 holdings.">
+              I primi cinque strumenti pesano l&apos;88,51% del portafoglio, tutti nella stessa famiglia
+              di indici FTSE — stesso provider, stessa metodologia di replica.
             </RiskAlert>
-            <RiskAlert lead="North America is the largest single bet.">
-              At 39.3% of total weight, US equity performance disproportionately drives the
-              portfolio&apos;s overall return.
-            </RiskAlert>
-            <RiskAlert lead="Bitcoin is the only position in the red.">
-              At −4.25% and 10.5% of the book, it&apos;s contained — but it&apos;s also the sole
-              source of crypto-specific volatility in an otherwise all-equity portfolio.
+            <RiskAlert lead="Nord America è la scommessa singola più grande.">
+              Il Vanguard FTSE North America pesa da solo il 41,99% del totale.
             </RiskAlert>
           </ul>
         </div>
@@ -273,11 +255,11 @@ const ReportContent = () => (
 
     {/* Performance */}
     <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Chapter 4.2 — Performance & ROI</DocHeading>
+      <DocHeading>Capitolo 4.2 — Performance & ROI</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <RiskBadge label="Total Return"  value="47.48%" valueColor="#2D6A4F" />
-        <RiskBadge label="Return / Risk" value="2.76×"  valueColor="#8A6A28" />
-        <RiskBadge label="Beta"          value="0.75"   valueColor="#1c1917" />
+        <RiskBadge label="Return Totale"  value="48.06%" valueColor="#2D6A4F" />
+        <RiskBadge label="Return / Rischio" value="4.3×"  valueColor="#8A6A28" />
+        <RiskBadge label="Beta"          value="0.78"   valueColor="#1c1917" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
         <div className="text-[8px] uppercase tracking-widest mb-2" style={{ color: "#a8a29e" }}>ROI vs Benchmark</div>
@@ -290,66 +272,58 @@ const ReportContent = () => (
         </ResponsiveContainer>
         <div className="flex gap-4 mt-1.5">
           <span className="flex items-center gap-1.5 text-[8px]" style={{ color: "#8A6A28" }}>
-            <span className="inline-block w-4 h-[1.5px] rounded" style={{ background: "#C49A3C" }} />Portfolio +47.5%
+            <span className="inline-block w-4 h-[1.5px] rounded" style={{ background: "#C49A3C" }} />Portfolio +50.1%
           </span>
           <span className="flex items-center gap-1.5 text-[8px]" style={{ color: "#c4bdb5" }}>
-            <span className="inline-block w-4 h-[1px] rounded" style={{ background: "#c4bdb5" }} />Benchmark +48.6%
+            <span className="inline-block w-4 h-[1px] rounded" style={{ background: "#c4bdb5" }} />Benchmark +52.7%
           </span>
         </div>
       </div>
       <AnalysisPanel>
         <AnalysisHeading>Efficiency Audit</AnalysisHeading>
         <AnalysisP>
-          The portfolio tracked its benchmark closely for the full period, landing 1.08 points
-          behind at +47.48%. A beta of 0.75 explains most of that gap — a deliberately
-          lighter-swinging portfolio, not an underperforming one.
+          Il rendimento non realizzato del 48,06% si accompagna a una volatilità annualizzata
+          dell&apos;11,04% — un rapporto rendimento-rischio di circa 4,3×. Il Vanguard FTSE North
+          America da solo genera circa il 37% del profitto totale.
         </AnalysisP>
-        <div className="mt-3">
-          <AnalysisHeading>Risk-Adjusted Verdict</AnalysisHeading>
-          <AnalysisP>
-            A return/risk ratio of 2.76× confirms the lower beta was compensated rather than
-            costly: the portfolio captured most of the benchmark&apos;s upside while giving back
-            less on the way down.
-          </AnalysisP>
-        </div>
       </AnalysisPanel>
     </div>
 
     {/* Risk */}
     <div className="px-6 py-5 pb-10">
-      <DocHeading>Chapter 4.3 — Risk & Volatility</DocHeading>
+      <DocHeading>Capitolo 4.3 — Rischio & Volatilità</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <RiskBadge label="Max Drawdown"    value="−21.2%"  valueColor="#9B2226" />
-        <RiskBadge label="Sharpe Ratio"    value="1.82"    valueColor="#2D6A4F" />
-        <RiskBadge label="Ann. Volatility" value="10.57%"  valueColor="#8A6A28" />
+        <RiskBadge label="Max Drawdown"    value="−18.83%" valueColor="#9B2226" />
+        <RiskBadge label="Volatilità Ann." value="11.04%"  valueColor="#8A6A28" />
+        <RiskBadge label="Beta"            value="0.78"    valueColor="#1c1917" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
-        <div className="text-[8px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>21-Day Rolling Volatility Window</div>
+        <div className="text-[8px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>Volatilità Realizzata · Finestra 21gg</div>
         <ResponsiveContainer width="100%" height={56}>
           <BarChart data={volatilityData} margin={{ top: 2, right: 2, left: -30, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="#F0EDE6" />
             <Bar dataKey="v" fill="rgba(196,154,60,0.25)" radius={[2, 2, 0, 0]} />
-            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v)}%`, "Volatility"]} />
+            <Tooltip {...tooltipStyle} formatter={(v) => [`${Number(v)}%`, "Volatilità"]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
       <AnalysisPanel>
         <AnalysisHeading>Risk Profile</AnalysisHeading>
         <AnalysisP>
-          The May 2025 volatility spike lines up with the same dip shown back in Chapter 1 — and
-          at a Sharpe ratio of 1.82, the return earned through that stretch more than compensated
-          for the risk taken on.
+          La volatilità annualizzata resta contenuta all&apos;11,04%, ma con code pronunciate: il picco
+          del 26,36% in aprile 2025 coincide con lo shock tariffario del &quot;Liberation Day&quot;, poi
+          riassorbito nei mesi successivi.
         </AnalysisP>
         <div className="mt-3">
           <AnalysisHeading>Strategic Risk Alerts</AnalysisHeading>
           <ul className="flex flex-col gap-2">
-            <RiskAlert lead="Drawdown stayed contained.">
-              At −21.2%, the worst peak-to-trough decline was shallower than the broader regional
-              benchmark over the same window.
+            <RiskAlert lead="Sensibilità agli shock macro.">
+              Il picco di volatilità del 26,36% nell&apos;aprile 2025 conferma l&apos;esposizione a eventi
+              tariffari e geopolitici sistemici.
             </RiskAlert>
-            <RiskAlert lead="Volatility is asset-class driven.">
-              100% ETF exposure means every spike traces back to equity market shocks — there's no
-              fixed-income buffer to dampen the next one.
+            <RiskAlert lead="Gli ETF guidano la volatilità.">
+              La componente cryptocurrency contribuisce solo lo 0,02% contro lo 0,11% degli ETF — non è
+              un driver di rischio materiale.
             </RiskAlert>
           </ul>
         </div>
@@ -414,7 +388,7 @@ export default function ReportScrollPreview() {
   };
 
   return (
-    <div className="relative w-full max-w-[500px] select-none">
+    <div className="relative w-full max-w-[min(640px,46vw)] min-w-[340px] select-none">
       {/* ambient glow */}
       <div
         className="absolute pointer-events-none"
@@ -444,14 +418,25 @@ export default function ReportScrollPreview() {
         }}
       >
         <div
-          className="overflow-hidden"
+          className="relative overflow-hidden"
           style={{ background: "#FAFAF8", borderRadius: "5px", border: "1px solid #DDD8CE" }}
         >
+          {/* illustrative-example badge — stays fixed, doesn't scroll with content */}
+          <div
+            className="absolute top-3 right-4 z-10 flex items-center gap-1.5 px-2 py-1 rounded-full"
+            style={{ background: "rgba(250,250,248,0.92)", border: "1px solid #E8E4DC", backdropFilter: "blur(2px)" }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#C49A3C" }} />
+            <span className="text-[7.5px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "#8A6A28" }}>
+              Esempio illustrativo
+            </span>
+          </div>
+
           {/* viewport */}
           <div
             ref={viewportRef}
             className="relative overflow-hidden"
-            style={{ height: 520 }}
+            style={{ height: 520, boxShadow: "inset 0 1px 0 #E8E4DC, inset 0 -1px 0 #E8E4DC" }}
             onMouseEnter={() => { pausedRef.current = true; }}
             onMouseLeave={() => { pausedRef.current = false; }}
             onWheel={handleWheel}
