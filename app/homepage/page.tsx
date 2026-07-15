@@ -6,7 +6,7 @@ import {
   BarChart3, ArrowRight,
   UploadCloud, Settings2, DownloadCloud,
   User, Building2, Plug,
-  TrendingUp, DollarSign, Activity, Shield, Layers,
+  TrendingUp, DollarSign, Activity, Shield, Scale,
 } from "lucide-react";
 import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 import FeatureCard from "../components/homepage/FeatureCard";
@@ -22,11 +22,11 @@ const featuresData = [
   { icon: DollarSign, title: "Cost Transparency",     description: "Commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
   { icon: Activity,   title: "Performance & ROI",     description: "Monthly heatmaps, benchmark comparison, annual returns, and trailing period performance charts." },
   { icon: Shield,     title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and Beta — correlated to real market events." },
-  { icon: Layers,     title: "Category-Level Detail", description: "In-depth analysis per asset class — ETFs, crypto, bonds — each with its own breakdown." },
+  { icon: Scale,      title: "Benchmark Comparison",   description: "Your portfolio's return plotted against a market benchmark — tracking error, alpha, and where performance really comes from." },
 ];
 
 const stepsData = [
-  { number: 1, icon: UploadCloud,   title: "Upload",   description: "Export transaction history from your broker and upload the CSV or PDF file." },
+  { number: 1, icon: UploadCloud,   title: "Upload",   description: "Export transaction history from your broker and upload the CSV or Excel file." },
   { number: 2, icon: Settings2,     title: "Process",  description: "The AI engine parses, categorises, and analyses every transaction in your history." },
   { number: 3, icon: DownloadCloud, title: "Download", description: "A professional, branded PDF ready to send to clients or present in a meeting." },
 ];
@@ -143,7 +143,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
 
         <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "<30s", label: "per report" }].map((s, i) => (
+          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "<5m", label: "per report" }].map((s, i) => (
             <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
               <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
               <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
@@ -266,7 +266,7 @@ export default function HomePage() {
       <section id="features" className="border-b py-24 scroll-mt-20" style={{ background: "#F7F5EF", borderColor: "#e7e5e0" }}>
         <div className="max-w-6xl mx-auto px-6">
           <SectionEyebrow>What&apos;s inside every report</SectionEyebrow>
-          <SectionHeading>6 chapters.<br />Every angle covered.</SectionHeading>
+          <SectionHeading>Every angle,<br />covered.</SectionHeading>
           <p className="mt-3 mb-14 text-[14px] text-stone-400 max-w-sm">
             Every report follows the same rigorous structure — from a high-level overview to granular per-asset breakdowns.
           </p>

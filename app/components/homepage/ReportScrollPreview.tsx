@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar,
   CartesianGrid, Tooltip, ResponsiveContainer,
@@ -38,7 +39,7 @@ const ASSETS = [
   { name: "Vanguard Asia Pacific ETF",     roi: "+62.82%", weight: "6.9%",  positive: true  },
 ];
 
-const CHAPTERS = ["Overview", "Composition", "Performance", "Costs", "Risk"];
+const CHAPTERS = ["Overview", "Costs", "Composition", "Performance", "Risk"];
 
 // ─── TOOLTIP ───────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,38 @@ const RiskBadge = ({ label, value, valueColor }: { label: string; value: string;
   </div>
 );
 
+// The AI narrative is the product's flagship feature, not a caption under the charts —
+// every AnalysisPanel below stands in for the dense, multi-section written analysis
+// (named, verdict-style subheadings) that makes up most of a real PortfoliAI report.
+const AnalysisPanel = ({ children }: { children: React.ReactNode }) => (
+  <div className="mt-4 rounded-[4px] p-3.5" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
+    <div className="flex items-center gap-1.5 mb-3">
+      <Sparkles className="w-3 h-3" style={{ color: "#C49A3C" }} />
+      <span className="text-[8px] font-bold uppercase tracking-[0.16em]" style={{ color: "#C49A3C" }}>
+        AI Analysis
+      </span>
+    </div>
+    {children}
+  </div>
+);
+
+const AnalysisHeading = ({ children }: { children: React.ReactNode }) => (
+  <h5 className="text-[8px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color: "#8A6A28" }}>
+    {children}
+  </h5>
+);
+
+const AnalysisP = ({ children }: { children: React.ReactNode }) => (
+  <p className="text-[9px] leading-[1.65]" style={{ color: "#5b5650" }}>{children}</p>
+);
+
+const RiskAlert = ({ lead, children }: { lead: string; children: React.ReactNode }) => (
+  <li className="flex items-start gap-1.5 text-[9px] leading-[1.6]" style={{ color: "#5b5650" }}>
+    <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: "#9B2226" }} />
+    <span><strong style={{ color: "#292524" }}>{lead}</strong> {children}</span>
+  </li>
+);
+
 // ─── REPORT CONTENT ────────────────────────────────────────────────────────────
 
 const ReportContent = () => (
@@ -143,6 +176,45 @@ const ReportContent = () => (
           </LineChart>
         </ResponsiveContainer>
       </div>
+      <AnalysisPanel>
+        <AnalysisHeading>Growth Narrative</AnalysisHeading>
+        <AnalysisP>
+          Growth has been steady since late 2023, interrupted only by a single correction in
+          mid-2025 when the portfolio rotated into broader regional ETFs. That pullback fully
+          reversed within two quarters, and compounding has continued uninterrupted since —
+          bringing cumulative ROI to +29.09% without any change in underlying strategy.
+        </AnalysisP>
+      </AnalysisPanel>
+    </div>
+
+    {/* Costs */}
+    <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
+      <DocHeading>Chapter 3 — Cost Analysis & Fees</DocHeading>
+      <CostRow label="Explicit commissions"     value="€ 0.00"   />
+      <CostRow label="Implicit bid-ask spreads" value="€ 524.59" />
+      <CostRow label="Conio (50.77%)"           value="€ 266.33" />
+      <CostRow label="Fineco (49.23%)"          value="€ 258.26" />
+      <div className="flex justify-between items-center mt-3 rounded-[4px] px-3 py-2.5"
+        style={{ background: "rgba(196,154,60,0.07)", border: "1px solid rgba(196,154,60,0.2)" }}>
+        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Simulated TER · Cost-to-Value</span>
+        <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.38%</span>
+      </div>
+      <AnalysisPanel>
+        <AnalysisHeading>Cost Composition</AnalysisHeading>
+        <AnalysisP>
+          No explicit commissions were charged this period — the entire 1.38% cost ratio comes
+          from bid-ask spreads, split almost evenly between Conio (50.8%) and Fineco (49.2%). The
+          inefficiency traces back to instrument liquidity rather than broker fees.
+        </AnalysisP>
+        <div className="mt-3">
+          <AnalysisHeading>Materiality Check</AnalysisHeading>
+          <AnalysisP>
+            At 1.38% of portfolio value, the drag is moderate but measurable over a multi-year
+            holding period. Executing larger orders in fewer, better-timed trades is the main
+            lever left to bring it down further.
+          </AnalysisP>
+        </div>
+      </AnalysisPanel>
     </div>
 
     {/* Composition */}
@@ -172,6 +244,31 @@ const ReportContent = () => (
         <AllocBar name="ETF (6 positions)" pct={88.7} color="#C49A3C" />
         <AllocBar name="Cryptocurrency"    pct={11.3} color="rgba(196,154,60,0.35)" />
       </div>
+      <AnalysisPanel>
+        <AnalysisHeading>Executive Summary</AnalysisHeading>
+        <AnalysisP>
+          The portfolio is built almost entirely on regional equity ETFs, with Bitcoin as its only
+          non-equity exposure. North America and Emerging Markets alone account for 56% of total
+          weight — a growth-oriented, globally diversified stance rather than a defensive one.
+        </AnalysisP>
+        <div className="mt-3">
+          <AnalysisHeading>Risk Alerts</AnalysisHeading>
+          <ul className="flex flex-col gap-2">
+            <RiskAlert lead="Single-provider concentration.">
+              All six ETF positions sit inside the same fund family — an index or methodology
+              issue would propagate across 88.7% of the portfolio at once.
+            </RiskAlert>
+            <RiskAlert lead="North America is the largest single bet.">
+              At 39.3% of total weight, US equity performance disproportionately drives the
+              portfolio&apos;s overall return.
+            </RiskAlert>
+            <RiskAlert lead="Bitcoin is the only position in the red.">
+              At −4.25% and 10.5% of the book, it&apos;s contained — but it&apos;s also the sole
+              source of crypto-specific volatility in an otherwise all-equity portfolio.
+            </RiskAlert>
+          </ul>
+        </div>
+      </AnalysisPanel>
     </div>
 
     {/* Performance */}
@@ -200,20 +297,22 @@ const ReportContent = () => (
           </span>
         </div>
       </div>
-    </div>
-
-    {/* Costs */}
-    <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
-      <DocHeading>Chapter 3 — Cost Analysis & Fees</DocHeading>
-      <CostRow label="Explicit commissions"     value="€ 0.00"   />
-      <CostRow label="Implicit bid-ask spreads" value="€ 524.59" />
-      <CostRow label="Conio (50.77%)"           value="€ 266.33" />
-      <CostRow label="Fineco (49.23%)"          value="€ 258.26" />
-      <div className="flex justify-between items-center mt-3 rounded-[4px] px-3 py-2.5"
-        style={{ background: "rgba(196,154,60,0.07)", border: "1px solid rgba(196,154,60,0.2)" }}>
-        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Simulated TER · Cost-to-Value</span>
-        <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.38%</span>
-      </div>
+      <AnalysisPanel>
+        <AnalysisHeading>Efficiency Audit</AnalysisHeading>
+        <AnalysisP>
+          The portfolio tracked its benchmark closely for the full period, landing 1.08 points
+          behind at +47.48%. A beta of 0.75 explains most of that gap — a deliberately
+          lighter-swinging portfolio, not an underperforming one.
+        </AnalysisP>
+        <div className="mt-3">
+          <AnalysisHeading>Risk-Adjusted Verdict</AnalysisHeading>
+          <AnalysisP>
+            A return/risk ratio of 2.76× confirms the lower beta was compensated rather than
+            costly: the portfolio captured most of the benchmark&apos;s upside while giving back
+            less on the way down.
+          </AnalysisP>
+        </div>
+      </AnalysisPanel>
     </div>
 
     {/* Risk */}
@@ -234,6 +333,27 @@ const ReportContent = () => (
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <AnalysisPanel>
+        <AnalysisHeading>Risk Profile</AnalysisHeading>
+        <AnalysisP>
+          The May 2025 volatility spike lines up with the same dip shown back in Chapter 1 — and
+          at a Sharpe ratio of 1.82, the return earned through that stretch more than compensated
+          for the risk taken on.
+        </AnalysisP>
+        <div className="mt-3">
+          <AnalysisHeading>Strategic Risk Alerts</AnalysisHeading>
+          <ul className="flex flex-col gap-2">
+            <RiskAlert lead="Drawdown stayed contained.">
+              At −21.2%, the worst peak-to-trough decline was shallower than the broader regional
+              benchmark over the same window.
+            </RiskAlert>
+            <RiskAlert lead="Volatility is asset-class driven.">
+              100% ETF exposure means every spike traces back to equity market shocks — there's no
+              fixed-income buffer to dampen the next one.
+            </RiskAlert>
+          </ul>
+        </div>
+      </AnalysisPanel>
     </div>
 
   </div>
@@ -327,17 +447,6 @@ export default function ReportScrollPreview() {
           className="overflow-hidden"
           style={{ background: "#FAFAF8", borderRadius: "5px", border: "1px solid #DDD8CE" }}
         >
-          {/* PDF top bar */}
-          <div
-            className="flex items-center justify-between px-4 py-2"
-            style={{ background: "#EDEBE4", borderBottom: "1px solid #DDD8CE" }}
-          >
-            <span className="text-[9px] font-mono tracking-wider" style={{ color: "#a8a29e" }}>
-              portfolio_report_2026-05-04.pdf
-            </span>
-            <span className="text-[9px] font-mono" style={{ color: "#c4bdb5" }}>15 pages</span>
-          </div>
-
           {/* viewport */}
           <div
             ref={viewportRef}
