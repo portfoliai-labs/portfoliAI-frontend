@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, AlertCircle, PlusCircle, Pencil, ChevronDown, Trash2 } from "lucide-react";
 import { StandardTransaction } from "../../models/Report";
 import { validateTransactions } from "../../lib/parser";
@@ -157,7 +158,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
     onClose();
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
       onClick={onClose}
@@ -233,6 +234,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

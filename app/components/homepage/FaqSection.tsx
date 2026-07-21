@@ -19,10 +19,6 @@ const faqData: FaqData[] = [
     answer: "Absolutely. We follow a strict Zero-Retention policy. Your files are processed entirely in RAM and destroyed immediately after the report is generated. Nothing is ever written to disk.",
   },
   {
-    question: "Which brokers are supported?",
-    answer: "We support Interactive Brokers, DeGiro, Fineco, Trade Republic, Revolut, Conio, and many others. Our generic parser also handles most standard CSV/PDF broker exports.",
-  },
-  {
     question: "Can I brand the reports with my firm's logo?",
     answer: "Yes. Pro and Business plans include white-label PDF reports with your firm's logo, colours, and contact details on every page — ready to send directly to clients.",
   },

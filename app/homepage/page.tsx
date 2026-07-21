@@ -118,7 +118,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
 
         <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
           Upload a broker export. PortfoliAI generates an institutional-grade PDF —
-          performance, risk, costs, allocation. In seconds. In total privacy.
+          performance, risk, costs, allocation. In minutes. In total privacy.
         </p>
 
         <div className="mb-8"><AudiencePills /></div>

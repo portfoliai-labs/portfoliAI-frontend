@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   UploadCloud, AlertCircle, Loader2, Send,
   FileText, CheckCircle2, X, FileSpreadsheet, PlusCircle, Sparkles
@@ -643,7 +644,7 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
       )}
 
       {/* MODAL: Upload file example */}
-      {showExampleModal && (
+      {showExampleModal && createPortal(
         <div
           className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
           onClick={() => setShowExampleModal(false)}
@@ -726,7 +727,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: Add a single transaction manually */}
@@ -739,7 +741,7 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
       )}
 
       {/* MODAL: Confirm before kicking off analysis — always runs on every saved transaction, not just the filtered/currently visible ones */}
-      {showAnalysisConfirm && (
+      {showAnalysisConfirm && createPortal(
         <div
           className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
           onClick={() => setShowAnalysisConfirm(false)}
@@ -781,7 +783,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: Edit (or delete) whichever transaction row was clicked */}

@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { AlertCircle, AlertTriangle, CalendarClock, FileText, X, Check } from "lucide-react";
 import { ALL_FIELDS, REQUIRED_FIELDS, DATE_FORMAT_OPTIONS } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
@@ -17,7 +18,7 @@ export function FileMappingModal({ file, onMappingChange, onDateFormatChange, on
   // Shown once auto-detection isn't confident, and kept visible after the user picks a format
   // explicitly (dateFormat stops being "auto") so they can still change their mind.
   const showDateFormatPicker = file.dateFormatAmbiguous || file.dateFormat !== "auto";
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
       onClick={onClose}
@@ -150,6 +151,7 @@ export function FileMappingModal({ file, onMappingChange, onDateFormatChange, on
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
