@@ -147,7 +147,7 @@ const ReportContent = () => (
   <div style={{ background: "#FAFAF8" }}>
 
     {/* Overview */}
-    <div className="px-6 pt-6 pb-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
+    <div className="px-6 pt-9 pb-8" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <div className="text-[8px] uppercase tracking-[0.14em] mb-1 font-medium" style={{ color: "#C49A3C" }}>
         PortfoliAI · Report generated 2026-06-28
       </div>
@@ -183,7 +183,7 @@ const ReportContent = () => (
     </div>
 
     {/* Costs */}
-    <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
+    <div className="px-6 py-8" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <DocHeading>Chapter 3 — Costs &amp; Fees</DocHeading>
       <CostRow label="Explicit commissions"      value="€ 59.00"  />
       <CostRow label="Implicit costs (spread)"   value="€ 342.39" />
@@ -205,7 +205,7 @@ const ReportContent = () => (
     </div>
 
     {/* Composition */}
-    <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
+    <div className="px-6 py-8" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <DocHeading>Chapter 4.1 — Portfolio Composition</DocHeading>
       <div className="rounded-[4px] overflow-hidden mb-3" style={{ border: "1px solid #E8E4DC" }}>
         <table className="w-full">
@@ -254,7 +254,7 @@ const ReportContent = () => (
     </div>
 
     {/* Performance */}
-    <div className="px-6 py-5" style={{ borderBottom: "1px solid #E8E4DC" }}>
+    <div className="px-6 py-8" style={{ borderBottom: "1px solid #E8E4DC" }}>
       <DocHeading>Chapter 4.2 — Performance &amp; ROI</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <RiskBadge label="Total Return"  value="48.06%" valueColor="#2D6A4F" />
@@ -290,7 +290,7 @@ const ReportContent = () => (
     </div>
 
     {/* Risk */}
-    <div className="px-6 py-5 pb-10">
+    <div className="px-6 py-8 pb-14">
       <DocHeading>Chapter 4.3 — Risk &amp; Volatility</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <RiskBadge label="Max Drawdown"    value="−18.83%" valueColor="#9B2226" />
@@ -436,7 +436,7 @@ export default function ReportScrollPreview() {
           <div
             ref={viewportRef}
             className="relative overflow-hidden"
-            style={{ height: 520, boxShadow: "inset 0 1px 0 #E8E4DC, inset 0 -1px 0 #E8E4DC" }}
+            style={{ height: 600, boxShadow: "inset 0 1px 0 #E8E4DC, inset 0 -1px 0 #E8E4DC" }}
             onMouseEnter={() => { pausedRef.current = true; }}
             onMouseLeave={() => { pausedRef.current = false; }}
             onWheel={handleWheel}

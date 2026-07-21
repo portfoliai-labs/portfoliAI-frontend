@@ -8,7 +8,7 @@ import {
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { reportService } from "../../services/reportService";
-import { transactionService } from "../../services/transactionService";
+import { transactionService, TransactionFilters } from "../../services/transactionService";
 import { userService } from "../../services/userService";
 import { useNotificationsContext } from "../../context/NotificationsContext";
 import {
@@ -28,6 +28,7 @@ import { TransactionModal } from "./TransactionModal";
 import { FileMappingModal } from "./FileMappingModal";
 import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction } from "./TransactionsSection";
+import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
 
 const EXISTING_PAGE_SIZE = 10;
 const PENDING_PAGE_SIZE = 10;
@@ -104,7 +105,11 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
   const [manualTransactions, setManualTransactions] = useState<StandardTransaction[]>([]);
   const [existingItems, setExistingItems] = useState<TransactionResponse[]>([]);
   const [existingTotal, setExistingTotal] = useState(0);
+  // True (unfiltered) count of saved transactions — only updated while no filter is active, so it
+  // keeps gating "Run analysis" correctly even when the filtered view above happens to be empty.
+  const [savedTransactionsTotal, setSavedTransactionsTotal] = useState(0);
   const [existingPage, setExistingPage] = useState(1);
+  const [existingFilters, setExistingFilters] = useState<TransactionFilterState>(EMPTY_TRANSACTION_FILTERS);
   const [pendingPage, setPendingPage] = useState(1);
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -114,6 +119,7 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
   const [showToast, setShowToast] = useState(false);
   const [showExampleModal, setShowExampleModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAnalysisConfirm, setShowAnalysisConfirm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   // null means the subscription has no monthly cap — analysis is never blocked then.
   const [reportsRemaining, setReportsRemaining] = useState<number | null>(null);
@@ -167,23 +173,47 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
     }
   }, [showToast]);
 
-  // Fetch one page of the user's already-saved transactions whenever the page (or user) changes
+  // Converts the filter bar's form state into the query params the backend expects
+  const toServiceFilters = (filters: TransactionFilterState): TransactionFilters => ({
+    ticker: filters.ticker || null,
+    isin: filters.isin || null,
+    broker: filters.broker || null,
+    operation: filters.operation || null,
+    dateFrom: filters.dateFrom || null,
+    dateTo: filters.dateTo || null,
+  });
+
+  const hasActiveFilters = Object.values(existingFilters).some(Boolean);
+
+  // Applies a new filter selection and jumps back to page 1, so we don't land on an out-of-range page
+  const handleFiltersChange = (filters: TransactionFilterState) => {
+    setExistingFilters(filters);
+    setExistingPage(1);
+  };
+
+  // Fetch one page of the user's already-saved transactions whenever the page, filters, or user changes
   useEffect(() => {
     let cancelled = false;
     setLoadingExisting(true);
-    transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE)
-      .then(res => { if (!cancelled) { setExistingItems(res.items); setExistingTotal(res.total); } })
+    transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters))
+      .then(res => {
+        if (cancelled) return;
+        setExistingItems(res.items);
+        setExistingTotal(res.total);
+        if (!hasActiveFilters) setSavedTransactionsTotal(res.total);
+      })
       .finally(() => { if (!cancelled) setLoadingExisting(false); });
     return () => { cancelled = true; };
-  }, [forUserUuid, existingPage]);
+  }, [forUserUuid, existingPage, existingFilters, hasActiveFilters]);
 
   // Re-fetches a given page of saved transactions (used after a save/delete changes the underlying data)
   const refreshExisting = async (page: number) => {
     setLoadingExisting(true);
     try {
-      const res = await transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE);
+      const res = await transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters));
       setExistingItems(res.items);
       setExistingTotal(res.total);
+      if (!hasActiveFilters) setSavedTransactionsTotal(res.total);
     } finally {
       setLoadingExisting(false);
     }
@@ -555,8 +585,10 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
     }
   };
 
-  // Kicks off analysis on demand, independent of saving.
+  // Kicks off analysis on demand, independent of saving. Called after the user confirms
+  // in the "Run analysis" dialog, which is the only entry point to this function.
   const handleStartAnalysis = async () => {
+    setShowAnalysisConfirm(false);
     if (reportsExhausted || isReportPending) return;
     // Lock immediately — don't wait for the request (or a metrics refetch) to confirm it.
     watchSinceRef.current = Date.now();
@@ -706,6 +738,52 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
         />
       )}
 
+      {/* MODAL: Confirm before kicking off analysis — always runs on every saved transaction, not just the filtered/currently visible ones */}
+      {showAnalysisConfirm && (
+        <div
+          className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          onClick={() => setShowAnalysisConfirm(false)}
+        >
+          <div
+            className="bg-white rounded-4xl shadow-2xl border border-slate-200 max-w-md w-full p-6 md:p-8 space-y-5 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 rounded-xl">
+                  <Sparkles className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Run analysis?</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    This will generate a report from all {savedTransactionsTotal} saved transactions.
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowAnalysisConfirm(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowAnalysisConfirm(false)}
+                className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStartAnalysis}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
+              >
+                <Sparkles className="h-4 w-4" />
+                Run analysis
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: Edit (or delete) whichever transaction row was clicked */}
       {editingKey && editingTransaction && (
         <TransactionModal
@@ -728,8 +806,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
         />
       )}
 
-      {/* TOOLBAR: upload actions, full width */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* TOOLBAR: upload actions + analysis trigger, full width */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div
           onClick={() => setShowExampleModal(true)}
           className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
@@ -754,6 +832,41 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
           <div className="overflow-hidden">
             <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
             <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setShowAnalysisConfirm(true)}
+          disabled={analyzing || loadingExisting || savedTransactionsTotal === 0 || reportsExhausted || isReportPending}
+          title={
+            reportsExhausted
+              ? "Monthly report limit reached — upgrade to continue"
+              : isReportPending
+              ? "A report is already being generated — please wait for it to finish"
+              : undefined
+          }
+          className={`p-5 rounded-3xl border flex items-center gap-4 transition-colors group text-left ${
+            !analyzing && !loadingExisting && savedTransactionsTotal > 0 && !reportsExhausted && !isReportPending
+              ? "border-slate-200 bg-white hover:bg-slate-50"
+              : "border-slate-200 bg-slate-50/60 cursor-not-allowed"
+          }`}
+        >
+          <div className="bg-violet-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition-colors">
+            {analyzing || isReportPending
+              ? <Loader2 className="h-5 w-5 text-violet-600 animate-spin" />
+              : <Sparkles className="h-5 w-5 text-violet-600" />}
+          </div>
+          <div className="overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Run analysis</span>
+            <p className="text-xs text-slate-400 truncate">
+              {reportsExhausted
+                ? "Monthly limit reached"
+                : isReportPending
+                ? "Report in progress..."
+                : savedTransactionsTotal === 0
+                ? "No saved transactions yet"
+                : `Analyze ${savedTransactionsTotal} saved transactions`}
+            </p>
           </div>
         </button>
       </div>
@@ -834,28 +947,12 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
         onDeleteSelected={confirmAndDeleteKeys}
         onRowClick={setEditingKey}
         deletingKeys={deletingKeys}
-        emptyMessage="No transactions yet. Add one manually or upload a file to get started."
-        headerAction={
-          <button
-            disabled={analyzing || loadingExisting || existingTotal === 0 || reportsExhausted || isReportPending}
-            onClick={handleStartAnalysis}
-            title={
-              reportsExhausted
-                ? "Monthly report limit reached — upgrade to continue"
-                : isReportPending
-                ? "A report is already being generated — please wait for it to finish"
-                : undefined
-            }
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm ${
-              !analyzing && !loadingExisting && existingTotal > 0 && !reportsExhausted && !isReportPending
-                ? "bg-slate-900 text-white hover:bg-blue-600"
-                : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-            }`}
-          >
-            {analyzing || isReportPending ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {reportsExhausted ? "Limit reached" : isReportPending ? "Report in progress..." : "Run analysis"}
-          </button>
+        emptyMessage={
+          hasActiveFilters
+            ? "No transactions match the current filters."
+            : "No transactions yet. Add one manually or upload a file to get started."
         }
+        filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} />}
       />
     </div>
   );

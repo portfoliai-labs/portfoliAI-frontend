@@ -41,6 +41,7 @@ interface TransactionsSectionProps {
   deletingKeys: Set<string>;
   emptyMessage: string;
   headerAction?: ReactNode;
+  filterBar?: ReactNode;
 }
 
 const OPERATION_STYLES: Record<string, { icon: typeof ArrowUpRight; classes: string }> = {
@@ -58,7 +59,7 @@ function formatMoney(value: number, currency: string): string {
 export function TransactionsSection({
   title, rows, totalCount, page, pageSize, onPageChange, loading,
   selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onRowClick, deletingKeys,
-  emptyMessage, headerAction,
+  emptyMessage, headerAction, filterBar,
 }: TransactionsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pageKeys = rows.map(r => r.key);
@@ -94,6 +95,8 @@ export function TransactionsSection({
           {headerAction}
         </div>
       </div>
+
+      {filterBar}
 
       {loading ? (
         <div className="py-16 flex items-center justify-center">
