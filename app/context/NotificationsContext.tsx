@@ -8,8 +8,8 @@ interface NotificationsContextType {
   notifications: NotificationResponse[];
   hasUnread: boolean;
   isLoading: boolean;
-  loadNotifications: () => Promise<void>;
-  markAllRead: () => Promise<void>;
+  loadNotifications: () => Promise<NotificationResponse[]>;
+  markAllRead: (source?: NotificationResponse[]) => Promise<void>;
   dismissAll: () => void;
 }
 

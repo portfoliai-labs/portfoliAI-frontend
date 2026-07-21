@@ -23,17 +23,25 @@ export function useNotifications() {
       const items = await notificationService.listNotifications();
       setNotifications(items);
       setHasUnread(items.some((n) => n.read_at === null));
+      return items;
     } catch (err) {
       console.error("[useNotifications] Failed to load notifications:", err);
+      return [];
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   // ── Mark all currently-unread notifications as read ───────────────────────
-  const markAllRead = useCallback(async () => {
-    const unread = notifications.filter((n) => n.read_at === null);
-    if (unread.length === 0) return;
+  // Accepts an optional freshly-fetched list so callers that just awaited
+  // loadNotifications() can pass it in directly, instead of relying on the
+  // (possibly stale) `notifications` state closure — see handleBellClick.
+  const markAllRead = useCallback(async (source?: NotificationResponse[]) => {
+    const unread = (source ?? notifications).filter((n) => n.read_at === null);
+    if (unread.length === 0) {
+      setHasUnread(false);
+      return;
+    }
 
     // Optimistic update
     const now = new Date().toISOString();

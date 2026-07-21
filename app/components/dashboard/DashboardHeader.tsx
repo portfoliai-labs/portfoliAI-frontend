@@ -71,12 +71,12 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
 
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? "U"}`.toUpperCase();
 
-  function handleBellClick() {
+  async function handleBellClick() {
     const opening = !isPanelOpen;
     setIsPanelOpen(opening);
     if (opening) {
-      loadNotifications();
-      markAllRead();
+      const items = await loadNotifications();
+      markAllRead(items);
     }
   }
 
