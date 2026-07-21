@@ -837,16 +837,18 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
 
         <button
           onClick={() => setShowAnalysisConfirm(true)}
-          disabled={analyzing || loadingExisting || savedTransactionsTotal === 0 || reportsExhausted || isReportPending}
+          disabled={analyzing || loadingExisting || savedTransactionsTotal === 0 || reportsExhausted || isReportPending || pendingRows.length > 0}
           title={
             reportsExhausted
               ? "Monthly report limit reached — upgrade to continue"
               : isReportPending
               ? "A report is already being generated — please wait for it to finish"
+              : pendingRows.length > 0
+              ? "Save your new transactions first — analysis only covers already-saved ones"
               : undefined
           }
           className={`p-5 rounded-3xl border flex items-center gap-4 transition-colors group text-left ${
-            !analyzing && !loadingExisting && savedTransactionsTotal > 0 && !reportsExhausted && !isReportPending
+            !analyzing && !loadingExisting && savedTransactionsTotal > 0 && !reportsExhausted && !isReportPending && pendingRows.length === 0
               ? "border-slate-200 bg-white hover:bg-slate-50"
               : "border-slate-200 bg-slate-50/60 cursor-not-allowed"
           }`}
@@ -863,6 +865,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
                 ? "Monthly limit reached"
                 : isReportPending
                 ? "Report in progress..."
+                : pendingRows.length > 0
+                ? "Save new transactions first"
                 : savedTransactionsTotal === 0
                 ? "No saved transactions yet"
                 : `Analyze ${savedTransactionsTotal} saved transactions`}

@@ -1,7 +1,8 @@
 // app/(reserved)/dashboard/page.tsx
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useUser } from "../../context/UserContext";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Sidebar } from "../../components/dashboard/Sidebar";
@@ -16,14 +17,22 @@ import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboar
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { Loader2 } from "lucide-react";
 
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'profile', 'settings'];
+
 /**
  * DashboardPage - Main protected dashboard view.
  * It consumes UserContext to manage profile data and global loading states.
  */
-export default function DashboardPage() {
+function DashboardPageContent() {
   const { user, loading, logout } = useUser();
-  
-  const [activeSection, setActiveSection] = useState<string>('overview');
+  const searchParams = useSearchParams();
+  // Lets links into the dashboard (e.g. the report viewer's "Back" button) land on a
+  // specific tab via `?section=reports` instead of always resetting to overview.
+  const requestedSection = searchParams.get('section');
+
+  const [activeSection, setActiveSection] = useState<string>(
+    requestedSection && VALID_SECTIONS.includes(requestedSection) ? requestedSection : 'overview'
+  );
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   const isAdvisor = user?.role === 'ADVISOR';
@@ -91,5 +100,19 @@ export default function DashboardPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
+          <Loader2 className="w-10 h-10 animate-spin text-[#C49A3C]" />
+        </div>
+      }
+    >
+      <DashboardPageContent />
+    </Suspense>
   );
 }

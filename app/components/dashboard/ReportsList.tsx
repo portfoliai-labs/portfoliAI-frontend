@@ -277,7 +277,7 @@ export function ReportsList({
           </div>
         ) : viewMode === "list" ? (
           groupedByDate.map(({ label, docs }) => (
-            <div key={`date-${label}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">
+            <div key={`date-${label}`} className="space-y-4">
               <div className="flex items-center gap-3 px-2">
                 <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
                   <Calendar className="h-4 w-4" />
