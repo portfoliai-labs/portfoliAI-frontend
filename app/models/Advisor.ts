@@ -1,6 +1,12 @@
 // models/Advisor.ts
 // Aligned with backend DTOs in app/api/dto/routes_advisor.py
 
+// Matches UserRoles enum from backend (app/domain/models/core/user.py)
+enum UserRole {
+  USER = "USER",
+  ADVISOR = "ADVISOR",
+}
+
 // Matches AdvisorProfileResponse DTO (GET /advisor/profile)
 interface AdvisorProfile {
   years_experience: number | null;
@@ -21,7 +27,7 @@ interface AdvisorProfileUpdatePayload {
 interface Client {
   uuid: string;
   email: string;
-  role: string;
+  role: UserRole;
   created_at: string;
   updated_at: string | null;
   language: string;
@@ -58,4 +64,20 @@ interface ClientProfileUpdatePayload {
   language?: string | null;
 }
 
-export type { AdvisorProfile, AdvisorProfileUpdatePayload, Client, ClientCreatePayload, ClientProfileUpdatePayload };
+// Matches ClientLookupResponse DTO (GET /advisor/clients/lookup)
+interface ClientLookupResponse {
+  exists: boolean;
+  first_name: string | null;
+  last_name: string | null;
+  role: UserRole | null;
+}
+
+export { UserRole };
+export type {
+  AdvisorProfile,
+  AdvisorProfileUpdatePayload,
+  Client,
+  ClientCreatePayload,
+  ClientProfileUpdatePayload,
+  ClientLookupResponse,
+};

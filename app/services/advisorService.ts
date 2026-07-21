@@ -4,6 +4,7 @@ import type {
   AdvisorProfileUpdatePayload,
   Client,
   ClientCreatePayload,
+  ClientLookupResponse,
   ClientProfileUpdatePayload,
 } from "../models/Advisor";
 import { apiFetch } from "./apiClient";
@@ -26,6 +27,10 @@ export const advisorService = {
 
   async getClients(): Promise<Client[]> {
     return apiFetch<Client[]>('/advisor/clients');
+  },
+
+  async lookupClient(email: string): Promise<ClientLookupResponse> {
+    return apiFetch<ClientLookupResponse>(`/advisor/clients/lookup?email=${encodeURIComponent(email)}`);
   },
 
   async createClient(payload: ClientCreatePayload): Promise<Client> {

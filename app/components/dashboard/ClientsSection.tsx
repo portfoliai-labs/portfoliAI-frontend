@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, Pencil, Loader2, X, Check, Users, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, Trash2, Pencil, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
+import { UserRole } from "../../models/Advisor";
 import type { Client, ClientCreatePayload, ClientProfileUpdatePayload } from "../../models/Advisor";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function initials(client: Client) {
   const f = client.first_name?.[0] ?? "";
@@ -111,6 +114,8 @@ function SelectField({
   );
 }
 
+type LookupStatus = "idle" | "checking" | "new" | "existing_client" | "existing_other";
+
 function AddClientDrawer({
   onClose,
   onCreated,
@@ -121,21 +126,74 @@ function AddClientDrawer({
   const [form, setForm] = useState<AddClientForm>(emptyForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [lookup, setLookup] = useState<{
+    status: LookupStatus;
+    firstName?: string | null;
+    lastName?: string | null;
+  }>({ status: "idle" });
+  const lookupRequestId = useRef(0);
 
   const set = (field: keyof AddClientForm) => (v: string) =>
     setForm((prev) => ({ ...prev, [field]: v }));
 
-  const isValid = form.email.trim() && form.first_name.trim() && form.last_name.trim();
+  useEffect(() => {
+    const email = form.email.trim();
+    if (!EMAIL_RE.test(email)) {
+      setLookup({ status: "idle" });
+      return;
+    }
+
+    const requestId = ++lookupRequestId.current;
+    setLookup({ status: "checking" });
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await advisorService.lookupClient(email);
+        if (lookupRequestId.current !== requestId) return;
+
+        if (!result.exists) {
+          setLookup({ status: "new" });
+          return;
+        }
+
+        if (result.role === UserRole.USER) {
+          setLookup({ status: "existing_client", firstName: result.first_name, lastName: result.last_name });
+          setForm((prev) => ({
+            ...prev,
+            first_name: result.first_name ?? prev.first_name,
+            last_name: result.last_name ?? prev.last_name,
+          }));
+        } else {
+          setLookup({ status: "existing_other" });
+        }
+      } catch {
+        if (lookupRequestId.current === requestId) setLookup({ status: "idle" });
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [form.email]);
+
+  const isValid =
+    lookup.status === "existing_other"
+      ? false
+      : lookup.status === "existing_client"
+      ? Boolean(form.email.trim())
+      : Boolean(form.email.trim() && form.first_name.trim() && form.last_name.trim());
+
+  const showInheritedFields = lookup.status !== "existing_client" && lookup.status !== "existing_other";
 
   const handleSubmit = async () => {
     if (!isValid) return;
     setLoading(true);
     setError("");
     try {
+      // Existing users may have no name on record; the backend ignores these
+      // fields for them anyway, but the payload still requires non-empty values.
       const payload: ClientCreatePayload = {
         email: form.email.trim(),
-        first_name: form.first_name.trim(),
-        last_name: form.last_name.trim(),
+        first_name: form.first_name.trim() || "Client",
+        last_name: form.last_name.trim() || "-",
         language: form.language,
         currency: form.currency || undefined,
         estimated_wealth: form.estimated_wealth ? parseFloat(form.estimated_wealth) : undefined,
@@ -169,48 +227,78 @@ function AddClientDrawer({
         </div>
 
         <div className="space-y-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Personal Details</p>
-          <div className="grid grid-cols-2 gap-3">
-            <InputField label="First name" value={form.first_name} onChange={set("first_name")} required />
-            <InputField label="Last name" value={form.last_name} onChange={set("last_name")} required />
+          <div className="relative">
+            <InputField label="Email" value={form.email} onChange={set("email")} type="email" required />
+            {lookup.status === "checking" && (
+              <Loader2 className="w-4 h-4 animate-spin text-[#C49A3C] absolute right-3 top-9" />
+            )}
           </div>
-          <InputField label="Email" value={form.email} onChange={set("email")} type="email" required />
-          <SelectField
-            label="Language"
-            value={form.language}
-            onChange={set("language")}
-            options={LANGUAGE_OPTIONS}
-          />
 
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C] pt-2">Financial Profile</p>
-          <div className="grid grid-cols-2 gap-3">
-            <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" placeholder="e.g. 500000" />
-            <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" placeholder="e.g. 80000" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField
-              label="Currency"
-              value={form.currency}
-              onChange={set("currency")}
-              options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
-            />
-            <SelectField
-              label="Risk tolerance"
-              value={form.risk_tolerance}
-              onChange={set("risk_tolerance")}
-              options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
-            <textarea
-              value={form.financial_goals}
-              onChange={(e) => set("financial_goals")(e.target.value)}
-              rows={3}
-              placeholder="e.g. Early retirement, buying a home..."
-              className="w-full px-4 py-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] text-[#1c1917] text-sm font-medium placeholder:text-[#a8a29e] focus:outline-none focus:border-[#C49A3C] focus:ring-2 focus:ring-[#C49A3C]/10 transition-all resize-none"
-            />
-          </div>
+          {lookup.status === "existing_client" && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] px-4 py-3">
+              <Info className="w-4 h-4 text-[#C49A3C] shrink-0 mt-0.5" />
+              <p className="text-sm text-[#1c1917] font-medium">
+                {(lookup.firstName || lookup.lastName)
+                  ? `${lookup.firstName ?? ""} ${lookup.lastName ?? ""}`.trim()
+                  : "This user"} is already registered on the platform. Their existing profile will be linked — no need to re-enter their details.
+              </p>
+            </div>
+          )}
+
+          {lookup.status === "existing_other" && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-rose-50 border border-rose-200 px-4 py-3">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+              <p className="text-sm text-rose-600 font-medium">
+                This email is already associated with another account and can&apos;t be added as a client.
+              </p>
+            </div>
+          )}
+
+          {showInheritedFields && (
+            <>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Personal Details</p>
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="First name" value={form.first_name} onChange={set("first_name")} required />
+                <InputField label="Last name" value={form.last_name} onChange={set("last_name")} required />
+              </div>
+              <SelectField
+                label="Language"
+                value={form.language}
+                onChange={set("language")}
+                options={LANGUAGE_OPTIONS}
+              />
+
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C] pt-2">Financial Profile</p>
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" placeholder="e.g. 500000" />
+                <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" placeholder="e.g. 80000" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <SelectField
+                  label="Currency"
+                  value={form.currency}
+                  onChange={set("currency")}
+                  options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
+                />
+                <SelectField
+                  label="Risk tolerance"
+                  value={form.risk_tolerance}
+                  onChange={set("risk_tolerance")}
+                  options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
+                <textarea
+                  value={form.financial_goals}
+                  onChange={(e) => set("financial_goals")(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Early retirement, buying a home..."
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] text-[#1c1917] text-sm font-medium placeholder:text-[#a8a29e] focus:outline-none focus:border-[#C49A3C] focus:ring-2 focus:ring-[#C49A3C]/10 transition-all resize-none"
+                />
+              </div>
+            </>
+          )}
 
           {error && <p className="text-rose-500 text-sm font-medium">{error}</p>}
 
@@ -227,7 +315,7 @@ function AddClientDrawer({
               className="flex-1 py-3 rounded-xl bg-[#1c1917] text-white font-bold text-sm hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Add Client
+              {lookup.status === "existing_client" ? "Link Client" : "Add Client"}
             </button>
           </div>
         </div>
