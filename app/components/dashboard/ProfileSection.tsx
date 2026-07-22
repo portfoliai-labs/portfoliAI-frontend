@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import {
   Globe, ShieldAlert, Wallet, Coins, Save,
-  Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote
+  Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote,
+  GraduationCap, Info
 } from "lucide-react";
 import { userService } from "../../services/userService";
 import { useUser } from "../../context/UserContext";
+import type { FinancialKnowledgeLevel } from "../../models/User";
 
 export function ProfileSection() {
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,7 @@ export function ProfileSection() {
     annual_income: "0",
     financial_goals: "",
     risk_tolerance: "medium",
+    financial_knowledge_level: "BEGINNER",
   });
 
   const languages = [
@@ -44,6 +47,30 @@ export function ProfileSection() {
     { code: "high", label: "Aggressive", color: "text-rose-600" }
   ];
 
+  const knowledgeLevels = [
+    {
+      code: "BEGINNER",
+      label: "Beginner",
+      description: "New to investing. Familiar with basic concepts like stocks and funds, but little to no hands-on experience.",
+      unselectedClass: "border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-400",
+      selectedClass: "border-teal-500 bg-teal-500 text-white shadow-md shadow-teal-500/20"
+    },
+    {
+      code: "INTERMEDIATE",
+      label: "Intermediate",
+      description: "Comfortable with markets. Has traded before and understands risk, diversification and asset classes.",
+      unselectedClass: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-400",
+      selectedClass: "border-indigo-500 bg-indigo-500 text-white shadow-md shadow-indigo-500/20"
+    },
+    {
+      code: "ADVANCED",
+      label: "Advanced",
+      description: "Highly experienced. Deep understanding of financial instruments, strategies and market dynamics.",
+      unselectedClass: "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-400",
+      selectedClass: "border-amber-500 bg-amber-500 text-white shadow-md shadow-amber-500/20"
+    }
+  ];
+
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -55,6 +82,7 @@ export function ProfileSection() {
           annual_income: String(user.annual_income || 0),
           financial_goals: user.financial_goals || "",
           risk_tolerance: user.risk_tolerance || "medium",
+          financial_knowledge_level: user.financial_knowledge_level || "BEGINNER",
         });
       } catch (err) {
         console.error(err);
@@ -75,6 +103,7 @@ export function ProfileSection() {
         annual_income: formData.annual_income ? parseFloat(formData.annual_income) : null,
         financial_goals: formData.financial_goals || null,
         risk_tolerance: formData.risk_tolerance || null,
+        financial_knowledge_level: (formData.financial_knowledge_level || null) as FinancialKnowledgeLevel | null,
       });
 
       localStorage.removeItem("user_profile");
@@ -196,6 +225,35 @@ export function ProfileSection() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Financial Knowledge */}
+        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
+          <SectionHeader icon={<GraduationCap className="w-5 h-5" />} title="Financial Knowledge" />
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {knowledgeLevels.map(k => (
+                <div key={k.code} className="relative group/tip">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, financial_knowledge_level: k.code })}
+                    className={`w-full flex items-center justify-center gap-2 p-4 rounded-2xl border-2 font-bold text-sm transition-all ${
+                      formData.financial_knowledge_level === k.code ? k.selectedClass : k.unselectedClass
+                    }`}
+                  >
+                    <span>{k.label}</span>
+                    <Info className={`w-4 h-4 ${formData.financial_knowledge_level === k.code ? "opacity-80" : "opacity-50"}`} />
+                  </button>
+                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 opacity-0 group-hover/tip:opacity-100 transition-opacity z-20">
+                    <div className="bg-[#1c1917] text-white text-[11px] font-medium leading-snug rounded-lg p-3 shadow-xl text-left">
+                      {k.description}
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-[#1c1917] rotate-45" />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

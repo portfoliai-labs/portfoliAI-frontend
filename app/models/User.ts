@@ -7,6 +7,9 @@ type UserRole = 'USER' | 'ADVISOR';
 // Matches SubscriptionTier enum from backend
 type SubscriptionTier = 'FREE' | 'TESTER';
 
+// Matches FinancialKnowledgeLevel enum from backend
+type FinancialKnowledgeLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+
 // Matches UserProfileResponse DTO (GET /users/profile, POST /users/profile response)
 interface UserProfile {
   uuid: string;
@@ -23,6 +26,7 @@ interface UserProfile {
   annual_income: number | null;
   financial_goals: string | null;
   risk_tolerance: string | null;
+  financial_knowledge_level: FinancialKnowledgeLevel | null;
   currency: string | null;
   subscription_tier: SubscriptionTier | null;
 }
@@ -41,6 +45,7 @@ interface ProfileUpdatePayload {
   annual_income?: number | null;
   financial_goals?: string | null;
   risk_tolerance?: string | null;
+  financial_knowledge_level?: FinancialKnowledgeLevel | null;
   currency?: string | null;
   language?: string | null;
 }
@@ -89,6 +94,7 @@ export type {
   UserMetrics,
   UserRole,
   SubscriptionTier,
+  FinancialKnowledgeLevel,
   SubscriptionResponse,
   NotificationPreferences,
   NotificationPreferencesUpdatePayload,
