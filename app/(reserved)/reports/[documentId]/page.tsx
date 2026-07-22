@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Download, Loader2 } from "lucide-react";
-import { reportService } from "../../../../services/reportService";
+import { reportService } from "../../../services/reportService";
 
 // Shareable, auth-gated single-report view: the (reserved) layout's UserProvider
 // already redirects unauthenticated visitors before this page can fetch anything,
