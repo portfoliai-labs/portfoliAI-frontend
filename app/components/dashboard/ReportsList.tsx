@@ -85,10 +85,10 @@ export function ReportsList({
 
   // --- ACTIONS ---
 
-  // Opens the standalone viewer route (app/(reserved)/dashboard/reports/[documentId])
+  // Opens the standalone viewer route (app/(reserved)/reports/[documentId])
   // instead of a throwaway blob URL.
   const handleView = (docId: string) => {
-    window.open(`/dashboard/reports/${docId}`, "_blank");
+    window.open(`/reports/${docId}`, "_blank");
   };
 
   const handleDownload = async (docId: string, fileName: string) => {
