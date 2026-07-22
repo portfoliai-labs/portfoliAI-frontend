@@ -30,8 +30,9 @@ type StandardTransaction = {
   id: string;
   date: string;
   operation: 'buy' | 'sell' | 'dividend' | 'other';
-  quantity: number;
-  price: number;
+  amount: number;
+  quantity: number | null;
+  price: number | null;
   currency: string;
   fees: number;
   broker: string;

@@ -10,8 +10,9 @@ export interface DisplayTransaction {
   isin: string | null;
   date: string;
   operation: string;
-  quantity: number;
-  price: number;
+  amount: number;
+  quantity: number | null;
+  price: number | null;
   currency: string;
   fees: number;
   broker: string | null;
@@ -118,11 +119,10 @@ export function TransactionsSection({
             const OpIcon = opStyle.icon;
             const isDeleting = deletingKeys.has(row.key);
             const hasError = (field: keyof DisplayTransaction) => row.errorFields.has(field);
-            const total = tx.quantity * tx.price;
 
             const secondaryParts = [
-              `${Number.isNaN(tx.quantity) ? "-" : tx.quantity} @ ${formatMoney(tx.price, tx.currency)}`,
-              !Number.isNaN(total) && `= ${formatMoney(total, tx.currency)}`,
+              tx.quantity != null && tx.price != null && `${tx.quantity} @ ${formatMoney(tx.price, tx.currency)}`,
+              `= ${formatMoney(tx.amount, tx.currency)}`,
               tx.isin && `ISIN ${tx.isin}`,
               tx.broker,
               tx.fees > 0 && `fees ${formatMoney(tx.fees, tx.currency)}`,

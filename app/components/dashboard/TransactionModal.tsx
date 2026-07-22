@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, AlertCircle, PlusCircle, Pencil, ChevronDown, Trash2 } from "lucide-react";
+import { X, AlertCircle, PlusCircle, Pencil, Trash2, TrendingUp, TrendingDown, Coins, type LucideIcon } from "lucide-react";
 import { StandardTransaction } from "../../models/Report";
 import { validateTransactions } from "../../lib/parser";
 
@@ -14,12 +14,24 @@ interface TransactionModalProps {
   onDelete?: () => void;
 }
 
-const OPERATIONS: StandardTransaction["operation"][] = ["buy", "sell", "dividend", "other"];
+// Colors mirror the operation badges in TransactionsSection.tsx (OPERATION_STYLES)
+// for a consistent palette across the transactions feature.
+const OPERATION_OPTIONS: { value: StandardTransaction["operation"]; label: string; icon: LucideIcon; activeClasses: string }[] = [
+  { value: "buy", label: "Buy", icon: TrendingUp, activeClasses: "border-emerald-400 bg-emerald-50 text-emerald-700" },
+  { value: "sell", label: "Sell", icon: TrendingDown, activeClasses: "border-rose-400 bg-rose-50 text-rose-700" },
+  { value: "dividend", label: "Dividend", icon: Coins, activeClasses: "border-blue-400 bg-blue-50 text-blue-700" },
+];
+
+type DividendType = "cash" | "shares";
 
 interface FormState {
   date: string;
   time: string;
   operation: StandardTransaction["operation"];
+  // UI-only: not part of StandardTransaction — drives whether Quantity/Price
+  // are shown for a dividend. "shares" ⇔ both are filled in on submit.
+  dividendType: DividendType;
+  amount: string;
   quantity: string;
   price: string;
   currency: string;
@@ -33,6 +45,8 @@ const emptyForm: FormState = {
   date: "",
   time: "",
   operation: "buy",
+  dividendType: "cash",
+  amount: "",
   quantity: "",
   price: "",
   currency: "EUR",
@@ -58,8 +72,10 @@ function toFormState(tx?: StandardTransaction): FormState {
     date,
     time,
     operation: tx.operation,
-    quantity: Number.isNaN(tx.quantity) ? "" : String(tx.quantity),
-    price: Number.isNaN(tx.price) ? "" : String(tx.price),
+    dividendType: tx.operation === "dividend" && tx.quantity != null ? "shares" : "cash",
+    amount: Number.isNaN(tx.amount) ? "" : String(tx.amount),
+    quantity: tx.quantity == null || Number.isNaN(tx.quantity) ? "" : String(tx.quantity),
+    price: tx.price == null || Number.isNaN(tx.price) ? "" : String(tx.price),
     currency: tx.currency,
     fees: String(tx.fees ?? 0),
     ticker: tx.ticker ?? "",
@@ -90,25 +106,40 @@ function InputField({
   );
 }
 
-function SelectField({
-  label, value, onChange, options,
+function OperationButton({
+  label, icon: Icon, active, activeClasses, onClick,
 }: {
-  label: string; value: string; onChange: (v: string) => void; options: string[];
+  label: string; icon: LucideIcon; active: boolean; activeClasses: string; onClick: () => void;
 }) {
   return (
-    <div>
-      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{label}</label>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full h-11 pl-3.5 pr-9 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-300 transition-all appearance-none"
-        >
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <ChevronDown className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-1.5 w-20 sm:w-24 py-3 rounded-2xl border-2 transition-all shrink-0 ${
+        active ? activeClasses : "border-slate-200 bg-white text-slate-400 hover:border-slate-300"
+      }`}
+    >
+      <Icon className="h-5 w-5" />
+      <span className="text-xs font-bold">{label}</span>
+    </button>
+  );
+}
+
+function PillButton({
+  label, active, activeClasses, onClick,
+}: {
+  label: string; active: boolean; activeClasses: string; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+        active ? activeClasses : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -120,14 +151,39 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
   const set = <K extends keyof FormState>(key: K) => (value: string) =>
     setForm(prev => ({ ...prev, [key]: value }));
 
+  const isDividend = form.operation === "dividend";
+  const isStockDividend = isDividend && form.dividendType === "shares";
+
+  const setDividendType = (dividendType: DividendType) =>
+    setForm(prev => ({
+      ...prev,
+      dividendType,
+      // Switching back to "cash" drops any quantity/price the user had typed
+      // while exploring "shares", so a stray value can't sneak into the payload.
+      ...(dividendType === "cash" ? { quantity: "", price: "" } : {}),
+    }));
+
+  const showQuantityPrice = !isDividend || isStockDividend;
+  const requiresQuantityPrice = form.operation === "buy" || form.operation === "sell" || isStockDividend;
+  // A cash dividend has no quantity/price to derive a value from, so it's the
+  // only case where the total still has to be entered by hand.
+  const showAmountField = isDividend && !isStockDividend;
+
   const handleSubmit = () => {
     const foundErrors: string[] = [];
 
     if (!form.ticker.trim() && !form.isin.trim())
       foundErrors.push("Provide at least a Ticker or an ISIN.");
 
-    const quantity = Number(form.quantity);
-    const price = Number(form.price);
+    // Blank means "not applicable" (e.g. a cash dividend) rather than 0 — only
+    // parse when the user actually typed something.
+    const quantity = form.quantity.trim() === "" ? null : Number(form.quantity);
+    const price = form.price.trim() === "" ? null : Number(form.price);
+    // Amount is auto-computed from quantity × price whenever both are collected
+    // (buy/sell/in-kind dividend); only a cash dividend needs it typed in directly.
+    const amount = showQuantityPrice
+      ? (quantity != null && price != null ? quantity * price : NaN)
+      : Number(form.amount);
 
     const isin = form.isin.trim().toUpperCase();
     const ticker = form.ticker.trim().toUpperCase();
@@ -137,6 +193,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
       id: initial?.id || isin || ticker,
       date: form.time ? `${form.date}T${form.time}` : form.date,
       operation: form.operation,
+      amount,
       quantity,
       price,
       currency: form.currency.trim().toUpperCase(),
@@ -147,7 +204,13 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
     } as StandardTransaction;
 
     const { errors: validationErrors } = validateTransactions([transaction]);
-    foundErrors.push(...validationErrors.map(e => e.message));
+    // When amount is auto-computed, it's not an editable field in this form —
+    // surfacing an "Amount" error would point at nothing the user can fix directly;
+    // the underlying quantity/price errors (still shown) are the actionable ones.
+    const relevantErrors = showQuantityPrice
+      ? validationErrors.filter(e => e.field !== "amount")
+      : validationErrors;
+    foundErrors.push(...relevantErrors.map(e => e.message));
 
     if (foundErrors.length > 0) {
       setErrors(foundErrors);
@@ -184,6 +247,39 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
           </button>
         </div>
 
+        <div className="flex flex-wrap gap-3">
+          {OPERATION_OPTIONS.map((op) => (
+            <OperationButton
+              key={op.value}
+              label={op.label}
+              icon={op.icon}
+              active={form.operation === op.value}
+              activeClasses={op.activeClasses}
+              onClick={() => set("operation")(op.value)}
+            />
+          ))}
+        </div>
+
+        {isDividend && (
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Dividend type</p>
+            <div className="flex gap-3">
+              <PillButton
+                label="Cash"
+                active={form.dividendType === "cash"}
+                activeClasses="border-blue-400 bg-blue-50 text-blue-700"
+                onClick={() => setDividendType("cash")}
+              />
+              <PillButton
+                label="In Kind"
+                active={form.dividendType === "shares"}
+                activeClasses="border-blue-400 bg-blue-50 text-blue-700"
+                onClick={() => setDividendType("shares")}
+              />
+            </div>
+          </div>
+        )}
+
         {errors.length > 0 && (
           <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3 space-y-1.5">
             {errors.map((err, i) => (
@@ -198,11 +294,17 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InputField label="Date" type="date" value={form.date} onChange={set("date")} required />
           <InputField label="Time" type="time" value={form.time} onChange={set("time")} placeholder="Optional" />
-          <SelectField label="Operation" value={form.operation} onChange={(v) => set("operation")(v as StandardTransaction["operation"])} options={OPERATIONS} />
-          <InputField label="Ticker" value={form.ticker} onChange={set("ticker")} placeholder="AAPL" />
+          <InputField label="Ticker" value={form.ticker} onChange={set("ticker")} placeholder="AAPL" required />
           <InputField label="ISIN" value={form.isin} onChange={set("isin")} placeholder="US0378331005" />
-          <InputField label="Quantity" type="number" value={form.quantity} onChange={set("quantity")} placeholder="10" required />
-          <InputField label="Price" type="number" value={form.price} onChange={set("price")} placeholder="185.20" required />
+          {showAmountField && (
+            <InputField label="Amount" type="number" value={form.amount} onChange={set("amount")} placeholder="1500.00" required />
+          )}
+          {showQuantityPrice && (
+            <>
+              <InputField label="Quantity" type="number" value={form.quantity} onChange={set("quantity")} placeholder="10" required={requiresQuantityPrice} />
+              <InputField label="Price" type="number" value={form.price} onChange={set("price")} placeholder="185.20" required={requiresQuantityPrice} />
+            </>
+          )}
           <InputField label="Currency" value={form.currency} onChange={set("currency")} placeholder="EUR" required />
           <InputField label="Fees" type="number" value={form.fees} onChange={set("fees")} placeholder="0" />
           <InputField label="Broker" value={form.broker} onChange={set("broker")} placeholder="Manual" />

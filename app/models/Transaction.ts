@@ -11,8 +11,9 @@ interface TransactionInput {
   ticker: string;
   date: string;
   operation: TransactionOperation;
-  quantity: number;
-  price: number;
+  amount: number;
+  quantity?: number | null;
+  price?: number | null;
   fees?: number;
   currency: string;
   broker?: string | null;
@@ -26,8 +27,9 @@ interface TransactionResponse {
   ticker: string | null;
   date: string;
   operation: TransactionOperation;
-  quantity: number;
-  price: number;
+  amount: number;
+  quantity: number | null;
+  price: number | null;
   fees: number;
   currency: string;
   broker: string | null;
@@ -48,6 +50,7 @@ interface TransactionUpdatePayload {
   ticker?: string | null;
   date?: string | null;
   operation?: TransactionOperation | null;
+  amount?: number | null;
   quantity?: number | null;
   price?: number | null;
   fees?: number | null;

@@ -14,7 +14,8 @@ const ISO_DATE_RE   = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])([T ]\d{2}:\d
 const CURRENCY_RE   = /^[A-Z]{3}$/;
 const ISIN_RE       = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
 const TICKER_RE     = /^[A-Z0-9.\-]{1,20}$/i;
-const VALID_OPS     = new Set<string>(["buy", "sell", "dividend"]);
+const VALID_OPS     = new Set<string>(["buy", "sell", "dividend", "other"]);
+const QUANTITY_PRICE_REQUIRED_OPS = new Set<string>(["buy", "sell"]);
 
 // --- Public validators ---
 
@@ -64,13 +65,34 @@ export const validateTransactions = (data: StandardTransaction[]): TransactionVa
       errors.push({ field: "ticker", row: i, message: `Invalid ticker format: "${row.ticker}"` });
 
     if (!VALID_OPS.has(row.operation))
-      errors.push({ field: "operation", row: i, message: 'Must be "buy", "sell", or "dividend"' });
+      errors.push({ field: "operation", row: i, message: 'Must be "buy", "sell", "dividend", or "other"' });
 
-    if (typeof row.quantity !== "number" || isNaN(row.quantity) || row.quantity <= 0)
-      errors.push({ field: "quantity", row: i, message: "Must be a positive number" });
+    if (typeof row.amount !== "number" || isNaN(row.amount) || row.amount <= 0)
+      errors.push({ field: "amount", row: i, message: "Must be a positive number" });
 
-    if (typeof row.price !== "number" || isNaN(row.price) || row.price < 0)
-      errors.push({ field: "price", row: i, message: "Must be a positive number" });
+    const hasQuantity = row.quantity !== null && row.quantity !== undefined;
+    const hasPrice = row.price !== null && row.price !== undefined;
+
+    if (QUANTITY_PRICE_REQUIRED_OPS.has(row.operation)) {
+      if (!hasQuantity || typeof row.quantity !== "number" || isNaN(row.quantity) || row.quantity <= 0)
+        errors.push({ field: "quantity", row: i, message: "Must be a positive number" });
+
+      if (!hasPrice || typeof row.price !== "number" || isNaN(row.price) || row.price < 0)
+        errors.push({ field: "price", row: i, message: "Must be a positive number" });
+    } else {
+      if (hasQuantity && (typeof row.quantity !== "number" || isNaN(row.quantity) || row.quantity <= 0))
+        errors.push({ field: "quantity", row: i, message: "Must be a positive number" });
+
+      if (hasPrice && (typeof row.price !== "number" || isNaN(row.price) || row.price < 0))
+        errors.push({ field: "price", row: i, message: "Must be a positive number" });
+
+      if (row.operation === "dividend" && hasQuantity !== hasPrice)
+        errors.push({
+          field: hasQuantity ? "price" : "quantity",
+          row: i,
+          message: "Quantity and Price must both be provided (paid in shares) or both left blank (paid in cash)",
+        });
+    }
 
     if (!row.currency || !CURRENCY_RE.test(row.currency))
       errors.push({ field: "currency", row: i, message: "Must be a 3-letter ISO code (e.g. EUR, USD)" });
