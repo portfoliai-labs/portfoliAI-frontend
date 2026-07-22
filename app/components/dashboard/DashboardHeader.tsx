@@ -3,19 +3,12 @@
 import { useState } from "react";
 import { LogOut, Bell, Menu, X } from "lucide-react";
 import Image from "next/image";
+import { useUser } from "../../context/UserContext";
 import { useNotificationsContext } from "../../context/NotificationsContext";
 import { NotificationPanel } from "./NotificationPanel";
 import { SubscriptionPopover } from "./SubscriptionPopover";
 import { userService } from "../../services/userService";
 import type { SubscriptionTier, SubscriptionResponse, UserMetrics } from "../../models/User";
-
-interface UserProfile {
-  first_name: string;
-  last_name: string;
-  email: string;
-  picture?: string;
-  full_name?: string;
-}
 
 const TIER_LABEL: Record<SubscriptionTier, string> = {
   FREE: 'Free Plan',
@@ -46,29 +39,9 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
   const [subscriptionMetrics, setSubscriptionMetrics] = useState<UserMetrics | null>(null);
   const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
 
-  const [user] = useState<UserProfile | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const name = localStorage.getItem("user_name");
-      const email = localStorage.getItem("user_email");
-      const picture = localStorage.getItem("user_picture");
+  const { user } = useUser();
 
-      if (name && email) {
-        const nameParts = name.split(" ");
-        return {
-          first_name: nameParts[0] || "",
-          last_name: nameParts[nameParts.length - 1] || "",
-          full_name: name,
-          email: email,
-          picture: picture || undefined,
-        };
-      }
-    } catch (error) {
-      console.error("Error reading from localStorage:", error);
-    }
-    return null;
-  });
-
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? "U"}`.toUpperCase();
 
   async function handleBellClick() {
@@ -160,9 +133,9 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
             className="flex items-center gap-3 p-1 md:p-1.5 md:pr-4 rounded-full md:rounded-[1.25rem] bg-white/70 border border-[rgba(196,154,60,0.25)] hover:shadow-sm transition-all cursor-pointer"
           >
             <div className="relative h-8 w-8 md:h-9 md:w-9 rounded-full md:rounded-xl bg-[#1c1917] flex items-center justify-center text-white shadow-inner overflow-hidden">
-              {user?.picture ? (
+              {user?.profile_picture ? (
                 <Image
-                  src={user.picture}
+                  src={user.profile_picture}
                   alt="Profile"
                   fill
                   sizes="36px"
@@ -176,7 +149,7 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
 
             <div className="hidden md:flex flex-col">
               <span className="text-sm font-bold text-[#1c1917] leading-none mb-1">
-                {user?.full_name || "User Account"}
+                {fullName || "User Account"}
               </span>
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-semibold text-[#C49A3C] uppercase tracking-wide">
