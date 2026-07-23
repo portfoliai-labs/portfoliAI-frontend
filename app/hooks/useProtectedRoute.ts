@@ -1,7 +1,7 @@
 // app/hooks/useProtectedRoute.ts
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "../context/UserContext";
 
@@ -32,9 +32,18 @@ export function useProtectedRoute(level: ProtectionLevel = 'full'): ProtectedRou
   // Consumes global state. Must be used within a component wrapped by UserProvider.
   const { user, loading, logout } = useUser();
 
+  // Tracks whether the initial authorization check has already resolved once.
+  // The context's `loading` flag is shared and also flips true/false for ad-hoc
+  // refreshes triggered elsewhere (e.g. onboarding calling refreshUser() after
+  // submit) — without this guard, that flicker would re-trigger the blocking
+  // spinner below and remount (and reset the state of) whatever page consumes it.
+  const hasResolvedRef = useRef(false);
+
   useEffect(() => {
     // Wait until the context finishes evaluating the user's state
     if (loading) return;
+
+    hasResolvedRef.current = true;
 
     // Safely check for the token in the browser environment
     const token = typeof window !== 'undefined' ? localStorage.getItem("auth_token") : null;
@@ -56,12 +65,12 @@ export function useProtectedRoute(level: ProtectionLevel = 'full'): ProtectedRou
       router.replace("/dashboard");
       return;
     }
-    
+
   }, [user, loading, router, level]);
 
-  return { 
-    isAuthorized: !!user, 
-    loading, 
-    handleLogout: logout 
+  return {
+    isAuthorized: !!user,
+    loading: loading && !hasResolvedRef.current,
+    handleLogout: logout
   };
 }
