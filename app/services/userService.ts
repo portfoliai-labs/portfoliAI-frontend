@@ -49,4 +49,9 @@ export const userService = {
       body: JSON.stringify(payload),
     });
   },
+
+  // DELETE /users/account — permanently deletes the account and all associated data
+  async deleteAccount(): Promise<void> {
+    return apiFetch<void>('/users/account', { method: 'DELETE' });
+  },
 };

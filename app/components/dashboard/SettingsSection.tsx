@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, Loader2, Bell, Save, CheckCircle2, FlaskConical } from "lucide-react";
+import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
 import { userService } from "../../services/userService";
 import type { SubscriptionResponse, UserMetrics, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
+import { DeleteAccountModal } from "./DeleteAccountModal";
+import { useUser } from "../../context/UserContext";
 
 // Tally form used for tester applications: https://tally.so/r/QKWeYg
 const TESTER_APPLICATION_FORM_ID = "QKWeYg";
@@ -50,15 +52,35 @@ function PreferenceRow({
   );
 }
 
+function ReadOnlyField({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={className}>
+      <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        disabled
+        readOnly
+        className="w-full h-11 px-3.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.2)] text-[#1c1917] text-sm font-semibold outline-none cursor-not-allowed"
+      />
+    </div>
+  );
+}
+
 const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
   { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "account", label: "Account", icon: UserIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 export function SettingsSection() {
+  const { user, logout } = useUser();
   const [activeTab, setActiveTab] = useState<TabId>("subscription");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [metrics, setMetrics] = useState<UserMetrics | null>(null);
@@ -112,6 +134,11 @@ export function SettingsSection() {
       setSaving(false);
       setTimeout(() => setMessage(null), 3000);
     }
+  };
+
+  const handleDeleteAccount = async () => {
+    await userService.deleteAccount();
+    logout();
   };
 
   return (
@@ -291,6 +318,50 @@ export function SettingsSection() {
         </div>
       )}
 
+      {activeTab === "account" && (
+        <div className="space-y-8">
+          {/* Account information — read-only for now, editing is not supported yet */}
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-5">
+            <div className="flex items-center gap-3 border-b border-[rgba(196,154,60,0.15)] pb-4">
+              <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">
+                <UserIcon className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-sm text-[#1c1917]">Account Information</span>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <ReadOnlyField label="First name" value={user?.first_name ?? "—"} />
+              <ReadOnlyField label="Last name" value={user?.last_name ?? "—"} />
+              <ReadOnlyField label="Email" value={user?.email ?? "—"} className="sm:col-span-2" />
+            </div>
+          </div>
+
+          {/* Danger zone */}
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-rose-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 border-b border-rose-100 pb-4">
+              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-sm text-rose-600">Danger Zone</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+              <div>
+                <p className="text-sm font-bold text-[#1c1917]">Delete account</p>
+                <p className="text-xs text-[#78716c] mt-0.5">
+                  Permanently delete your account and all associated data. This cannot be undone.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-rose-700 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div className={`fixed bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 px-6 md:px-8 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 z-50 ${message.type === 'success' ? 'bg-[#1c1917] text-white' : 'bg-rose-500 text-white'}`}>
           {message.type === 'success'
@@ -299,6 +370,14 @@ export function SettingsSection() {
           }
           <span className="font-semibold text-sm md:text-base">{message.text}</span>
         </div>
+      )}
+
+      {showDeleteModal && user && (
+        <DeleteAccountModal
+          email={user.email}
+          onClose={() => setShowDeleteModal(false)}
+          onConfirm={handleDeleteAccount}
+        />
       )}
     </div>
   );
