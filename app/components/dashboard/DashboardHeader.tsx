@@ -165,7 +165,13 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
               metrics={subscriptionMetrics}
               isLoading={isSubscriptionLoading}
               onClose={() => setIsSubscriptionOpen(false)}
-              onManage={onNavigate ? () => { setIsSubscriptionOpen(false); onNavigate("settings"); } : undefined}
+              onManage={onNavigate ? () => {
+                setIsSubscriptionOpen(false);
+                onNavigate("settings");
+                if (typeof window !== "undefined") {
+                  window.location.hash = "pricing";
+                }
+              } : undefined}
             />
           )}
         </div>

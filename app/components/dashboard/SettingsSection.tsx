@@ -106,6 +106,18 @@ export function SettingsSection() {
       .finally(() => setPreferencesLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading || !subscription || window.location.hash !== "#pricing") return;
+
+    const pricingSection = document.getElementById("pricing");
+    if (!pricingSection) return;
+
+    window.requestAnimationFrame(() => {
+      pricingSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loading, subscription]);
+
   const remaining = metrics?.reports_remaining ?? null;
   const used = metrics?.report_generated_this_month ?? 0;
   const unlimited = subscription?.has_unlimited_reports ?? false;
