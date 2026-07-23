@@ -12,7 +12,8 @@ interface TransactionInput {
   date: string;
   operation: TransactionOperation;
   amount: number;
-  quantity?: number | null;
+  // number for plain amounts; string (arbitrary decimal precision) for crypto quantities
+  quantity?: number | string | null;
   price?: number | null;
   fees?: number;
   currency: string;
@@ -28,7 +29,8 @@ interface TransactionResponse {
   date: string;
   operation: TransactionOperation;
   amount: number;
-  quantity: number | null;
+  // Always returned as a string (arbitrary decimal precision, e.g. crypto amounts)
+  quantity: string | null;
   price: number | null;
   fees: number;
   currency: string;
@@ -51,7 +53,7 @@ interface TransactionUpdatePayload {
   date?: string | null;
   operation?: TransactionOperation | null;
   amount?: number | null;
-  quantity?: number | null;
+  quantity?: number | string | null;
   price?: number | null;
   fees?: number | null;
   currency?: string | null;

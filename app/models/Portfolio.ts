@@ -9,7 +9,8 @@ interface Holding {
   isin: string | null;
   name: string;
   assetClass: string;
-  quantity: number;
+  // String, not number — arbitrary decimal precision (e.g. crypto quantities)
+  quantity: string;
   investedValue: number;
   currency: string;
   fees: number;
@@ -35,7 +36,8 @@ interface BrokerFeesTotal {
 // entirely from the buy/sell prices recorded in the transactions — never from a current quote.
 interface RealizedTrade {
   ticker: string | null;
-  quantity: number;
+  // String, not number — arbitrary decimal precision (e.g. crypto quantities)
+  quantity: string;
   buyPrice: number;
   sellPrice: number;
   currency: string;

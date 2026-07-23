@@ -59,4 +59,21 @@ export const transactionService = {
       method: 'DELETE',
     });
   },
+
+  // DELETE /v1/transactions/all — deletes every transaction matching the given filters;
+  // with no filters, deletes every saved transaction for the user.
+  async deleteAllTransactions(forUserUuid?: string | null, filters?: TransactionFilters): Promise<void> {
+    const params = new URLSearchParams();
+    if (forUserUuid) params.set("for_user_uuid", forUserUuid);
+    if (filters?.ticker) params.set("ticker", filters.ticker);
+    if (filters?.isin) params.set("isin", filters.isin);
+    if (filters?.broker) params.set("broker", filters.broker);
+    if (filters?.operation) params.set("operation", filters.operation);
+    if (filters?.dateFrom) params.set("date_from", filters.dateFrom);
+    if (filters?.dateTo) params.set("date_to", filters.dateTo);
+    const query = params.toString();
+    return apiFetch<void>(`/v1/transactions/all${query ? `?${query}` : ''}`, {
+      method: 'DELETE',
+    });
+  },
 };

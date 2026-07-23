@@ -56,7 +56,8 @@ function existingToDisplay(tx: TransactionResponse): DisplayTransaction {
     date: tx.date,
     operation: tx.operation,
     amount: tx.amount,
-    quantity: tx.quantity,
+    // Backend now always returns quantity as a string (arbitrary decimal precision) — parse for display/editing.
+    quantity: tx.quantity != null ? Number(tx.quantity) : null,
     price: tx.price,
     currency: tx.currency,
     fees: tx.fees,
@@ -72,7 +73,8 @@ function existingResponseToStandard(tx: TransactionResponse): StandardTransactio
     date: tx.date,
     operation: tx.operation,
     amount: tx.amount,
-    quantity: tx.quantity,
+    // Backend now always returns quantity as a string (arbitrary decimal precision) — parse for display/editing.
+    quantity: tx.quantity != null ? Number(tx.quantity) : null,
     price: tx.price,
     currency: tx.currency,
     fees: tx.fees,
@@ -119,6 +121,7 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deletingKeys, setDeletingKeys] = useState<Set<string>>(new Set());
+  const [deletingAllExisting, setDeletingAllExisting] = useState(false);
   const [status, setStatus] = useState<"idle" | "preview" | "saved" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
@@ -500,6 +503,38 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
       if (!confirmed) return;
     }
     void deleteKeys(keys);
+  };
+
+  // Deletes every saved transaction matching the active filters directly in the backend —
+  // not just the current page. With no filters active, this wipes all saved transactions.
+  const handleDeleteAllExisting = async () => {
+    const confirmed = window.confirm(
+      hasActiveFilters
+        ? `Delete all ${existingTotal} transactions matching the current filters? This cannot be undone.`
+        : `Delete all ${existingTotal} saved transactions? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingAllExisting(true);
+    try {
+      await transactionService.deleteAllTransactions(forUserUuid, toServiceFilters(existingFilters));
+      setSelectedKeys(prev => {
+        const next = new Set<string>();
+        prev.forEach(k => { if (!k.startsWith("existing::")) next.add(k); });
+        return next;
+      });
+      if (existingPage === 1) {
+        await refreshExisting(1);
+      } else {
+        setExistingPage(1);
+      }
+    } catch (error: unknown) {
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to delete transactions.");
+      setShowToast(true);
+    } finally {
+      setDeletingAllExisting(false);
+    }
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -964,6 +999,8 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
             : "No transactions yet. Add one manually or upload a file to get started."
         }
         filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} />}
+        onDeleteAll={handleDeleteAllExisting}
+        deletingAll={deletingAllExisting}
       />
     </div>
   );

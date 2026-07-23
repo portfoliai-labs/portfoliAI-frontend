@@ -18,7 +18,7 @@ import { portfolioService } from "../../services/portfolioService";
 import { userService } from "../../services/userService";
 import type { PortfolioSummary, CurrencyBreakdown, Holding } from "../../models/Portfolio";
 import type { UserMetrics } from "../../models/User";
-import { formatCurrency } from "../../lib/format";
+import { formatCurrency, formatQuantity } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 
 export default function DashboardOverview({
@@ -175,7 +175,7 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
   // feesByBroker is grouped by broker, so a broker with $0 in fees still gets a row —
   // an empty-array check wouldn't catch that. totalFeesPaid reflects the actual amount.
   const hasFees = data.totalFeesPaid > 0;
-  const tradesWithPL = data.realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * t.quantity }));
+  const tradesWithPL = data.realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * Number(t.quantity) }));
   const maxAbsPL = Math.max(0, ...tradesWithPL.map(t => Math.abs(t.profitLoss)));
 
   return (
@@ -303,7 +303,7 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
                       )}
                     </div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-[11px] text-slate-400">{t.quantity} units</span>
+                      <span className="text-[11px] text-slate-400">{formatQuantity(t.quantity)} units</span>
                       <span className="text-[11px] text-slate-400">{formatCurrency(t.buyPrice, t.currency)} → {formatCurrency(t.sellPrice, t.currency)}</span>
                     </div>
                   </div>
@@ -605,7 +605,7 @@ function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
                       {h.assetClass}
                     </span>
                   </td>
-                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{h.quantity}</td>
+                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{formatQuantity(h.quantity)}</td>
                   <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">
                     {formatCurrency(h.investedValue, h.currency, 2)}
                   </td>

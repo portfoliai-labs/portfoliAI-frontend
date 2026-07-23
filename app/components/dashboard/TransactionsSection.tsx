@@ -43,6 +43,10 @@ interface TransactionsSectionProps {
   emptyMessage: string;
   headerAction?: ReactNode;
   filterBar?: ReactNode;
+  // Deletes every row matching the section's current filters directly in the backend
+  // (not just the current page) — omit to hide the action entirely (e.g. pending rows).
+  onDeleteAll?: () => void;
+  deletingAll?: boolean;
 }
 
 const OPERATION_STYLES: Record<string, { icon: typeof ArrowUpRight; classes: string }> = {
@@ -60,7 +64,7 @@ function formatMoney(value: number, currency: string): string {
 export function TransactionsSection({
   title, rows, totalCount, page, pageSize, onPageChange, loading,
   selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onRowClick, deletingKeys,
-  emptyMessage, headerAction, filterBar,
+  emptyMessage, headerAction, filterBar, onDeleteAll, deletingAll,
 }: TransactionsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pageKeys = rows.map(r => r.key);
@@ -70,20 +74,37 @@ export function TransactionsSection({
   return (
     <div className="bg-white border border-slate-200 rounded-4xl shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 md:px-6 py-4 border-b border-slate-200 gap-4 flex-wrap">
+        <h4 className="text-sm font-black text-slate-900">
+          {title} <span className="text-slate-400 font-semibold">({totalCount})</span>
+        </h4>
         <div className="flex items-center gap-3">
-          {rows.length > 0 && (
+          {onDeleteAll && totalCount > 0 && (
+            <button
+              onClick={onDeleteAll}
+              disabled={deletingAll}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {deletingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete all
+            </button>
+          )}
+          {headerAction}
+        </div>
+      </div>
+
+      {filterBar}
+
+      {rows.length > 0 && (
+        <div className="flex items-center justify-between px-5 md:px-6 py-2.5 border-b border-slate-100 bg-slate-50/50 gap-4 flex-wrap">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               className="accent-blue-600 w-4 h-4 cursor-pointer"
               checked={allOnPageSelected}
               onChange={() => onToggleAll(pageKeys)}
             />
-          )}
-          <h4 className="text-sm font-black text-slate-900">
-            {title} <span className="text-slate-400 font-semibold">({totalCount})</span>
-          </h4>
-        </div>
-        <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-slate-500">Select all on this page</span>
+          </label>
           {selectedOnPage.length > 0 && (
             <button
               onClick={() => onDeleteSelected(selectedOnPage)}
@@ -93,11 +114,8 @@ export function TransactionsSection({
               Delete selected ({selectedOnPage.length})
             </button>
           )}
-          {headerAction}
         </div>
-      </div>
-
-      {filterBar}
+      )}
 
       {loading ? (
         <div className="py-16 flex items-center justify-center">
