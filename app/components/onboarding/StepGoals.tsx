@@ -11,6 +11,27 @@ const riskConfig = {
   high: { label: "Aggressive", sub: "Maximum growth" },
 } as const;
 
+const knowledgeConfig = {
+  BEGINNER: {
+    label: "Beginner",
+    sub: "New to investing",
+    unselectedClass: "border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-400",
+    selectedClass: "border-teal-500 bg-teal-500 text-white shadow-md shadow-teal-500/20",
+  },
+  INTERMEDIATE: {
+    label: "Intermediate",
+    sub: "Some trading experience",
+    unselectedClass: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-400",
+    selectedClass: "border-indigo-500 bg-indigo-500 text-white shadow-md shadow-indigo-500/20",
+  },
+  ADVANCED: {
+    label: "Advanced",
+    sub: "Deep market knowledge",
+    unselectedClass: "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-400",
+    selectedClass: "border-amber-500 bg-amber-500 text-white shadow-md shadow-amber-500/20",
+  },
+} as const;
+
 export function StepGoals({ formData, setFormData }: StepGoalsProps) {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
@@ -43,6 +64,27 @@ export function StepGoals({ formData, setFormData }: StepGoalsProps) {
             >
               <p className="text-sm">{riskConfig[level].label}</p>
               <p className="text-[10px] font-normal mt-0.5 opacity-70">{riskConfig[level].sub}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2 mt-6">
+        <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Financial Knowledge</label>
+        <div className="grid grid-cols-3 gap-3">
+          {(Object.keys(knowledgeConfig) as Array<keyof typeof knowledgeConfig>).map((level) => (
+            <button
+              key={level}
+              type="button"
+              onClick={() => setFormData({ ...formData, financial_knowledge_level: level })}
+              className={`p-4 rounded-2xl font-bold border-2 transition-all text-left ${
+                formData.financial_knowledge_level === level
+                  ? knowledgeConfig[level].selectedClass
+                  : knowledgeConfig[level].unselectedClass
+              }`}
+            >
+              <p className="text-sm">{knowledgeConfig[level].label}</p>
+              <p className="text-[10px] font-normal mt-0.5 opacity-70">{knowledgeConfig[level].sub}</p>
             </button>
           ))}
         </div>

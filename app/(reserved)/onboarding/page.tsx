@@ -24,6 +24,7 @@ interface OnboardingFormData {
   estimated_wealth: string;
   annual_income: string;
   risk_tolerance: 'low' | 'medium' | 'high';
+  financial_knowledge_level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
   financial_goals: string;
   // Consultant profile
   clients_count: string;
@@ -88,6 +89,7 @@ function OnboardingWizard() {
     estimated_wealth: "",
     annual_income: "",
     risk_tolerance: "medium",
+    financial_knowledge_level: "BEGINNER",
     financial_goals: "",
     clients_count: "",
     total_aum: "",
@@ -130,6 +132,7 @@ function OnboardingWizard() {
           estimated_wealth: parseFloat(formData.estimated_wealth) || null,
           annual_income: parseFloat(formData.annual_income) || null,
           risk_tolerance: formData.risk_tolerance || null,
+          financial_knowledge_level: formData.financial_knowledge_level || null,
           financial_goals: formData.financial_goals || null,
         });
       } else {
