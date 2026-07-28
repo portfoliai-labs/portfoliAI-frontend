@@ -133,7 +133,7 @@ function OnboardingWizard() {
           annual_income: parseFloat(formData.annual_income) || null,
           risk_tolerance: formData.risk_tolerance || null,
           financial_knowledge_level: formData.financial_knowledge_level || null,
-          financial_goals: formData.financial_goals || null,
+          financial_goals: formData.financial_goals.trim() ? [formData.financial_goals.trim()] : null,
         });
       } else {
         // Step 1: create profile with role ADVISOR

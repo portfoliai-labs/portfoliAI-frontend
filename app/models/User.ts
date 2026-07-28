@@ -24,7 +24,8 @@ interface UserProfile {
   // Investor profile fields (null until set via PATCH /users/profile)
   estimated_wealth: number | null;
   annual_income: number | null;
-  financial_goals: string | null;
+  savings_rate: number | null;
+  financial_goals: string[] | null;
   risk_tolerance: string | null;
   financial_knowledge_level: FinancialKnowledgeLevel | null;
   currency: string | null;
@@ -43,7 +44,8 @@ interface ProfileCreatePayload {
 interface ProfileUpdatePayload {
   estimated_wealth?: number | null;
   annual_income?: number | null;
-  financial_goals?: string | null;
+  savings_rate?: number | null;
+  financial_goals?: string[] | null;
   risk_tolerance?: string | null;
   financial_knowledge_level?: FinancialKnowledgeLevel | null;
   currency?: string | null;

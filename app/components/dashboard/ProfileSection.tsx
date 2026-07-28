@@ -4,11 +4,57 @@ import { useState, useEffect } from "react";
 import {
   Globe, ShieldAlert, Wallet, Coins, Save,
   Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote,
-  GraduationCap, Info
+  GraduationCap, Info, Percent
 } from "lucide-react";
 import { userService } from "../../services/userService";
 import { useUser } from "../../context/UserContext";
 import type { FinancialKnowledgeLevel } from "../../models/User";
+
+type GoalTemplatePart = { type: "text"; text: string } | { type: "number"; key: string; placeholder: string };
+
+interface GoalTemplate {
+  id: string;
+  parts: GoalTemplatePart[];
+}
+
+function numberParts(t: GoalTemplate) {
+  return t.parts.filter((p): p is Extract<GoalTemplatePart, { type: "number" }> => p.type === "number");
+}
+
+function buildGoalText(t: GoalTemplate, values: Record<string, string>) {
+  return t.parts.map((p) => (p.type === "text" ? p.text : values[p.key].trim())).join("");
+}
+
+const goalTemplates: GoalTemplate[] = [
+  {
+    id: "portfolio_survival_withdrawal",
+    parts: [
+      { type: "text", text: "I want to retire in " },
+      { type: "number", key: "years", placeholder: "20" },
+      { type: "text", text: " years and withdraw €" },
+      { type: "number", key: "amount", placeholder: "1500" },
+      { type: "text", text: " per month from my portfolio." },
+    ],
+  },
+  {
+    id: "portfolio_survival_topup",
+    parts: [
+      { type: "text", text: "I need a pension top-up of about €" },
+      { type: "number", key: "amount", placeholder: "1200" },
+      { type: "text", text: " per month for " },
+      { type: "number", key: "years", placeholder: "30" },
+      { type: "text", text: " years." },
+    ],
+  },
+  {
+    id: "fire_swr_basic",
+    parts: [
+      { type: "text", text: "I want to reach FIRE as soon as possible and live off my portfolio for the next " },
+      { type: "number", key: "years", placeholder: "40" },
+      { type: "text", text: " years." },
+    ],
+  },
+];
 
 export function ProfileSection() {
   const [loading, setLoading] = useState(true);
@@ -25,10 +71,16 @@ export function ProfileSection() {
     currency: "USD",
     estimated_wealth: "0",
     annual_income: "0",
-    financial_goals: "",
+    savings_rate: "0",
     risk_tolerance: "medium",
     financial_knowledge_level: "BEGINNER",
   });
+
+  const [goals, setGoals] = useState<{ text: string; templateId?: string }[]>([]);
+  const [goalInput, setGoalInput] = useState("");
+  const [templateValues, setTemplateValues] = useState<Record<string, Record<string, string>>>(
+    Object.fromEntries(goalTemplates.map((t) => [t.id, Object.fromEntries(numberParts(t).map((p) => [p.key, ""]))]))
+  );
 
   const languages = [
     { code: "en", label: "English", flag: "🇬🇧" },
@@ -80,10 +132,12 @@ export function ProfileSection() {
           currency: user.currency || "USD",
           estimated_wealth: String(user.estimated_wealth || 0),
           annual_income: String(user.annual_income || 0),
-          financial_goals: user.financial_goals || "",
+          savings_rate: user.savings_rate != null ? String(Math.round(user.savings_rate * 100)) : "0",
           risk_tolerance: user.risk_tolerance || "medium",
           financial_knowledge_level: user.financial_knowledge_level || "BEGINNER",
         });
+
+        setGoals((user.financial_goals || []).map((text) => ({ text })));
       } catch (err) {
         console.error(err);
       } finally {
@@ -96,12 +150,17 @@ export function ProfileSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const pendingGoal = goalInput.trim();
+      const allGoals = pendingGoal ? [...goals, { text: pendingGoal }] : goals;
+      const financial_goals = allGoals.map((g) => g.text);
+
       await userService.updateUserProfile({
         language: formData.language,
         currency: formData.currency || null,
         estimated_wealth: formData.estimated_wealth ? parseFloat(formData.estimated_wealth) : null,
         annual_income: formData.annual_income ? parseFloat(formData.annual_income) : null,
-        financial_goals: formData.financial_goals || null,
+        savings_rate: formData.savings_rate ? parseFloat(formData.savings_rate) / 100 : null,
+        financial_goals: financial_goals.length ? financial_goals : null,
         risk_tolerance: formData.risk_tolerance || null,
         financial_knowledge_level: (formData.financial_knowledge_level || null) as FinancialKnowledgeLevel | null,
       });
@@ -261,7 +320,7 @@ export function ProfileSection() {
         {/* Financial Data */}
         <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6 md:space-y-8">
           <SectionHeader icon={<Wallet className="w-5 h-5" />} title="Financial Data" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
                 Estimated Wealth ({formData.currency})
@@ -278,7 +337,7 @@ export function ProfileSection() {
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
-                Annual Income ({formData.currency})
+                Annual Income, Net ({formData.currency})
               </label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Banknote className="w-5 h-5" /></div>
@@ -290,15 +349,113 @@ export function ProfileSection() {
                 />
               </div>
             </div>
-            <div className="md:col-span-2 space-y-2">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
+                Savings Rate (%)
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Percent className="w-5 h-5" /></div>
+                <input
+                  type="text"
+                  className={`${inputClass} pl-12`}
+                  value={formData.savings_rate}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/[^0-9.]/g, '');
+                    if (digits !== '' && parseFloat(digits) > 100) return;
+                    setFormData({ ...formData, savings_rate: digits });
+                  }}
+                />
+              </div>
+            </div>
+            <div className="md:col-span-3 space-y-3">
               <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Financial Goals</label>
-              <textarea
-                rows={4}
-                className={`${inputClass} resize-none`}
-                placeholder="What are you trying to achieve?"
-                value={formData.financial_goals}
-                onChange={(e) => setFormData({ ...formData, financial_goals: e.target.value })}
+
+              <div className="flex flex-wrap gap-2">
+                {goalTemplates
+                  .filter((t) => !goals.some((g) => g.templateId === t.id))
+                  .map((t) => {
+                    const nParts = numberParts(t);
+                    const values = templateValues[t.id];
+
+                    const commit = () => {
+                      if (nParts.some((p) => !values[p.key]?.trim())) return;
+                      setGoals([...goals, { text: buildGoalText(t, values), templateId: t.id }]);
+                      setTemplateValues({
+                        ...templateValues,
+                        [t.id]: Object.fromEntries(nParts.map((p) => [p.key, ""])),
+                      });
+                    };
+
+                    return (
+                      <div
+                        key={t.id}
+                        className="inline-flex items-center gap-1 px-4 py-2 rounded-full border border-dashed border-[#d6cdb8] bg-white text-[13px] font-semibold tracking-tight text-[#44403c] transition-all focus-within:border-[#C49A3C] focus-within:border-solid"
+                      >
+                        {t.parts.map((p, i) =>
+                          p.type === "text" ? (
+                            <span key={i}>{p.text}</span>
+                          ) : (
+                            <input
+                              key={i}
+                              type="number"
+                              min="0"
+                              size={Math.max(p.placeholder.length, (values[p.key] || "").length, 2)}
+                              value={values[p.key] || ""}
+                              placeholder={p.placeholder}
+                              onChange={(e) =>
+                                setTemplateValues({
+                                  ...templateValues,
+                                  [t.id]: { ...values, [p.key]: e.target.value },
+                                })
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commit();
+                                }
+                              }}
+                              className="text-center bg-transparent border-0 outline-none font-bold text-[#1c1917] placeholder-[#a8a29e] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0"
+                            />
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <input
+                type="text"
+                className={inputClass}
+                value={goalInput}
+                onChange={(e) => setGoalInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && goalInput.trim()) {
+                    e.preventDefault();
+                    setGoals([...goals, { text: goalInput.trim() }]);
+                    setGoalInput("");
+                  }
+                }}
               />
+
+              {goals.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-4">
+                  {goals.map((goal, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-[#e7e1d3] bg-white text-[13px] font-semibold tracking-tight text-[#44403c]"
+                    >
+                      {goal.text}
+                      <button
+                        type="button"
+                        onClick={() => setGoals(goals.filter((_, i) => i !== index))}
+                        className="text-[#a8a29e] hover:text-rose-500 leading-none"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
