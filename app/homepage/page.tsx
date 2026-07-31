@@ -18,17 +18,17 @@ import DemoTourModal from "../components/homepage/DemoTourModal";
 
 const featuresData = [
   { icon: BarChart3,  title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
-  { icon: TrendingUp, title: "Cash Flow Analysis",    description: "Historical deposits, withdrawals, and buy/sell activity mapped across time and asset categories." },
-  { icon: DollarSign, title: "Cost Transparency",     description: "Commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
-  { icon: Activity,   title: "Performance & ROI",     description: "Monthly heatmaps, benchmark comparison, annual returns, and trailing period performance charts." },
-  { icon: Shield,     title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and Beta — correlated to real market events." },
-  { icon: Scale,      title: "Benchmark Comparison",   description: "Your portfolio's return plotted against a market benchmark — tracking error, alpha, and where performance really comes from." },
+  { icon: TrendingUp, title: "Cash Flow & Dividends", description: "Historical deposits, withdrawals, buy/sell activity, and dividend income broken down by asset — yield, yield on cost, and YoY growth." },
+  { icon: DollarSign, title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
+  { icon: Activity,   title: "Performance & ROI",     description: "Monthly heatmaps, annual returns, trailing period performance, and comparison against a market benchmark — alpha, tracking error, and more." },
+  { icon: Scale,      title: "Efficient Frontier",    description: "Mean-variance optimization, Max Sharpe and Min Volatility allocations, and an asset correlation matrix — where you stand vs. the theoretical optimum." },
+  { icon: Shield,     title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and a category-level breakdown of what's really driving your risk." },
 ];
 
 const stepsData = [
   { number: 1, icon: UploadCloud,   title: "Upload",   description: "Export transaction history from your broker and upload the CSV or Excel file." },
   { number: 2, icon: Settings2,     title: "Process",  description: "The AI engine parses, categorises, and analyses every transaction in your history." },
-  { number: 3, icon: DownloadCloud, title: "Download", description: "A professional, branded PDF ready to send to clients or present in a meeting." },
+  { number: 3, icon: DownloadCloud, title: "Download", description: "A professional, branded PDF — with an AI-written executive summary — ready to send to clients or present in a meeting." },
 ];
 
 const audienceData = [
@@ -118,7 +118,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
 
         <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
           Upload a broker export. PortfoliAI generates an institutional-grade PDF —
-          performance, risk, costs, allocation. In minutes. In total privacy.
+          performance, risk, costs, allocation, benchmark comparison. In minutes.
         </p>
 
         <div className="mb-8"><AudiencePills /></div>
@@ -143,7 +143,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
 
         <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "€ 0", label: "to start" }, { num: "100%", label: "private" }, { num: "1", label: "click away" }].map((s, i) => (
+          {[{ num: "€ 0", label: "to start" }, { num: "5", label: "report chapters" }, { num: "1", label: "click away" }].map((s, i) => (
             <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
               <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
               <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>

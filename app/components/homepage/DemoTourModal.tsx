@@ -6,7 +6,7 @@ import {
   X, ArrowRight, ArrowLeft, UploadCloud, FileText,
   LayoutDashboard, Settings, BarChart3, Download, Eye,
   ChevronRight, Sparkles, Search, Plus, Receipt, PlusCircle,
-  User2, Globe, ShieldAlert, Wallet, Save,
+  User2, Globe, ShieldAlert, Wallet, Save, GraduationCap, Percent,
 } from "lucide-react";
 
 interface DemoTourModalProps {
@@ -23,12 +23,12 @@ const STEPS = [
   {
     activeNav: "profile",
     title: "Set your investor profile",
-    description: "Language, currency, risk tolerance and financial goals — kept on your account for a more personalized experience.",
+    description: "Language, currency, risk tolerance, financial knowledge and long-term goals — kept on your account to personalize the AI analysis.",
   },
   {
     activeNav: "reports",
     title: "Download your report",
-    description: "A professional institutional-grade PDF — 6 chapters, every metric. Share with clients, archive for taxes, or present in a meeting.",
+    description: "A professional institutional-grade PDF — 5 chapters, every metric. Share with clients, archive for taxes, or present in a meeting.",
   },
 ];
 
@@ -286,6 +286,12 @@ function ScreenTransactions() {
 }
 
 function ScreenProfile() {
+  const knowledgeLevels = [
+    { label: "Beginner", active: false },
+    { label: "Intermediate", active: true },
+    { label: "Advanced", active: false },
+  ];
+
   return (
     <div className="space-y-6 pb-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -299,7 +305,7 @@ function ScreenProfile() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4" style={SPOTLIGHT}>
+        <div className="bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
             <Globe className="h-4 w-4" style={{ color: "#C49A3C" }} /> Preferences
           </div>
@@ -327,16 +333,48 @@ function ScreenProfile() {
 
         <div className="lg:col-span-2 bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
+            <GraduationCap className="h-4 w-4" style={{ color: "#C49A3C" }} /> Financial Knowledge
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {knowledgeLevels.map((k) => (
+              <div
+                key={k.label}
+                className={`text-center py-3 rounded-2xl border-2 text-sm font-bold ${
+                  k.active ? "border-[#C49A3C] bg-[#C49A3C] text-[#131210]" : "border-slate-200 bg-slate-50 text-slate-500"
+                }`}
+              >
+                {k.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white p-5 rounded-4xl border border-slate-200 shadow-sm space-y-4" style={SPOTLIGHT}>
+          <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm border-b border-slate-100 pb-3">
             <Wallet className="h-4 w-4" style={{ color: "#C49A3C" }} /> Financial Data
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Estimated Wealth (EUR)</span>
               <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">€ 120,000</div>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Annual Income (EUR)</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Annual Income, Net (EUR)</span>
               <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">€ 45,000</div>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1">
+                <Percent className="h-3 w-3" /> Income Invested
+              </span>
+              <div className="p-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-700">15%</div>
+            </div>
+            <div className="sm:col-span-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Financial Goals</span>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center px-4 py-2 rounded-full border border-[#e7e1d3] bg-white text-[13px] font-semibold text-slate-700">
+                  I want to retire in 20 years and withdraw €1,500 per month from my portfolio.
+                </span>
+              </div>
             </div>
           </div>
         </div>

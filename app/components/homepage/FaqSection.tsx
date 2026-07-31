@@ -12,11 +12,11 @@ interface FaqData {
 const faqData: FaqData[] = [
   {
     question: "How does the AI analysis work?",
-    answer: "Our engine uses advanced LLMs to parse your PDF and CSV broker statements, identifying every transaction, commission, and implicit spread — without storing any personal data on our servers.",
+    answer: "Our engine uses advanced LLMs to parse your CSV and Excel broker statements, identifying every transaction, commission, and implicit spread, then builds the full report from that data.",
   },
   {
     question: "Is my financial data secure?",
-    answer: "Absolutely. We follow a strict Zero-Retention policy. Your files are processed entirely in RAM and destroyed immediately after the report is generated. Nothing is ever written to disk.",
+    answer: "We use industry-standard measures — encryption in transit, access controls, and short-lived signed URLs for document downloads — to protect your data. Your data is retained only for as long as your account is active, and you can request deletion at any time from your account settings.",
   },
   {
     question: "Can I brand the reports with my firm's logo?",
