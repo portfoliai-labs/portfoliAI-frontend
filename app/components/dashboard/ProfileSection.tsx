@@ -351,7 +351,7 @@ export function ProfileSection() {
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">
-                Savings Rate (%)
+                Income Invested (%)
               </label>
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Percent className="w-5 h-5" /></div>
