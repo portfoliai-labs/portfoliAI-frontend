@@ -15,6 +15,7 @@ import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
 import ReportScrollPreview from "../components/homepage/ReportScrollPreview";
 import DemoTourModal from "../components/homepage/DemoTourModal";
+import { BetaBadge } from "../components/common/BetaBadge";
 
 const featuresData = [
   { icon: BarChart3,  title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
@@ -234,6 +235,7 @@ export default function HomePage() {
           <span className="text-[20px] font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
             PortfoliAI
           </span>
+          <BetaBadge />
         </motion.div>
 
         <nav className="hidden md:flex gap-7 text-[12px] font-normal uppercase tracking-[0.06em]">
@@ -310,6 +312,16 @@ export default function HomePage() {
               >{l.label}</a>
             ))}
           </div>
+        </div>
+        <div className="max-w-6xl mx-auto px-6 mt-8 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
+            PortfoliAI reports are generated automatically, including narrative analysis produced by
+            an AI model, and are provided for informational and educational purposes only. Nothing on
+            this site constitutes investment, tax, or legal advice, or a personalized recommendation
+            under MiFID II. Past performance and simulated projections are not indicative of future
+            results. Always verify figures independently and consult a licensed financial advisor
+            before making investment decisions.
+          </p>
         </div>
       </footer>
     </div>

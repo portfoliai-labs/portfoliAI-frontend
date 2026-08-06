@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Download, Loader2 } from "lucide-react";
 import { reportService } from "../../../services/reportService";
+import { DisclaimerBanner } from "../../../components/legal/DisclaimerBanner";
 
 // Shareable, auth-gated single-report view: the (reserved) layout's UserProvider
 // already redirects unauthenticated visitors before this page can fetch anything,
@@ -52,6 +53,8 @@ export default function ReportViewerPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F5EF] flex flex-col">
+      <DisclaimerBanner compact />
+
       <div className="flex items-center justify-between px-4 md:px-8 py-4 border-b border-[rgba(196,154,60,0.2)] bg-white/60">
         <button
           onClick={() => router.push("/dashboard?section=reports")}

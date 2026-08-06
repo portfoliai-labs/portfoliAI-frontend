@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BarChart3, ArrowLeft } from "lucide-react";
+import { BetaBadge } from "../common/BetaBadge";
 
 export function LegalLayout({
   title,
@@ -26,6 +27,7 @@ export function LegalLayout({
           >
             PortfoliAI
           </span>
+          <BetaBadge />
         </Link>
 
         <Link

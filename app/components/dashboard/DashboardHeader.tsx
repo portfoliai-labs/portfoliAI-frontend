@@ -8,6 +8,7 @@ import { useNotificationsContext } from "../../context/NotificationsContext";
 import { NotificationPanel } from "./NotificationPanel";
 import { SubscriptionPopover } from "./SubscriptionPopover";
 import { userService } from "../../services/userService";
+import { BetaBadge } from "../common/BetaBadge";
 import type { SubscriptionTier, SubscriptionResponse, UserMetrics } from "../../models/User";
 
 const TIER_LABEL: Record<SubscriptionTier, string> = {
@@ -79,11 +80,14 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
           {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
 
-        <div
-          className="text-xl md:text-2xl font-black tracking-tight text-[#1c1917]"
-          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-        >
-          Portfoli<span className="text-[#C49A3C]">AI</span>
+        <div className="flex items-center gap-2">
+          <div
+            className="text-xl md:text-2xl font-black tracking-tight text-[#1c1917]"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            Portfoli<span className="text-[#C49A3C]">AI</span>
+          </div>
+          <BetaBadge />
         </div>
 
         {user?.first_name && (
