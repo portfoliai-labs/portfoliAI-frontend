@@ -50,7 +50,7 @@ function RoleCard({
   return (
     <button
       onClick={onClick}
-      className={`group w-full text-left p-8 rounded-[2rem] border transition-all duration-200 hover:scale-[1.02] active:scale-[0.99] ${
+      className={`group w-full text-left p-8 rounded-4xl border transition-all duration-200 hover:scale-[1.02] active:scale-[0.99] ${
         dark
           ? "bg-[#1c1917] border-[#C49A3C]/30 hover:border-[#C49A3C]/60"
           : "bg-white border-[rgba(196,154,60,0.25)] hover:border-[#C49A3C]/60 hover:shadow-lg"
@@ -249,7 +249,7 @@ function OnboardingWizard() {
 
       {/* Card */}
       <div className="w-full max-w-2xl bg-white rounded-[2.5rem] shadow-sm border border-[rgba(196,154,60,0.2)] p-8 md:p-12">
-        <div className="min-h-[300px]">
+        <div className="min-h-75">
           {renderStep()}
         </div>
 
