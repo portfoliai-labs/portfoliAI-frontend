@@ -81,7 +81,6 @@ function OnboardingWizard() {
   const [role, setRole] = useState<UserRole | null>(null);
   const [step, setStep] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
-  const [consentAccepted, setConsentAccepted] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<OnboardingFormData>({
     first_name: searchParams.get("first_name") || "",
@@ -253,27 +252,8 @@ function OnboardingWizard() {
           {renderStep()}
         </div>
 
-        {step === totalSteps && (
-          <label className="flex items-start gap-3 mt-8 pt-6 border-t border-[rgba(196,154,60,0.15)] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={consentAccepted}
-              onChange={(e) => setConsentAccepted(e.target.checked)}
-              className="mt-0.5 w-4 h-4 accent-[#C49A3C] shrink-0"
-            />
-            <span className="text-[12.5px] leading-relaxed text-[#78716c]">
-              I confirm that I am at least 18 years old, and I have read and accept the{" "}
-              <a href="/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#1c1917] font-semibold underline">Terms of Service</a>
-              {" "}and{" "}
-              <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#1c1917] font-semibold underline">Privacy Policy</a>
-              , and I understand that PortfoliAI reports — including AI-generated analysis — are
-              informational only and do not constitute financial advice.
-            </span>
-          </label>
-        )}
-
         {/* Navigation */}
-        <div className={`flex items-center justify-between pt-6 border-t border-[rgba(196,154,60,0.15)] ${step === totalSteps ? "mt-6" : "mt-12"}`}>
+        <div className="flex items-center justify-between mt-12 pt-6 border-t border-[rgba(196,154,60,0.15)]">
           <button
             onClick={handlePrev}
             disabled={loading}
@@ -295,7 +275,7 @@ function OnboardingWizard() {
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={loading || !consentAccepted}
+              disabled={loading}
               className="flex items-center gap-2 px-8 py-4 bg-[#C49A3C] text-white rounded-2xl font-bold hover:bg-[#d4aa4c] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (

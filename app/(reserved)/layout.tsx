@@ -2,6 +2,7 @@
 "use client";
 
 import { UserProvider } from "../context/UserContext";
+import { LegalGate } from "../components/legal/LegalGate";
 
 export default function AuthenticatedLayout({
   children,
@@ -10,7 +11,7 @@ export default function AuthenticatedLayout({
 }) {
   return (
     <UserProvider>
-      {children}
+      <LegalGate>{children}</LegalGate>
     </UserProvider>
   );
 }
