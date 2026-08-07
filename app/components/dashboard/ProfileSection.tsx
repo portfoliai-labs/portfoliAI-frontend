@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Globe, ShieldAlert, Wallet, Coins, Save,
   Loader2, CheckCircle2, AlertCircle, ChevronDown, Banknote,
@@ -88,6 +88,8 @@ export function ProfileSection() {
 
   const [goals, setGoals] = useState<{ text: string; templateId?: string }[]>([]);
   const [goalInput, setGoalInput] = useState("");
+  const [isAddingCustomGoal, setIsAddingCustomGoal] = useState(false);
+  const customGoalInputRef = useRef<HTMLInputElement>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, Record<string, string>>>(
     Object.fromEntries(goalTemplates.map((t) => [t.id, Object.fromEntries(numberParts(t).map((p) => [p.key, ""]))]))
   );
@@ -433,19 +435,41 @@ export function ProfileSection() {
                   })}
               </div>
 
-              <input
-                type="text"
-                className={inputClass}
-                value={goalInput}
-                onChange={(e) => setGoalInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && goalInput.trim()) {
-                    e.preventDefault();
-                    setGoals([...goals, { text: goalInput.trim() }]);
-                    setGoalInput("");
-                  }
-                }}
-              />
+              {isAddingCustomGoal ? (
+                <input
+                  ref={customGoalInputRef}
+                  type="text"
+                  className={inputClass}
+                  placeholder="Describe your own goal and press Enter…"
+                  value={goalInput}
+                  onChange={(e) => setGoalInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && goalInput.trim()) {
+                      e.preventDefault();
+                      setGoals([...goals, { text: goalInput.trim() }]);
+                      setGoalInput("");
+                    }
+                    if (e.key === "Escape") {
+                      setGoalInput("");
+                      setIsAddingCustomGoal(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!goalInput.trim()) setIsAddingCustomGoal(false);
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingCustomGoal(true);
+                    setTimeout(() => customGoalInputRef.current?.focus(), 0);
+                  }}
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-full border border-dashed border-[#d6cdb8] bg-white text-[13px] font-semibold tracking-tight text-[#78716c] hover:border-[#C49A3C] hover:text-[#C49A3C] transition-all"
+                >
+                  + Add custom goal
+                </button>
+              )}
 
               {goals.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-4">
