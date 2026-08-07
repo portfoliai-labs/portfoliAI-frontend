@@ -54,6 +54,16 @@ const goalTemplates: GoalTemplate[] = [
       { type: "text", text: " years." },
     ],
   },
+  {
+    id: "buy_house",
+    parts: [
+      { type: "text", text: "I plan to buy a house in the next " },
+      { type: "number", key: "years", placeholder: "4" },
+      { type: "text", text: " years, with an estimated cost of around €" },
+      { type: "number", key: "amount", placeholder: "300000" },
+      { type: "text", text: "." },
+    ],
+  },
 ];
 
 export function ProfileSection() {
