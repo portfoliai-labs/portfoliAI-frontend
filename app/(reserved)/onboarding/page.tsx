@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ArrowLeft, Check, Loader2, Rocket, User, Briefcase } from "lucide-react";
 import { userService } from "../../services/userService";
 import { advisorService } from "../../services/advisorService";
+import { ApiError } from "../../services/apiClient";
 import { useUser } from "../../context/UserContext";
 import type { UserRole } from "../../models/User";
 
@@ -25,13 +26,20 @@ interface OnboardingFormData {
   annual_income: string;
   risk_tolerance: 'low' | 'medium' | 'high';
   financial_knowledge_level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
-  financial_goals: string;
+  financial_goals: string[];
+  financial_goals_other: string;
   // Consultant profile
   clients_count: string;
   total_aum: string;
   years_of_experience: string;
   specialization: string;
   language: string;
+}
+
+function buildFinancialGoals(formData: OnboardingFormData): string[] | null {
+  const other = formData.financial_goals_other.trim();
+  const goals = other ? [...formData.financial_goals, other] : formData.financial_goals;
+  return goals.length > 0 ? goals : null;
 }
 
 function RoleCard({
@@ -76,7 +84,7 @@ function RoleCard({
 function OnboardingWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refreshUser } = useUser();
+  const { refreshUser, logout } = useUser();
 
   const [role, setRole] = useState<UserRole | null>(null);
   const [step, setStep] = useState<number>(0);
@@ -90,7 +98,8 @@ function OnboardingWizard() {
     annual_income: "",
     risk_tolerance: "medium",
     financial_knowledge_level: "BEGINNER",
-    financial_goals: "",
+    financial_goals: [],
+    financial_goals_other: "",
     clients_count: "",
     total_aum: "",
     years_of_experience: "",
@@ -133,7 +142,7 @@ function OnboardingWizard() {
           annual_income: parseFloat(formData.annual_income) || null,
           risk_tolerance: formData.risk_tolerance || null,
           financial_knowledge_level: formData.financial_knowledge_level || null,
-          financial_goals: formData.financial_goals.trim() ? [formData.financial_goals.trim()] : null,
+          financial_goals: buildFinancialGoals(formData),
         });
       } else {
         // Step 1: create profile with role ADVISOR
@@ -156,11 +165,25 @@ function OnboardingWizard() {
       router.push("/dashboard");
     } catch (error) {
       console.error("Failed to create profile:", error);
+      if (error instanceof ApiError && error.status === 403) {
+        // The only 403 this endpoint raises (get_current_user_info, auth.py):
+        // Google's userinfo call succeeded but returned no email or
+        // email_verified: false. Retrying or reloading won't fix this — the
+        // Google account itself needs a verified email. Sign the user out so
+        // they get a clean re-auth instead of getting stuck on this screen.
+        alert(
+          "We couldn't verify the email on your Google account, so we can't create your " +
+          "profile. Please make sure your Google account has a verified email address, then " +
+          "sign in again."
+        );
+        logout();
+        return;
+      }
       alert("An error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [formData, role, refreshUser, router]);
+  }, [formData, role, refreshUser, router, logout]);
 
   const isNextDisabled = step === 1 && (!formData.first_name.trim() || !formData.last_name.trim());
 

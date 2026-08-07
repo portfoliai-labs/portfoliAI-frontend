@@ -5,6 +5,15 @@ interface StepGoalsProps {
   setFormData: (data: any) => void;
 }
 
+const goalOptions = [
+  { label: "Retirement", sub: "Long-term income security" },
+  { label: "Financial Independence", sub: "Retire early (FIRE)" },
+  { label: "Buy a Home", sub: "Save for a property" },
+  { label: "Education", sub: "Children's or personal education" },
+  { label: "Wealth Preservation", sub: "Protect capital from inflation" },
+  { label: "Passive Income", sub: "Generate recurring cash flow" },
+] as const;
+
 const riskConfig = {
   low: { label: "Conservative", sub: "Capital preservation" },
   medium: { label: "Moderate", sub: "Balanced growth" },
@@ -92,12 +101,37 @@ export function StepGoals({ formData, setFormData }: StepGoalsProps) {
 
       <div className="space-y-2 mt-6">
         <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Your Goals (Optional)</label>
-        <textarea
-          rows={3}
-          className="w-full p-4 bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] rounded-2xl font-medium text-[#1c1917] focus:bg-white focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 outline-none transition-all resize-none placeholder:text-[#a8a29e]"
-          value={formData.financial_goals}
-          onChange={(e) => setFormData({ ...formData, financial_goals: e.target.value })}
-          placeholder="E.g. Buy a house in 5 years, early retirement..."
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {goalOptions.map(({ label, sub }) => {
+            const selected = formData.financial_goals.includes(label);
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  const next = selected
+                    ? formData.financial_goals.filter((g: string) => g !== label)
+                    : [...formData.financial_goals, label];
+                  setFormData({ ...formData, financial_goals: next });
+                }}
+                className={`p-4 rounded-2xl font-bold border-2 transition-all text-left ${
+                  selected
+                    ? 'border-[#C49A3C] bg-[#C49A3C]/10 text-[#1c1917]'
+                    : 'border-[rgba(196,154,60,0.2)] bg-[#F7F5EF] text-[#78716c] hover:border-[#C49A3C]/50'
+                }`}
+              >
+                <p className="text-sm">{label}</p>
+                <p className="text-[10px] font-normal mt-0.5 opacity-70">{sub}</p>
+              </button>
+            );
+          })}
+        </div>
+        <input
+          type="text"
+          className="w-full p-4 mt-2 bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] rounded-2xl font-medium text-[#1c1917] focus:bg-white focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 outline-none transition-all placeholder:text-[#a8a29e]"
+          value={formData.financial_goals_other}
+          onChange={(e) => setFormData({ ...formData, financial_goals_other: e.target.value })}
+          placeholder="Other goal (optional)"
         />
       </div>
     </div>

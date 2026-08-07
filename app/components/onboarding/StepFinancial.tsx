@@ -57,7 +57,7 @@ export function StepFinancial({ formData, setFormData }: StepFinancialProps) {
           </div>
         </div>
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Annual Income</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Annual Income (Net)</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[#a8a29e]">{symbol}</span>
             <input

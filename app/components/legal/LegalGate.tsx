@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, ShieldCheck, X } from "lucide-react";
 import { legalService } from "../../services/legalService";
+import { ApiError } from "../../services/apiClient";
 import { useUser } from "../../context/UserContext";
 import type { LegalDocument } from "../../models/Legal";
 
@@ -171,29 +172,37 @@ function AcceptanceScreen({ documents, onAccepted }: { documents: LegalDocument[
 }
 
 /**
- * Gates the entire (reserved) subtree — onboarding, dashboard, reports — behind
- * acceptance of any legal document version the user hasn't accepted yet. Runs
- * on every mount so it also catches existing users after a ToS/Privacy update,
- * not just first-time signups.
+ * Gates dashboard/reports access behind acceptance of any legal document
+ * version the user hasn't accepted yet.
+ *
+ * It deliberately does NOT gate brand-new signups still in onboarding:
+ * /legal/pending looks the user up by their account record, which doesn't
+ * exist yet until POST /users/register creates it — checking any earlier
+ * than that 404s every time ("User '<email>' not found"), so onboarding
+ * would never render. Instead this waits for `user` (from UserContext) to
+ * go from null to a real profile — which happens the moment registration
+ * succeeds and onboarding calls refreshUser() — and only then runs the
+ * check, before the dashboard is allowed to render. Existing users hit this
+ * same effect on every mount, so it also catches them after a ToS/Privacy
+ * update.
  */
 export function LegalGate({ children }: { children: React.ReactNode }) {
+  const { user, loading: userLoading, logout } = useUser();
   const [pending, setPending] = useState<LegalDocument[] | null>(null);
   const [checking, setChecking] = useState(true);
+  const [checkError, setCheckError] = useState<ApiError | Error | null>(null);
 
   const checkPending = useCallback(async () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-    if (!token) {
-      // No token: nothing to gate here, let the page-level route protection
-      // (useProtectedRoute) handle redirecting to /login.
-      setChecking(false);
-      return;
-    }
+    setChecking(true);
+    setCheckError(null);
     try {
       const docs = await legalService.getPendingDocuments();
       setPending(docs.length > 0 ? docs : null);
-    } catch {
-      // Fail open rather than locking users out over a transient network error.
-      // A 401 here is already handled globally (auth-unauthorized -> logout).
+    } catch (err) {
+      // Do NOT fail open here: silently proceeding trades a clear "please
+      // accept this" screen for a confusing failure deeper in the flow.
+      // A 401 is already handled globally (auth-unauthorized -> logout).
+      setCheckError(err instanceof ApiError ? err : new Error("Network error"));
       setPending(null);
     } finally {
       setChecking(false);
@@ -201,13 +210,74 @@ export function LegalGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+    if (!token) {
+      // No token: nothing to gate here, let the page-level route protection
+      // (useProtectedRoute) handle redirecting to /login.
+      setChecking(false);
+      return;
+    }
+    if (userLoading) {
+      // Still resolving whether a profile exists — wait before deciding
+      // anything, otherwise we'd race UserContext's own fetch.
+      return;
+    }
+    if (!user) {
+      // No profile yet: brand-new account still going through onboarding.
+      // Nothing to check against server-side yet — let onboarding render.
+      setChecking(false);
+      setPending(null);
+      return;
+    }
     checkPending();
-  }, [checkPending]);
+  }, [user, userLoading, checkPending]);
 
   if (checking) {
     return (
       <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#C49A3C]" />
+      </div>
+    );
+  }
+
+  if (checkError) {
+    // The auth dependency this endpoint shares with the rest of the API
+    // (get_current_user_info) returns 403 specifically when Google's userinfo
+    // call succeeds but the account has no verified email. That isn't
+    // transient — retrying with the same session won't help, only signing in
+    // again (possibly with a different Google account) will.
+    const isUnverifiedEmail = checkError instanceof ApiError && checkError.status === 403;
+    return (
+      <div className="min-h-screen bg-[#F7F5EF] flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-white rounded-[2.5rem] shadow-sm border border-[rgba(196,154,60,0.2)] p-8 text-center">
+          <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-4" />
+          <h1 className="text-lg font-bold text-[#1c1917] mb-2">
+            {isUnverifiedEmail ? "Google account email not verified" : "Couldn't verify your account"}
+          </h1>
+          <p className="text-sm text-[#78716c] mb-1">
+            {isUnverifiedEmail
+              ? "We can't confirm your identity because your Google account has no verified email. Please sign in again, ideally with an account that has a verified email address."
+              : "We couldn't check whether there are documents you still need to accept."}
+          </p>
+          <p className="text-[11px] text-[#a8a29e] mb-6 font-mono">
+            {checkError instanceof ApiError ? `${checkError.status} ${checkError.message}` : checkError.message}
+          </p>
+          {isUnverifiedEmail ? (
+            <button
+              onClick={logout}
+              className="px-6 py-3 bg-[#C49A3C] text-white rounded-2xl font-bold hover:bg-[#d4aa4c] transition-colors"
+            >
+              Log out
+            </button>
+          ) : (
+            <button
+              onClick={checkPending}
+              className="px-6 py-3 bg-[#C49A3C] text-white rounded-2xl font-bold hover:bg-[#d4aa4c] transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       </div>
     );
   }
