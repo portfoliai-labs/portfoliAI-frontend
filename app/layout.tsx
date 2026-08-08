@@ -4,7 +4,7 @@ import { GoogleProvider } from './providers/GoogleProvider';
 import { Playfair_Display } from "next/font/google";
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair" });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://portfoliai.online";
 const SITE_DESCRIPTION = "PortfoliAI is a personal finance management tool that helps you track and analyze your investments. With PortfoliAI, you can easily import your transaction data, visualize your portfolio performance, and make informed decisions to optimize your financial future.";
 
 export const metadata: Metadata = {

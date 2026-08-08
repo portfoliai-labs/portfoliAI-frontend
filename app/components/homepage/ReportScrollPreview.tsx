@@ -40,7 +40,7 @@ const ASSETS = [
   { name: "Vanguard FTSE Developed Europe", roi: "+38.65%",  weight: "12.56%", positive: true  },
   { name: "Vanguard FTSE Japan",            roi: "+43.06%",  weight: "9.59%",  positive: true  },
   { name: "Vanguard Asia Pacific ex Japan", roi: "+90.82%",  weight: "7.70%",  positive: true  },
-  { name: "Bitcoin EUR",                    roi: "−447.19%", weight: "4.08%",  positive: false },
+  { name: "Bitcoin EUR",                    roi: "−44.72%",  weight: "4.08%",  positive: false },
 ];
 
 const CHAPTERS = ["Overview", "Costs", "Composition", "Performance", "Risk"];
@@ -235,7 +235,7 @@ const ReportContent = () => (
         <AnalysisHeading>Executive Summary</AnalysisHeading>
         <AnalysisP>
           Over 95% of the value sits in Vanguard ETFs across developed and emerging markets; the
-          crypto sleeve is only 4.7% of the book but has averaged −414.43%, an isolated idiosyncratic
+          crypto sleeve is only 4.7% of the book but has averaged −41.44%, an isolated idiosyncratic
           risk relative to the rest of the allocation.
         </AnalysisP>
         <div className="mt-3">
