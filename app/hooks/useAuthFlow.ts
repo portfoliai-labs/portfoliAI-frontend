@@ -14,11 +14,16 @@ interface ApiErrorResponse {
   message?: string;
 }
 
-export function useAuthFlow(mode: 'default' | 'addon' = 'default') {
+export function useAuthFlow(mode: 'default' | 'addon' = 'default', next?: string | null) {
   const router = useRouter();
   const [status, setStatus] = useState<string>('Ready to authenticate');
   const [isError, setIsError] = useState<boolean>(false);
   const [addonToken, setAddonToken] = useState<string | null>(null);
+
+  // Where to send the user once they're actually let into the app. Falls
+  // back to the dashboard when there's no specific page they were trying
+  // to reach (e.g. a deep link to a report shared from an email).
+  const destination = next || '/dashboard';
 
   const login = useGoogleLogin({
     onSuccess: async (tokenResponse: TokenResponse) => {
@@ -38,7 +43,7 @@ export function useAuthFlow(mode: 'default' | 'addon' = 'default') {
           // Attempt to fetch the profile to decide the routing
           const userProfile = await userService.getUserProfile();
           localStorage.setItem("user_profile", JSON.stringify(userProfile));
-          router.push('/dashboard');
+          router.push(destination);
 
         } catch (error: unknown) {
           const apiError = error as ApiErrorResponse;
@@ -53,7 +58,7 @@ export function useAuthFlow(mode: 'default' | 'addon' = 'default') {
             // (reserved) layout's UserProvider + LegalGate will hit this
             // same 403, flag it, and show the acceptance screen before
             // anything else renders.
-            router.push('/dashboard');
+            router.push(destination);
           } else {
             throw error;
           }

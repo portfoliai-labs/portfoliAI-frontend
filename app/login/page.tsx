@@ -103,8 +103,9 @@ function TokenDisplay({ token }: { token: string }) {
 function LoginContent() {
   const searchParams = useSearchParams();
   const isAddon = searchParams.get("source") === "addon";
+  const next = searchParams.get("next");
 
-  const { login, status, isError, addonToken } = useAuthFlow(isAddon ? "addon" : "default");
+  const { login, status, isError, addonToken } = useAuthFlow(isAddon ? "addon" : "default", next);
   const isLoading: boolean = status === "Authenticating...";
 
   return (

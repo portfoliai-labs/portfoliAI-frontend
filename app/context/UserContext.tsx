@@ -104,9 +104,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const token: string | null = localStorage.getItem("auth_token");
 
-    // 1. Mandatory check: if no token is found within (reserved) group, boot to login
+    // 1. Mandatory check: if no token is found within (reserved) group, boot
+    // to login — preserving the page they were trying to reach (e.g. a
+    // report link shared from an email) so the post-login redirect can send
+    // them there instead of defaulting to the dashboard.
     if (!token) {
-      logout();
+      setUser(null);
+      setLoading(false);
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
 
@@ -134,7 +139,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener("auth-unauthorized", logout);
     };
-  }, [hasInitialized, fetchProfile, logout]);
+  }, [hasInitialized, fetchProfile, logout, router, pathname]);
 
   /**
    * Memoize context value to prevent unnecessary re-renders of consuming components

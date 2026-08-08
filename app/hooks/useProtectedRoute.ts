@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useUser } from "../context/UserContext";
 
 /**
@@ -28,7 +28,8 @@ interface ProtectedRouteReturn {
  */
 export function useProtectedRoute(level: ProtectionLevel = 'full'): ProtectedRouteReturn {
   const router = useRouter();
-  
+  const pathname = usePathname();
+
   // Consumes global state. Must be used within a component wrapped by UserProvider.
   const { user, loading, logout } = useUser();
 
@@ -48,9 +49,10 @@ export function useProtectedRoute(level: ProtectionLevel = 'full'): ProtectedRou
     // Safely check for the token in the browser environment
     const token = typeof window !== 'undefined' ? localStorage.getItem("auth_token") : null;
 
-    // Rule 1: No token present at all -> send to login immediately
+    // Rule 1: No token present at all -> send to login immediately,
+    // preserving the intended destination so login can return here after.
     if (!token) {
-      router.replace("/login");
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
 
@@ -66,7 +68,7 @@ export function useProtectedRoute(level: ProtectionLevel = 'full'): ProtectedRou
       return;
     }
 
-  }, [user, loading, router, level]);
+  }, [user, loading, router, level, pathname]);
 
   return {
     isAuthorized: !!user,
