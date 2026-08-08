@@ -51,6 +51,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
         flex flex-col h-screen
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        ${isOpen ? "pointer-events-auto" : "pointer-events-none lg:pointer-events-auto"}
       `}>
 
         <nav className="flex flex-col gap-1 p-5 pt-[100px] flex-1 overflow-y-auto custom-scrollbar">
