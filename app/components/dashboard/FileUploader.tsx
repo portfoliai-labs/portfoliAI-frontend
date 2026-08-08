@@ -23,6 +23,7 @@ import {
   RawRow,
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
+import { REQUIRED_FIELDS } from "../../lib/parser/config";
 import type { TransactionInput, TransactionResponse } from "../../models/Transaction";
 import { buildReportName } from "../../lib/format";
 import { TransactionModal } from "./TransactionModal";
@@ -68,7 +69,7 @@ function existingToDisplay(tx: TransactionResponse): DisplayTransaction {
 // Converts a saved backend transaction back into the client-local editable shape,
 // keyed by transaction_uuid so edits can be routed to the right PATCH call.
 function existingResponseToStandard(tx: TransactionResponse): StandardTransaction {
-  const base = {
+  return {
     id: tx.transaction_uuid,
     date: tx.date,
     operation: tx.operation,
@@ -79,10 +80,11 @@ function existingResponseToStandard(tx: TransactionResponse): StandardTransactio
     currency: tx.currency,
     fees: tx.fees,
     broker: tx.broker ?? "",
+    // Rows saved before ticker became mandatory may only have an isin — fall
+    // back to it so the edit form always has a ticker to show/resubmit.
+    ticker: tx.ticker ?? tx.isin ?? "",
+    ...(tx.isin ? { isin: tx.isin } : {}),
   };
-  return (tx.ticker
-    ? { ...base, ticker: tx.ticker, ...(tx.isin ? { isin: tx.isin } : {}) }
-    : { ...base, isin: tx.isin ?? "" }) as StandardTransaction;
 }
 
 // The backend has no ticker-from-ISIN resolver exposed yet, so ISIN-only rows
@@ -709,24 +711,25 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
 
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left border-collapse min-w-175">
+                <table className="w-full text-left border-collapse min-w-225">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
-                      {["date", "ticker", "operation", "quantity", "price", "currency", "fees"].map((field) => (
-                        <th key={field} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          {field}
+                      {ALL_FIELDS.map((field) => (
+                        <th key={field} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                          {field} {REQUIRED_FIELDS.includes(field) && <span className="text-rose-500">*</span>}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {[
-                      { date: "2024-01-15", ticker: "AAPL", operation: "buy", quantity: "10", price: "185.20", currency: "USD", fees: "1.50" },
-                      { date: "2024-02-10", ticker: "VWCE.MI", operation: "sell", quantity: "5", price: "98.35", currency: "EUR", fees: "0" },
+                      { date: "2024-01-15", isin: "US0378331005", ticker: "AAPL", operation: "buy", amount: "1852.00", quantity: "10", price: "185.20", currency: "USD", fees: "1.50", broker: "Fineco" },
+                      { date: "2024-02-10", isin: "", ticker: "VWCE.MI", operation: "sell", amount: "491.75", quantity: "5", price: "98.35", currency: "EUR", fees: "0", broker: "" },
+                      { date: "2024-03-05", isin: "IE00B4L5Y983", ticker: "IUSA.MI", operation: "dividend", amount: "42.30", quantity: "", price: "", currency: "EUR", fees: "0", broker: "Directa" },
                     ].map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50/50">
-                        {Object.values(row).map((val, j) => (
-                          <td key={j} className="px-4 py-3 text-sm font-medium text-slate-600">{val}</td>
+                        {ALL_FIELDS.map((field) => (
+                          <td key={field} className="px-4 py-3 text-sm font-medium text-slate-600 whitespace-nowrap">{(row as Record<string, string>)[field] || <span className="text-slate-300">—</span>}</td>
                         ))}
                       </tr>
                     ))}
@@ -739,13 +742,25 @@ export function FileUploader({ forUserUuid, forUserName }: { forUserUuid?: strin
               <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
                 <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold">ticker</span>: must match the ticker available on <span className="font-bold">Yahoo Finance</span> (e.g. <span className="font-mono">AAPL</span>, <span className="font-mono">VWCE.MI</span>).
+                  <span className="font-bold text-rose-600">*</span> required fields: <span className="font-mono">date</span>, <span className="font-mono">ticker</span>, <span className="font-mono">operation</span>, <span className="font-mono">amount</span> and <span className="font-mono">currency</span>. All other columns, including <span className="font-mono">isin</span>, are optional.
                 </p>
               </div>
               <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
                 <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold">operation</span>: must be either <span className="font-mono">buy</span> or <span className="font-mono">sell</span>.
+                  <span className="font-bold">ticker</span>: always required, even for rows that also have an <span className="font-mono">isin</span>. Must match the ticker available on <span className="font-bold">Yahoo Finance</span> (e.g. <span className="font-mono">AAPL</span>, <span className="font-mono">VWCE.MI</span>).
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                  <span className="font-bold">operation</span>: must be <span className="font-mono">buy</span>, <span className="font-mono">sell</span>, <span className="font-mono">dividend</span> or <span className="font-mono">other</span>. <span className="font-mono">quantity</span>/<span className="font-mono">price</span> are only required for <span className="font-mono">buy</span>/<span className="font-mono">sell</span>.
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                  <span className="font-bold">amount</span>: the total transaction value ("controvalore"). Required — if left blank, it's derived from <span className="font-mono">quantity × price</span> when both are present.
                 </p>
               </div>
             </div>

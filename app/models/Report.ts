@@ -24,8 +24,9 @@ interface PresignedUrl {
 
 // Frontend-only shape used while a transaction is being parsed/edited client-side,
 // before it is turned into a backend TransactionInput (see models/Transaction.ts) and saved.
-// `id` is a locally-generated key (isin, or the ticker), not the backend transaction_uuid.
-// At least one of `isin` or `ticker` must be provided.
+// `id` is a locally-generated key (the ticker, or isin as a last resort), not the
+// backend transaction_uuid. `ticker` is always required — the backend has no
+// ticker-from-ISIN resolver, so `isin` can only ever supplement it, never replace it.
 type StandardTransaction = {
   id: string;
   date: string;
@@ -36,9 +37,8 @@ type StandardTransaction = {
   currency: string;
   fees: number;
   broker: string;
-} & (
-  | { isin: string; ticker?: string }
-  | { isin?: string; ticker: string }
-);
+  ticker: string;
+  isin?: string;
+};
 
 export type { Document, DocumentStatus, PresignedUrl, StandardTransaction };

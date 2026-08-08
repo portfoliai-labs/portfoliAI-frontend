@@ -20,13 +20,13 @@ const QUANTITY_PRICE_REQUIRED_OPS = new Set<string>(["buy", "sell"]);
 // --- Public validators ---
 
 /**
- * Checks that all required fields are mapped and that at least one of isin/ticker
- * is present. Also detects missing time components.
+ * Checks that all required fields (including ticker) are mapped. Also detects
+ * missing time components.
  */
 export const validateMapping = (data: StandardTransaction[]) => {
   if (data.length === 0) return {
     isValid: false,
-    missingFields: [...REQUIRED_FIELDS.map(String), "isin or ticker"],
+    missingFields: REQUIRED_FIELDS.map(String),
     hasOrdersWithoutTime: false,
   };
 
@@ -36,9 +36,6 @@ export const validateMapping = (data: StandardTransaction[]) => {
       return val === undefined || val === null || val === "" || (typeof val === "number" && isNaN(val));
     })
   ).map(String);
-
-  if (data.some(row => !row.isin && !row.ticker))
-    missingFields.push("isin or ticker");
 
   const hasOrdersWithoutTime = data.some(
     row => row.date && row.date !== "" && !hasTimeComponent(row.date),

@@ -1,4 +1,4 @@
-import { Wallet } from "lucide-react";
+import { Wallet, Percent } from "lucide-react";
 
 interface StepFinancialProps {
   formData: any;
@@ -66,6 +66,24 @@ export function StepFinancial({ formData, setFormData }: StepFinancialProps) {
               value={formData.annual_income}
               onChange={(e) => handleNumericChange('annual_income', e.target.value)}
               placeholder="0.00"
+            />
+          </div>
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">Annual Reinvestment (%)</label>
+          <p className="text-xs text-[#a8a29e] -mt-1">What share of your returns/income do you plan to reinvest each year?</p>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Percent className="w-4 h-4" /></span>
+            <input
+              type="text"
+              className={`${inputClass} pl-10`}
+              value={formData.savings_rate}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^0-9.]/g, '');
+                if (digits !== '' && parseFloat(digits) > 100) return;
+                setFormData({ ...formData, savings_rate: digits });
+              }}
+              placeholder="0"
             />
           </div>
         </div>

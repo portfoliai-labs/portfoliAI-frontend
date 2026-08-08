@@ -27,6 +27,7 @@ interface OnboardingFormData {
   currency: string;
   estimated_wealth: string;
   annual_income: string;
+  savings_rate: string;
   risk_tolerance: 'low' | 'medium' | 'high';
   financial_knowledge_level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
   financial_goals: string[];
@@ -101,6 +102,12 @@ function OnboardingWizard() {
   // already typed instead of losing it to a remount, and avoids a second,
   // redundant POST /users/register.
   const [pendingLegalDocs, setPendingLegalDocs] = useState<LegalDocument[] | null>(null);
+  // Set synchronously in onAccepted below, before the async finalizeProfile()
+  // call resolves. Without this, clearing pendingLegalDocs alone would let
+  // the wizard fall through to renderStep() for a frame (step/role state is
+  // still whatever it was on the last wizard step) before router.push runs,
+  // flashing the onboarding form again right before the dashboard redirect.
+  const [finalizing, setFinalizing] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<OnboardingFormData>({
     first_name: searchParams.get("first_name") || "",
@@ -108,6 +115,7 @@ function OnboardingWizard() {
     currency: "EUR",
     estimated_wealth: "",
     annual_income: "",
+    savings_rate: "",
     risk_tolerance: "medium",
     financial_knowledge_level: "BEGINNER",
     financial_goals: [],
@@ -148,6 +156,7 @@ function OnboardingWizard() {
           currency: formData.currency || null,
           estimated_wealth: parseFloat(formData.estimated_wealth) || null,
           annual_income: parseFloat(formData.annual_income) || null,
+          savings_rate: formData.savings_rate ? parseFloat(formData.savings_rate) / 100 : null,
           risk_tolerance: formData.risk_tolerance || null,
           financial_knowledge_level: formData.financial_knowledge_level || null,
           financial_goals: buildFinancialGoals(formData),
@@ -180,6 +189,7 @@ function OnboardingWizard() {
         return;
       }
       alert("An error occurred. Please try again.");
+      setFinalizing(false);
     } finally {
       setLoading(false);
     }
@@ -240,9 +250,22 @@ function OnboardingWizard() {
         documents={pendingLegalDocs}
         onAccepted={() => {
           setPendingLegalDocs(null);
+          setFinalizing(true);
           void finalizeProfile();
         }}
       />
+    );
+  }
+
+  // finalizeProfile() is still in flight (PATCH + refreshUser + router.push).
+  // Render a loader instead of falling through to the wizard steps below,
+  // otherwise the last step (with its Next/Get Started footer) would flash
+  // on screen for a frame before the redirect to /dashboard lands.
+  if (finalizing) {
+    return (
+      <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#C49A3C]" />
+      </div>
     );
   }
 

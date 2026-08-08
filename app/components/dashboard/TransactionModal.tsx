@@ -172,8 +172,8 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
   const handleSubmit = () => {
     const foundErrors: string[] = [];
 
-    if (!form.ticker.trim() && !form.isin.trim())
-      foundErrors.push("Provide at least a Ticker or an ISIN.");
+    if (!form.ticker.trim())
+      foundErrors.push("Ticker is required.");
 
     // Blank means "not applicable" (e.g. a cash dividend) rather than 0 — only
     // parse when the user actually typed something.
@@ -189,8 +189,8 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
     const ticker = form.ticker.trim().toUpperCase();
 
     const transaction: StandardTransaction = {
-      // Locally-generated key, not shown to the user — prefers isin, falls back to ticker.
-      id: initial?.id || isin || ticker,
+      // Locally-generated key, not shown to the user.
+      id: initial?.id || ticker,
       date: form.time ? `${form.date}T${form.time}` : form.date,
       operation: form.operation,
       amount,
@@ -199,9 +199,9 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
       currency: form.currency.trim().toUpperCase(),
       fees: form.fees.trim() === "" ? 0 : Number(form.fees),
       broker: form.broker.trim() || "Manual",
+      ticker,
       ...(isin ? { isin } : {}),
-      ...(ticker ? { ticker } : {}),
-    } as StandardTransaction;
+    };
 
     const { errors: validationErrors } = validateTransactions([transaction]);
     // When amount is auto-computed, it's not an editable field in this form —
