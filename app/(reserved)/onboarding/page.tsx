@@ -6,9 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ArrowLeft, Check, Loader2, Rocket, User, Briefcase } from "lucide-react";
 import { userService } from "../../services/userService";
 import { advisorService } from "../../services/advisorService";
+import { legalService } from "../../services/legalService";
 import { ApiError } from "../../services/apiClient";
 import { useUser } from "../../context/UserContext";
+import { AcceptanceScreen } from "../../components/legal/LegalGate";
 import type { UserRole } from "../../models/User";
+import type { LegalDocument } from "../../models/Legal";
 
 import { StepPersonal } from "../../components/onboarding/StepPersonal";
 import { StepFinancial } from "../../components/onboarding/StepFinancial";
@@ -89,6 +92,15 @@ function OnboardingWizard() {
   const [role, setRole] = useState<UserRole | null>(null);
   const [step, setStep] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
+  // Set right after POST /users/register succeeds if the newly-created
+  // account still has active legal documents to accept. PATCH /users/profile
+  // and PATCH /advisor/profile both sit behind the same gate as the rest of
+  // the app (get_current_active_user_info), so calling them immediately
+  // after register would 403 for any account that hasn't accepted yet.
+  // Blocking here — before either PATCH — keeps the form data the user
+  // already typed instead of losing it to a remount, and avoids a second,
+  // redundant POST /users/register.
+  const [pendingLegalDocs, setPendingLegalDocs] = useState<LegalDocument[] | null>(null);
 
   const [formData, setFormData] = useState<OnboardingFormData>({
     first_name: searchParams.get("first_name") || "",
@@ -124,18 +136,14 @@ function OnboardingWizard() {
 
   const totalSteps = 3;
 
-  const handleSubmit = useCallback(async () => {
+  // Step 2 of each role's flow: the PATCH that actually stores the financial
+  // / advisor data collected in the wizard. Runs either right after register
+  // (no legal documents pending) or after the user clears the acceptance
+  // screen below (documents were pending).
+  const finalizeProfile = useCallback(async () => {
     setLoading(true);
     try {
       if (role === 'USER') {
-        // Step 1: create profile with role USER
-        await userService.createUserProfile({
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          language: formData.language || "it",
-          role: 'USER',
-        });
-        // Step 2: set investor financial profile
         await userService.updateUserProfile({
           currency: formData.currency || null,
           estimated_wealth: parseFloat(formData.estimated_wealth) || null,
@@ -145,14 +153,6 @@ function OnboardingWizard() {
           financial_goals: buildFinancialGoals(formData),
         });
       } else {
-        // Step 1: create profile with role ADVISOR
-        await userService.createUserProfile({
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          language: formData.language || "en",
-          role: 'ADVISOR',
-        });
-        // Step 2: set advisor profile data
         await advisorService.updateAdvisorProfile({
           clients_count: parseInt(formData.clients_count) || null,
           aum: parseFloat(formData.total_aum) || null,
@@ -164,10 +164,54 @@ function OnboardingWizard() {
       await refreshUser();
       router.push("/dashboard");
     } catch (error) {
+      console.error("Failed to finalize profile:", error);
+      if (error instanceof ApiError && error.status === 403) {
+        // By this point pending legal documents were already handled above,
+        // so a 403 here almost always means get_current_user_info rejected
+        // the Google token itself (no verified email) rather than the legal
+        // gate. Retrying or reloading won't fix that — only a fresh sign-in
+        // (possibly with a different Google account) will.
+        alert(
+          "We couldn't verify the email on your Google account, so we can't finish setting up " +
+          "your profile. Please make sure your Google account has a verified email address, " +
+          "then sign in again."
+        );
+        logout();
+        return;
+      }
+      alert("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [formData, role, refreshUser, router, logout]);
+
+  const handleSubmit = useCallback(async () => {
+    setLoading(true);
+    try {
+      await userService.createUserProfile({
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        language: formData.language || (role === 'ADVISOR' ? "en" : "it"),
+        role: role as UserRole,
+      });
+
+      // The account now exists, so /legal/pending is safe to call (it 404s
+      // before the account exists). Any document returned here still needs
+      // accepting before the profile-completing PATCH below is allowed to
+      // go through.
+      const pending = await legalService.getPendingDocuments();
+      if (pending.length > 0) {
+        setPendingLegalDocs(pending);
+        setLoading(false);
+        return;
+      }
+
+      await finalizeProfile();
+    } catch (error) {
       console.error("Failed to create profile:", error);
       if (error instanceof ApiError && error.status === 403) {
-        // The only 403 this endpoint raises (get_current_user_info, auth.py):
-        // Google's userinfo call succeeded but returned no email or
+        // The only 403 POST /users/register itself raises (get_current_user_info,
+        // auth.py): Google's userinfo call succeeded but returned no email or
         // email_verified: false. Retrying or reloading won't fix this — the
         // Google account itself needs a verified email. Sign the user out so
         // they get a clean re-auth instead of getting stuck on this screen.
@@ -180,12 +224,27 @@ function OnboardingWizard() {
         return;
       }
       alert("An error occurred. Please try again.");
-    } finally {
       setLoading(false);
     }
-  }, [formData, role, refreshUser, router, logout]);
+  }, [formData, role, finalizeProfile, logout]);
 
   const isNextDisabled = step === 1 && (!formData.first_name.trim() || !formData.last_name.trim());
+
+  // Account was just created (POST /users/register) but has active legal
+  // documents still unaccepted. Block here — ahead of both the wizard steps
+  // and LegalGate's own check — so the financial/advisor data already typed
+  // in this session survives instead of being lost to a remount.
+  if (pendingLegalDocs) {
+    return (
+      <AcceptanceScreen
+        documents={pendingLegalDocs}
+        onAccepted={() => {
+          setPendingLegalDocs(null);
+          void finalizeProfile();
+        }}
+      />
+    );
+  }
 
   // — Step 0: Role selection —
   if (step === 0) {

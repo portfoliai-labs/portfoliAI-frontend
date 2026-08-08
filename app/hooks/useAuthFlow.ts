@@ -44,7 +44,16 @@ export function useAuthFlow(mode: 'default' | 'addon' = 'default') {
           const apiError = error as ApiErrorResponse;
 
           if (apiError && apiError.status === 404) {
+            // No account yet — go create one.
             router.push('/onboarding');
+          } else if (apiError && apiError.status === 403) {
+            // Account exists but the backend won't return it until the
+            // currently-required legal documents are accepted. Don't treat
+            // this as a failed login — route into the app anyway; the
+            // (reserved) layout's UserProvider + LegalGate will hit this
+            // same 403, flag it, and show the acceptance screen before
+            // anything else renders.
+            router.push('/dashboard');
           } else {
             throw error;
           }

@@ -11,15 +11,8 @@ import React, {
 } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { userService } from '../services/userService';
+import { ApiError } from '../services/apiClient';
 import type { UserProfile } from '../models/User';
-
-/**
- * Interface for API Error objects to avoid 'any' and satisfy the linter
- */
-interface ApiError {
-  status: number;
-  message?: string;
-}
 
 /**
  * Context Type Definition
@@ -27,6 +20,12 @@ interface ApiError {
 interface UserContextType {
   user: UserProfile | null;
   loading: boolean;
+  // True when the backend refused GET /users/profile specifically because
+  // the account exists but hasn't accepted the currently-required legal
+  // documents (403). Distinct from `user === null`, which also covers a
+  // brand-new account that hasn't registered yet (404) — LegalGate needs to
+  // tell these two apart to know whether it's safe to call /legal/pending.
+  needsLegalAcceptance: boolean;
   refreshUser: () => Promise<void>;
   logout: () => void;
 }
@@ -40,6 +39,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [needsLegalAcceptance, setNeedsLegalAcceptance] = useState<boolean>(false);
   const [hasInitialized, setHasInitialized] = useState<boolean>(false);
 
   const router = useRouter();
@@ -68,19 +68,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const profile: UserProfile = await userService.getUserProfile();
       setUser(profile);
-      
+      setNeedsLegalAcceptance(false);
+
       // Cache the profile for performance
       localStorage.setItem("user_profile", JSON.stringify(profile));
     } catch (error: unknown) {
-      // Type-safe error handling for the linter
-      const apiError = error as ApiError;
-      
-      if (apiError && apiError.status === 404) {
+      if (error instanceof ApiError && error.status === 404) {
         // User is authenticated but profile doesn't exist yet
         setUser(null);
+        setNeedsLegalAcceptance(false);
         if (!pathname.includes('/onboarding')) {
           router.replace('/onboarding');
         }
+      } else if (error instanceof ApiError && error.status === 403) {
+        // Account exists, but the backend won't return it until the
+        // currently-required legal documents are accepted. Do NOT redirect
+        // to onboarding — there's already a profile. Leave `user` null and
+        // flag it so LegalGate knows to check /legal/pending (safe to call:
+        // the account exists) instead of assuming this is a brand-new signup.
+        setUser(null);
+        setNeedsLegalAcceptance(true);
       }
       // Note: 401 errors are handled globally by the 'auth-unauthorized' event
     } finally {
@@ -132,12 +139,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   /**
    * Memoize context value to prevent unnecessary re-renders of consuming components
    */
-  const contextValue: UserContextType = useMemo(() => ({ 
-    user, 
-    loading, 
-    refreshUser: fetchProfile, 
-    logout 
-  }), [user, loading, fetchProfile, logout]);
+  const contextValue: UserContextType = useMemo(() => ({
+    user,
+    loading,
+    needsLegalAcceptance,
+    refreshUser: fetchProfile,
+    logout
+  }), [user, loading, needsLegalAcceptance, fetchProfile, logout]);
 
   return (
     <UserContext.Provider value={contextValue}>

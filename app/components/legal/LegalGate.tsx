@@ -63,8 +63,8 @@ function DocumentPreviewModal({ doc, onClose }: { doc: LegalDocument; onClose: (
   );
 }
 
-function AcceptanceScreen({ documents, onAccepted }: { documents: LegalDocument[]; onAccepted: () => void }) {
-  const { logout } = useUser();
+export function AcceptanceScreen({ documents, onAccepted }: { documents: LegalDocument[]; onAccepted: () => void }) {
+  const { logout, refreshUser } = useUser();
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +81,10 @@ function AcceptanceScreen({ documents, onAccepted }: { documents: LegalDocument[
     setError(null);
     try {
       await legalService.acceptDocuments(documents.map((doc) => ({ code: doc.code, version: doc.version })));
+      // If GET /users/profile had been refused because of exactly these
+      // unaccepted documents (needsLegalAcceptance), it will now succeed —
+      // re-fetch so UserContext.user gets populated instead of staying null.
+      await refreshUser();
       onAccepted();
     } catch {
       setError("Something went wrong while recording your acceptance. Please try again.");
@@ -179,15 +183,16 @@ function AcceptanceScreen({ documents, onAccepted }: { documents: LegalDocument[
  * /legal/pending looks the user up by their account record, which doesn't
  * exist yet until POST /users/register creates it — checking any earlier
  * than that 404s every time ("User '<email>' not found"), so onboarding
- * would never render. Instead this waits for `user` (from UserContext) to
- * go from null to a real profile — which happens the moment registration
- * succeeds and onboarding calls refreshUser() — and only then runs the
- * check, before the dashboard is allowed to render. Existing users hit this
- * same effect on every mount, so it also catches them after a ToS/Privacy
- * update.
+ * would never render. `user` stays null in that case, but so does
+ * `needsLegalAcceptance` (from UserContext), which is how this tells a
+ * brand-new signup apart from an existing account whose GET /users/profile
+ * came back 403 specifically because it hasn't accepted the current
+ * documents yet — that 403 is also what UserContext.fetchProfile hits, so it
+ * can't populate `user` either, but /legal/pending is safe to call (the
+ * account does exist) and is what actually resolves the deadlock.
  */
 export function LegalGate({ children }: { children: React.ReactNode }) {
-  const { user, loading: userLoading, logout } = useUser();
+  const { user, loading: userLoading, needsLegalAcceptance, logout } = useUser();
   const [pending, setPending] = useState<LegalDocument[] | null>(null);
   const [checking, setChecking] = useState(true);
   const [checkError, setCheckError] = useState<ApiError | Error | null>(null);
@@ -222,15 +227,18 @@ export function LegalGate({ children }: { children: React.ReactNode }) {
       // anything, otherwise we'd race UserContext's own fetch.
       return;
     }
-    if (!user) {
+    if (!user && !needsLegalAcceptance) {
       // No profile yet: brand-new account still going through onboarding.
       // Nothing to check against server-side yet — let onboarding render.
       setChecking(false);
       setPending(null);
       return;
     }
+    // Either a real profile loaded, or the profile fetch told us explicitly
+    // that legal acceptance is required — either way /legal/pending is safe
+    // (and necessary) to call now.
     checkPending();
-  }, [user, userLoading, checkPending]);
+  }, [user, userLoading, needsLegalAcceptance, checkPending]);
 
   if (checking) {
     return (
