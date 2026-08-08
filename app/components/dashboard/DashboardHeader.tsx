@@ -106,15 +106,28 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
       {/* RIGHT: Actions */}
       <div className="flex items-center gap-2 md:gap-3">
 
-        {/* Bell + panel */}
-        <div className="relative">
+        {/* Bell (mobile) — a fixed-width absolute dropdown has nowhere to sit on a
+            narrow viewport without overflowing it, so mobile routes to the
+            full-page NotificationsSection instead. */}
+        <button
+          onClick={() => onNavigate?.("notifications")}
+          className="relative md:hidden p-2 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl transition-all"
+        >
+          <Bell className="h-5 w-5" />
+          {hasUnread && (
+            <span className="absolute top-2 right-2 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+          )}
+        </button>
+
+        {/* Bell + panel (desktop dropdown) */}
+        <div className="relative hidden md:block">
           <button
             onClick={handleBellClick}
-            className="relative p-2 md:p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-xl md:rounded-2xl transition-all"
+            className="relative p-2.5 text-[#a8a29e] hover:text-[#1c1917] hover:bg-[#E0DACC] rounded-2xl transition-all"
           >
             <Bell className="h-5 w-5" />
             {hasUnread && (
-              <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
+              <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-rose-500 rounded-full border-2 border-[#F7F5EF]" />
             )}
           </button>
 

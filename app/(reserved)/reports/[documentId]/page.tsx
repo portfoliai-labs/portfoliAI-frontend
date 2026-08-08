@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Download, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Download, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { reportService } from "../../../services/reportService";
 import { DisclaimerBanner } from "../../../components/legal/DisclaimerBanner";
 
@@ -92,11 +92,34 @@ export default function ReportViewerPage() {
         )}
 
         {!loading && !error && blobUrl && (
-          <iframe
-            src={blobUrl}
-            title="Report preview"
-            className="w-full h-[calc(100vh-96px)] rounded-2xl border border-[rgba(196,154,60,0.2)] bg-white shadow-sm"
-          />
+          <>
+            {/* Desktop: inline preview — desktop browsers' built-in PDF viewer
+                supports scrolling/zooming fine inside an iframe. */}
+            <iframe
+              src={blobUrl}
+              title="Report preview"
+              className="hidden md:block w-full h-[calc(100vh-96px)] rounded-2xl border border-[rgba(196,154,60,0.2)] bg-white shadow-sm"
+            />
+
+            {/* Mobile: iOS/Android iframe-embedded PDFs render a static first-page
+                snapshot with no scroll/zoom, so open the file in its own tab
+                instead, where the device's native PDF viewer handles it properly. */}
+            <div className="md:hidden flex flex-col items-center gap-4 text-center bg-white rounded-2xl border border-[rgba(196,154,60,0.2)] shadow-sm p-8 w-full max-w-sm">
+              <FileText className="w-10 h-10 text-[#C49A3C]" />
+              <div>
+                <h2 className="text-base font-bold text-[#1c1917] mb-1">Report ready</h2>
+                <p className="text-sm text-[#78716c]">Open it in a new tab to scroll, zoom and read the full report.</p>
+              </div>
+              <a
+                href={blobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full px-6 py-3 bg-[#1c1917] text-white rounded-xl text-sm font-bold hover:bg-[#C49A3C] transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" /> Open report
+              </a>
+            </div>
+          </>
         )}
       </div>
     </div>

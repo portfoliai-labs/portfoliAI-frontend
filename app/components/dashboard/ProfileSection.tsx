@@ -401,7 +401,7 @@ export function ProfileSection() {
                     return (
                       <div
                         key={t.id}
-                        className="inline-flex items-center gap-1 px-4 py-2 rounded-full border border-dashed border-[#d6cdb8] bg-white text-[13px] font-semibold tracking-tight text-[#44403c] transition-all focus-within:border-[#C49A3C] focus-within:border-solid"
+                        className="flex flex-wrap items-baseline gap-1 w-full sm:w-auto px-4 py-3 rounded-2xl border border-dashed border-[#d6cdb8] bg-white text-[13px] font-semibold tracking-tight text-[#44403c] transition-all focus-within:border-[#C49A3C] focus-within:border-solid"
                       >
                         {t.parts.map((p, i) =>
                           p.type === "text" ? (
@@ -476,13 +476,13 @@ export function ProfileSection() {
                   {goals.map((goal, index) => (
                     <span
                       key={index}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-[#e7e1d3] bg-white text-[13px] font-semibold tracking-tight text-[#44403c]"
+                      className="flex items-start gap-2 w-full sm:w-auto sm:max-w-md px-4 py-2.5 rounded-2xl border border-[#e7e1d3] bg-white text-[13px] font-semibold tracking-tight text-[#44403c]"
                     >
-                      {goal.text}
+                      <span className="flex-1">{goal.text}</span>
                       <button
                         type="button"
                         onClick={() => setGoals(goals.filter((_, i) => i !== index))}
-                        className="text-[#a8a29e] hover:text-rose-500 leading-none"
+                        className="text-[#a8a29e] hover:text-rose-500 leading-none shrink-0 mt-0.5"
                       >
                         ×
                       </button>

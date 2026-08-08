@@ -169,19 +169,20 @@ export function SettingsSection() {
         </p>
       </div>
 
-      {/* Tab bar */}
-      <div className="inline-flex gap-1 p-1 bg-white rounded-full border border-[rgba(196,154,60,0.2)]">
+      {/* Tab bar — a full-width 3-column grid on mobile (so the selector never
+          scrolls sideways), the original inline pill row from sm and up. */}
+      <div className="grid grid-cols-3 sm:inline-flex gap-1 p-1 bg-white rounded-2xl sm:rounded-full border border-[rgba(196,154,60,0.2)]">
         {TABS.map((tab) => {
           const active = tab.id === activeTab;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-colors ${
+              className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-5 py-2.5 sm:py-2 rounded-xl sm:rounded-full text-[10px] sm:text-xs font-black uppercase tracking-wider transition-colors ${
                 active ? "bg-[#1c1917] text-white" : "text-[#78716c] hover:text-[#1c1917]"
               }`}
             >
-              <tab.icon className="w-3.5 h-3.5" />
+              <tab.icon className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
               {tab.label}
             </button>
           );

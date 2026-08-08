@@ -15,9 +15,10 @@ import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsLis
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
+import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { Loader2 } from "lucide-react";
 
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'profile', 'settings'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'profile', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -53,6 +54,8 @@ function DashboardPageContent() {
         return <ProfileSection />;
       case 'settings':
         return <SettingsSection />;
+      case 'notifications':
+        return <NotificationsSection />;
       default:
         return <DashboardOverview />;
     }
