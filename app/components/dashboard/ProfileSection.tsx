@@ -96,7 +96,9 @@ export function ProfileSection() {
 
   const languages = [
     { code: "en", label: "English", flag: "🇬🇧" },
-    { code: "it", label: "Italian", flag: "🇮🇹" }
+    { code: "it", label: "Italian", flag: "🇮🇹" },
+    { code: "es", label: "Spanish", flag: "🇪🇸" },
+    { code: "fr", label: "French", flag: "🇫🇷" },
   ];
 
   const currencies = [
@@ -226,7 +228,7 @@ export function ProfileSection() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Preferences */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
+        <div className="bg-white p-6 md:p-8 rounded-4xl border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
           <SectionHeader icon={<Globe className="w-5 h-5" />} title="Preferences" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -276,7 +278,7 @@ export function ProfileSection() {
         </div>
 
         {/* Risk Profile */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
+        <div className="bg-white p-6 md:p-8 rounded-4xl border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
           <SectionHeader icon={<ShieldAlert className="w-5 h-5" />} title="Risk Profile" />
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Risk Tolerance</label>
@@ -301,7 +303,7 @@ export function ProfileSection() {
         </div>
 
         {/* Financial Knowledge */}
-        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
+        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-4xl border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
           <SectionHeader icon={<GraduationCap className="w-5 h-5" />} title="Financial Knowledge" />
           <div className="space-y-2">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -330,7 +332,7 @@ export function ProfileSection() {
         </div>
 
         {/* Financial Data */}
-        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6 md:space-y-8">
+        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-4xl border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6 md:space-y-8">
           <SectionHeader icon={<Wallet className="w-5 h-5" />} title="Financial Data" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
