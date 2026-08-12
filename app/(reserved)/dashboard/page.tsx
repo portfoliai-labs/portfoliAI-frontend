@@ -8,6 +8,7 @@ import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Sidebar } from "../../components/dashboard/Sidebar";
 import { FileUploader } from "../../components/dashboard/FileUploader";
 import { ProfileSection } from "../../components/dashboard/ProfileSection";
+import { AdvisorProfileSection } from "../../components/dashboard/AdvisorProfileSection";
 import { ReportsList } from "../../components/dashboard/ReportsList";
 import { ClientsSection } from "../../components/dashboard/ClientsSection";
 import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
@@ -51,7 +52,7 @@ function DashboardPageContent() {
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
       case 'profile':
-        return <ProfileSection />;
+        return isAdvisor ? <AdvisorProfileSection /> : <ProfileSection />;
       case 'settings':
         return <SettingsSection />;
       case 'notifications':

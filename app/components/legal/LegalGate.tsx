@@ -265,7 +265,7 @@ export function LegalGate({ children }: { children: React.ReactNode }) {
           <p className="text-sm text-[#78716c] mb-1">
             {isUnverifiedEmail
               ? "We can't confirm your identity because your Google account has no verified email. Please sign in again, ideally with an account that has a verified email address."
-              : "We couldn't check whether there are documents you still need to accept."}
+              : "Something went wrong on our end. This is usually temporary — please try again in a moment."}
           </p>
           <p className="text-[11px] text-[#a8a29e] mb-6 font-mono">
             {checkError instanceof ApiError ? `${checkError.status} ${checkError.message}` : checkError.message}

@@ -13,6 +13,9 @@ interface AdvisorProfile {
   specialization: string | null;
   clients_count: number | null;
   aum: number | null;
+  company_name: string | null;
+  brand_color: string | null;
+  logo_url: string | null;
 }
 
 // Matches AdvisorProfileUpdatePayload DTO (PATCH /advisor/profile)
@@ -21,6 +24,8 @@ interface AdvisorProfileUpdatePayload {
   specialization?: string | null;
   clients_count?: number | null;
   aum?: number | null;
+  company_name?: string | null;
+  brand_color?: string | null;
 }
 
 // Matches ClientResponse DTO (GET /advisor/clients, POST /advisor/clients response)

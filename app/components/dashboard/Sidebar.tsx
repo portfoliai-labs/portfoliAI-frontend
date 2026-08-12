@@ -26,6 +26,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'reports', label: 'Reports Archive', icon: FileText },
+    { id: 'profile', label: 'Profile', icon: User2Icon },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

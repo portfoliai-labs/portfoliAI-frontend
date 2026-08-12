@@ -7,7 +7,7 @@ import type {
   ClientLookupResponse,
   ClientProfileUpdatePayload,
 } from "../models/Advisor";
-import { apiFetch } from "./apiClient";
+import { apiFetch, apiFetchForm } from "./apiClient";
 
 export const advisorService = {
   // --- Advisor own profile ---
@@ -20,6 +20,18 @@ export const advisorService = {
     return apiFetch<void>('/advisor/profile', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  },
+
+  async uploadAdvisorLogo(file: File): Promise<void> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiFetchForm<void>('/advisor/profile/logo', formData, { method: 'POST' });
+  },
+
+  async deleteAdvisorLogo(): Promise<void> {
+    return apiFetch<void>('/advisor/profile/logo', {
+      method: 'DELETE',
     });
   },
 

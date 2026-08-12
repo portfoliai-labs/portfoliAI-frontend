@@ -42,5 +42,40 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     throw new ApiError(response.status, errorData.detail || `Error ${response.status}`);
   }
 
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
+
+// Like apiFetch, but for multipart/form-data bodies (e.g. file uploads).
+// Content-Type is intentionally omitted so the browser can set the multipart boundary itself.
+export async function apiFetchForm<T>(endpoint: string, formData: FormData, options: RequestInit = {}): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem("auth_token") : null;
+
+  const defaultHeaders = {
+    'Authorization': `Bearer ${token}`,
+    ...options.headers,
+  };
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    body: formData,
+    headers: defaultHeaders,
+  });
+
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user_profile");
+      window.dispatchEvent(new Event("auth-unauthorized"));
+    }
+    throw new ApiError(401, "Unauthorized");
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, errorData.detail || `Error ${response.status}`);
+  }
+
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
