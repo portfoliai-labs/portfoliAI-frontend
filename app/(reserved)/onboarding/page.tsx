@@ -33,8 +33,6 @@ interface OnboardingFormData {
   financial_goals: string[];
   financial_goals_other: string;
   // Consultant profile
-  clients_count: string;
-  total_aum: string;
   years_of_experience: string;
   specialization: string;
   language: string;
@@ -120,8 +118,6 @@ function OnboardingWizard() {
     financial_knowledge_level: "BEGINNER",
     financial_goals: [],
     financial_goals_other: "",
-    clients_count: "",
-    total_aum: "",
     years_of_experience: "",
     specialization: "",
     language: "it",
@@ -163,8 +159,8 @@ function OnboardingWizard() {
         });
       } else {
         await advisorService.updateAdvisorProfile({
-          clients_count: parseInt(formData.clients_count) || null,
-          aum: parseFloat(formData.total_aum) || null,
+          clients_count: null,
+          aum: null,
           years_experience: parseInt(formData.years_of_experience) || null,
           specialization: formData.specialization || null,
         });

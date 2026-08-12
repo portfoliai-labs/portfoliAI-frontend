@@ -31,19 +31,7 @@ export function StepConsultant({ formData, setFormData }: StepConsultantProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Number of clients
-          </label>
-          <input
-            type="text"
-            className={inputClass}
-            value={formData.clients_count || ""}
-            onChange={(e) => handleNumericChange('clients_count', e.target.value)}
-            placeholder="E.g. 25"
-          />
-        </div>
-        <div className="space-y-2">
+        <div className="md:col-span-2 space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
             Years of experience
           </label>
@@ -54,21 +42,6 @@ export function StepConsultant({ formData, setFormData }: StepConsultantProps) {
             onChange={(e) => handleNumericChange('years_of_experience', e.target.value)}
             placeholder="E.g. 10"
           />
-        </div>
-        <div className="md:col-span-2 space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">
-            Total assets under management (AUM)
-          </label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[#a8a29e]">€</span>
-            <input
-              type="text"
-              className={`${inputClass} pl-9`}
-              value={formData.total_aum || ""}
-              onChange={(e) => handleNumericChange('total_aum', e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
         </div>
         <div className="md:col-span-2 space-y-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-[#78716c] ml-1">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Building2, Palette, Award, Save, Loader2, CheckCircle2, AlertCircle,
-  Users, Wallet, ImagePlus, Trash2, Briefcase
+  ImagePlus, Trash2, Briefcase
 } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
 
@@ -21,8 +21,6 @@ export function AdvisorProfileSection() {
     company_name: "",
     specialization: "",
     years_experience: "",
-    clients_count: "",
-    aum: "",
     brand_color: DEFAULT_BRAND_COLOR,
   });
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -38,8 +36,6 @@ export function AdvisorProfileSection() {
       company_name: profile.company_name || "",
       specialization: profile.specialization || "",
       years_experience: profile.years_experience != null ? String(profile.years_experience) : "",
-      clients_count: profile.clients_count != null ? String(profile.clients_count) : "",
-      aum: profile.aum != null ? String(profile.aum) : "",
       brand_color: profile.brand_color || DEFAULT_BRAND_COLOR,
     });
     setLogoUrl(profile.logo_url || null);
@@ -64,8 +60,8 @@ export function AdvisorProfileSection() {
         company_name: formData.company_name.trim() || null,
         specialization: formData.specialization.trim() || null,
         years_experience: formData.years_experience !== "" ? parseInt(formData.years_experience, 10) : null,
-        clients_count: formData.clients_count !== "" ? parseInt(formData.clients_count, 10) : null,
-        aum: formData.aum !== "" ? parseFloat(formData.aum) : null,
+        clients_count: null,
+        aum: null,
         brand_color: formData.brand_color || null,
       });
       showMessage("success", "Profile updated successfully");
@@ -244,7 +240,7 @@ export function AdvisorProfileSection() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Years of Experience</label>
               <input
@@ -254,34 +250,6 @@ export function AdvisorProfileSection() {
                 onChange={(e) => setFormData({ ...formData, years_experience: e.target.value.replace(/[^0-9]/g, '') })}
                 placeholder="0"
               />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Number of Clients</label>
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Users className="w-4 h-4" /></div>
-                <input
-                  type="text"
-                  className={`${inputClass} pl-11`}
-                  value={formData.clients_count}
-                  onChange={(e) => setFormData({ ...formData, clients_count: e.target.value.replace(/[^0-9]/g, '') })}
-                  placeholder="0"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Assets Under Management</label>
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a8a29e]"><Wallet className="w-4 h-4" /></div>
-                <input
-                  type="text"
-                  className={`${inputClass} pl-11`}
-                  value={formData.aum}
-                  onChange={(e) => setFormData({ ...formData, aum: e.target.value.replace(/[^0-9.]/g, '') })}
-                  placeholder="0"
-                />
-              </div>
             </div>
           </div>
         </div>
