@@ -3,6 +3,10 @@
 // Matches DocumentStatuses enum from backend
 type DocumentStatus = 'UPLOADED' | 'PROCESSING' | 'FAILED';
 
+// Matches ReportType enum from backend — FULL covers full history,
+// PERIODIC covers a custom period (period_start..period_end)
+type ReportType = 'FULL' | 'PERIODIC';
+
 // Matches DocumentResponse DTO (GET /v1/reports/, GET /v1/reports/{id}/download)
 interface Document {
   document_id: string;
@@ -41,4 +45,4 @@ type StandardTransaction = {
   isin?: string;
 };
 
-export type { Document, DocumentStatus, PresignedUrl, StandardTransaction };
+export type { Document, DocumentStatus, PresignedUrl, ReportType, StandardTransaction };

@@ -44,13 +44,13 @@ function DashboardPageContent() {
       case 'overview':
         return isAdvisor
           ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
-          : <DashboardOverview onNavigate={setActiveSection} />;
+          : <DashboardOverview />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
       case 'profile':
         return isAdvisor ? <AdvisorProfileSection /> : <ProfileSection />;
       case 'settings':
