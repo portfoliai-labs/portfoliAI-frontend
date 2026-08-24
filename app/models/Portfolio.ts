@@ -32,18 +32,6 @@ interface BrokerFeesTotal {
   totalFees: number;
 }
 
-// A closed round-trip (a sell matched against its buy price). Profit/loss is derived
-// entirely from the buy/sell prices recorded in the transactions — never from a current quote.
-interface RealizedTrade {
-  ticker: string | null;
-  // String, not number — arbitrary decimal precision (e.g. crypto quantities)
-  quantity: string;
-  buyPrice: number;
-  sellPrice: number;
-  currency: string;
-  broker: string | null;
-}
-
 // All monetary figures in here share one currency. A ticker's underlying currency isn't
 // something the app can convert (no live FX rate), so every aggregate — total invested,
 // fees, broker/asset-class breakdowns, realized P&L — is scoped to a single currency rather
@@ -56,8 +44,25 @@ interface CurrencyBreakdown {
   purchasesByBroker: BrokerTotal[];
   purchasesByAssetClass: AssetClassTotal[];
   feesByBroker: BrokerFeesTotal[];
-  realizedTrades: RealizedTrade[];
   totalRealizedPl: number;
+  sellCount: number;
+  winRate: number;
+}
+
+// Every closed round-trip for one asset, aggregated together (not one row per individual
+// sell) — cost/proceeds/P&L summed across every sell of this asset, profit/loss derived
+// entirely from the buy/sell prices recorded in the transactions, never from a current quote.
+interface AssetRealizedTrade {
+  assetId: string;
+  ticker: string | null;
+  name: string;
+  assetClass: string;
+  currency: string;
+  // String, not number — arbitrary decimal precision (e.g. crypto quantities)
+  quantitySold: string;
+  totalCost: number;
+  totalProceeds: number;
+  realizedPl: number;
   sellCount: number;
   winRate: number;
 }
@@ -68,8 +73,11 @@ interface PortfolioSummary {
   holdings: Holding[];
   // One entry per currency present in the portfolio.
   byCurrency: CurrencyBreakdown[];
+  // Every asset with at least one closed round-trip, across every currency — filter by
+  // currency before pairing with a CurrencyBreakdown, same rule as `holdings`.
+  realizedTradesByAsset: AssetRealizedTrade[];
 }
 
 export type {
-  Holding, PortfolioSummary, CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, RealizedTrade,
+  Holding, PortfolioSummary, CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, AssetRealizedTrade,
 };

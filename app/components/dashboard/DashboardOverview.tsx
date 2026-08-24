@@ -16,7 +16,7 @@ import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
 import { portfolioService } from "../../services/portfolioService";
 import { userService } from "../../services/userService";
-import type { PortfolioSummary, CurrencyBreakdown, Holding } from "../../models/Portfolio";
+import type { PortfolioSummary, CurrencyBreakdown, Holding, AssetRealizedTrade } from "../../models/Portfolio";
 import type { UserMetrics } from "../../models/User";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
@@ -61,6 +61,7 @@ export default function DashboardOverview({
 
   const holdings = portfolio?.holdings ?? [];
   const byCurrency = portfolio?.byCurrency ?? [];
+  const realizedTradesByAsset = portfolio?.realizedTradesByAsset ?? [];
 
   // reports_remaining is null when the subscription has no monthly cap — never exhausted then.
   const reportsRemaining = metrics?.reports_remaining ?? null;
@@ -75,6 +76,12 @@ export default function DashboardOverview({
         .sort((a, b) => b.investedValue - a.investedValue);
       return [cb.currency, inCurrency[0]];
     })
+  );
+
+  // Realized trades are returned flat across every currency (like `holdings`), grouped
+  // here per currency so each CurrencySection only ever sees its own.
+  const realizedTradesByCurrency = new Map<string, AssetRealizedTrade[]>(
+    byCurrency.map(cb => [cb.currency, realizedTradesByAsset.filter(t => t.currency === cb.currency)])
   );
 
   const activeCurrencyData = byCurrency.find(cb => cb.currency === selectedCurrency) ?? byCurrency[0];
@@ -143,7 +150,11 @@ export default function DashboardOverview({
               Figures below are shown in {activeCurrencyData.currency} only, never combined with other currencies — converting between them would need a live FX rate.
             </p>
           )}
-          <CurrencySection data={activeCurrencyData} topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)} />
+          <CurrencySection
+            data={activeCurrencyData}
+            topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)}
+            realizedTrades={realizedTradesByCurrency.get(activeCurrencyData.currency) ?? []}
+          />
         </div>
       )}
 
@@ -170,13 +181,16 @@ export default function DashboardOverview({
  * would silently add e.g. USD and EUR as if they were the same unit — small multiples
  * (one full section per currency) avoid that instead of one misleading combined total.
  */
-function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHolding?: Holding }) {
+function CurrencySection({
+  data, topHolding, realizedTrades,
+}: {
+  data: CurrencyBreakdown; topHolding?: Holding; realizedTrades: AssetRealizedTrade[];
+}) {
   const { currency } = data;
   // feesByBroker is grouped by broker, so a broker with $0 in fees still gets a row —
   // an empty-array check wouldn't catch that. totalFeesPaid reflects the actual amount.
   const hasFees = data.totalFeesPaid > 0;
-  const tradesWithPL = data.realizedTrades.map(t => ({ ...t, profitLoss: (t.sellPrice - t.buyPrice) * Number(t.quantity) }));
-  const maxAbsPL = Math.max(0, ...tradesWithPL.map(t => Math.abs(t.profitLoss)));
+  const maxAbsPL = Math.max(0, ...realizedTrades.map(t => Math.abs(t.realizedPl)));
 
   return (
     <div className="space-y-6">
@@ -257,7 +271,7 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
         <ModuleHead
           eyebrow="Closed positions"
           title="Realized gains & losses"
-          desc="Based on your recorded buy and sell prices for each closed position."
+          desc="Based on your recorded buy and sell prices, aggregated per asset."
           right={
             <Scoreboard
               items={[
@@ -273,19 +287,20 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
           }
         />
         <div className="p-6 md:p-7">
-          {tradesWithPL.length === 0 ? (
+          {realizedTrades.length === 0 ? (
             <p className="text-sm text-slate-400 py-6">No completed sells in {currency} yet.</p>
           ) : (
             <div className="space-y-5">
-              {tradesWithPL.map((t, i) => {
-                const isGain = t.profitLoss >= 0;
-                const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.profitLoss) / maxAbsPL) * 50 : 0;
+              {realizedTrades.map((t) => {
+                const isGain = t.realizedPl >= 0;
+                const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.realizedPl) / maxAbsPL) * 50 : 0;
+                const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
                 return (
-                  <div key={`${t.ticker ?? "unknown"}-${i}`}>
+                  <div key={t.assetId}>
                     <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                      <span className="text-sm font-bold text-slate-900">{t.ticker ?? "—"}</span>
+                      <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
                       <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-                        {isGain ? "+" : ""}{formatCurrency(t.profitLoss, t.currency, 2)}
+                        {isGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
                       </span>
                     </div>
                     <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
@@ -303,8 +318,11 @@ function CurrencySection({ data, topHolding }: { data: CurrencyBreakdown; topHol
                       )}
                     </div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-[11px] text-slate-400">{formatQuantity(t.quantity)} units</span>
-                      <span className="text-[11px] text-slate-400">{formatCurrency(t.buyPrice, t.currency)} → {formatCurrency(t.sellPrice, t.currency)}</span>
+                      <span className="text-[11px] text-slate-400">
+                        {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
+                        {t.sellCount > 1 && ` · ${t.winRate.toFixed(0)}% win rate`}
+                      </span>
+                      <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
                     </div>
                   </div>
                 );
