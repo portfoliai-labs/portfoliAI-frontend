@@ -50,7 +50,7 @@ function DashboardPageContent() {
       case 'upload':
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
       case 'profile':
         return isAdvisor ? <AdvisorProfileSection /> : <ProfileSection />;
       case 'settings':
