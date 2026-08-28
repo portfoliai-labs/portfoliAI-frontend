@@ -13,13 +13,10 @@ import {
   ChevronDown,
   Info,
 } from "lucide-react";
-import { PieChart, Pie, Cell, Tooltip } from "recharts";
-
 import { portfolioService } from "../../services/portfolioService";
 import { userService } from "../../services/userService";
 import type { PortfolioSummary, PortfolioSnapshot, CurrencyBreakdown, Holding, AssetRealizedTrade } from "../../models/Portfolio";
 import { formatCurrency, formatQuantity } from "../../lib/format";
-import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 
 export default function DashboardOverview() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
@@ -77,6 +74,12 @@ export default function DashboardOverview() {
   // here per currency so each CurrencySection only ever sees its own.
   const realizedTradesByCurrency = new Map<string, AssetRealizedTrade[]>(
     byCurrency.map(cb => [cb.currency, realizedTradesByAsset.filter(t => t.currency === cb.currency)])
+  );
+
+  // Same flat-then-group pattern, so CurrencySection can derive its own fees-by-asset-class
+  // breakdown (not returned pre-aggregated by the backend) from each holding's own fees.
+  const holdingsByCurrency = new Map<string, Holding[]>(
+    byCurrency.map(cb => [cb.currency, holdings.filter(h => h.currency === cb.currency)])
   );
 
   const activeCurrencyData = byCurrency.find(cb => cb.currency === selectedCurrency) ?? byCurrency[0];
@@ -146,6 +149,7 @@ export default function DashboardOverview() {
             topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)}
             snapshots={snapshotsByCurrency.get(activeCurrencyData.currency) ?? []}
             realizedTrades={realizedTradesByCurrency.get(activeCurrencyData.currency) ?? []}
+            holdings={holdingsByCurrency.get(activeCurrencyData.currency) ?? []}
           />
         </div>
       )}
@@ -174,15 +178,24 @@ export default function DashboardOverview() {
  * (one full section per currency) avoid that instead of one misleading combined total.
  */
 function CurrencySection({
-  data, topHolding, snapshots, realizedTrades,
+  data, topHolding, snapshots, realizedTrades, holdings,
 }: {
-  data: CurrencyBreakdown; topHolding?: Holding; snapshots: PortfolioSnapshot[]; realizedTrades: AssetRealizedTrade[];
+  data: CurrencyBreakdown; topHolding?: Holding; snapshots: PortfolioSnapshot[]; realizedTrades: AssetRealizedTrade[]; holdings: Holding[];
 }) {
   const { currency } = data;
-  // feesByBroker is grouped by broker, so a broker with $0 in fees still gets a row —
-  // an empty-array check wouldn't catch that. totalFeesPaid reflects the actual amount.
+  // feesByAssetClass (derived below) is grouped by class, so a class with $0 in fees
+  // could still get a row — an empty-array check wouldn't catch that. totalFeesPaid
+  // reflects the actual amount.
   const hasFees = data.totalFeesPaid > 0;
   const maxAbsPL = Math.max(0, ...realizedTrades.map(t => Math.abs(t.realizedPl)));
+
+  // Not returned pre-aggregated by the backend (unlike purchasesByBroker/AssetClass) —
+  // derived here from each holding's own `fees`, grouped by assetClass.
+  const feesByAssetClassMap = new Map<string, number>();
+  for (const h of holdings) {
+    feesByAssetClassMap.set(h.assetClass, (feesByAssetClassMap.get(h.assetClass) ?? 0) + h.fees);
+  }
+  const feesByAssetClass = [...feesByAssetClassMap.entries()].map(([assetClass, totalFees]) => ({ assetClass, totalFees }));
 
   return (
     <div className="space-y-6">
@@ -251,9 +264,9 @@ function CurrencySection({
             />
           </AllocPanel>
           {hasFees && (
-            <AllocPanel title="Fees by broker" subtitle="Where your trading costs came from">
-              <DonutBody
-                data={data.feesByBroker.map(d => ({ label: d.broker, value: d.totalFees }))}
+            <AllocPanel title="Fees by asset class" subtitle="Where your trading costs came from">
+              <BarListBody
+                items={feesByAssetClass.map(f => ({ label: f.assetClass, value: f.totalFees }))}
                 currency={currency}
               />
             </AllocPanel>
@@ -533,59 +546,6 @@ function BarListBody({ items, currency }: { items: { label: string; value: numbe
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/**
- * DONUT BODY — part-to-whole across a handful of named categories (≤ ~6-8).
- * Single categorical hue per slot, fixed order; every value also lives in the legend
- * as text (never color-only), which is the required relief for the low-contrast slots.
- * Lives inside an AllocPanel now rather than owning its own card.
- */
-function DonutBody({ data, currency }: { data: { label: string; value: number }[]; currency: string }) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-
-  if (data.length === 0) {
-    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-5">
-      <div className="w-28 h-28 shrink-0">
-        <PieChart width={112} height={112}>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="label"
-            innerRadius={36}
-            outerRadius={56}
-            paddingAngle={2}
-            stroke="none"
-          >
-            {data.map((_, i) => (
-              <Cell key={i} fill={CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length]} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => formatCurrency(Number(value), currency, 0)} />
-        </PieChart>
-      </div>
-      <div className="w-full space-y-2.5">
-        {data.map((d, i) => {
-          const pct = total > 0 ? (d.value / total) * 100 : 0;
-          return (
-            <div key={d.label} className="flex items-center gap-2.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length] }}
-              />
-              <span className="text-xs font-bold text-slate-900 flex-1 truncate">{d.label}</span>
-              <span className="text-xs font-semibold text-slate-500 shrink-0">{formatCurrency(d.value, currency, 0)}</span>
-              <span className="text-[11px] font-semibold text-slate-400 w-9 text-right shrink-0">{pct.toFixed(0)}%</span>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
