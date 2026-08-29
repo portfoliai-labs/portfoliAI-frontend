@@ -3,41 +3,49 @@
 export const SUBSCRIPTIONS = [
     {
       title: "Free",
-      price: "Free",
+      price: "€0",
+      period: "forever",
       available: true,
       popular: false,
       ctaText: "Get Started",
       features: [
-        "1 monthly report for free",
-        "Guaranteed privacy",
-        "Standard AI analysis model",
-        "Prices & metadata via Yahoo Finance",
-        "Automatic currency conversion"
+        "Daily portfolio dashboard",
+        "Unlimited automatic periodic reports",
+        "One full historical analysis",
+        "Explicit + implicit cost tracking",
+        "Guaranteed privacy"
       ]
     },
     {
       title: "Pro",
-      price: "$19", // Placeholder price
-      available: false, // Set to false as requested
+      price: "€49",
+      period: "per year",
+      altBilling: "or billed monthly at a premium",
+      available: false,
+      waitlist: true,
       popular: true,
-      ctaText: "Upgrade to Pro",
+      ctaText: "Get Notified",
       features: [
-        "Up to 10 monthly SOTA reports",
-        "Early access to new analysis types",
-        "Multiple accurate data sources",
-        "Automatic currency conversion"
+        "Unlimited full analyses",
+        "Higher-precision implicit costs (intraday data)",
+        "News digest for your holdings",
+        "Annual tax summary",
+        "Everything in Free"
       ]
     },
     {
-      title: "Enterprise",
+      title: "Advisors",
       price: "Custom",
-      available: false, // Set to false as requested
+      period: "priced per client",
+      available: false,
+      waitlist: true,
       popular: false,
-      ctaText: "Contact Sales",
+      ctaText: "Get Notified",
       features: [
-        "All Pro features included",
-        "Customized reporting options",
-        "Dedicated support",
+        "White-label reports",
+        "Bulk report generation",
+        "Automatic periodic reports for every client",
+        "Everything in Pro"
       ]
     }
   ];

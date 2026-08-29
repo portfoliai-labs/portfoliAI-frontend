@@ -4,52 +4,44 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart3, ArrowRight,
-  UploadCloud, Settings2, DownloadCloud,
-  User, Building2, Plug,
+  User, Building2,
   TrendingUp, DollarSign, Activity, Shield, Scale,
+  LayoutDashboard, Mail,
 } from "lucide-react";
 import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 import FeatureCard from "../components/homepage/FeatureCard";
-import StepCard from "../components/homepage/StepCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
 import ReportScrollPreview from "../components/homepage/ReportScrollPreview";
 import DemoTourModal from "../components/homepage/DemoTourModal";
+import HowItWorksSection from "../components/homepage/HowItWorksSection";
+import ReportTypesSection from "../components/homepage/ReportTypesSection";
+import DashboardSection from "../components/homepage/DashboardSection";
 import { BetaBadge } from "../components/common/BetaBadge";
 
 const featuresData = [
-  { icon: BarChart3,  title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
-  { icon: TrendingUp, title: "Cash Flow & Dividends", description: "Historical deposits, withdrawals, buy/sell activity, and dividend income broken down by asset — yield, yield on cost, and YoY growth." },
-  { icon: DollarSign, title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
-  { icon: Activity,   title: "Performance & ROI",     description: "Monthly heatmaps, annual returns, trailing period performance, and comparison against a market benchmark — alpha, tracking error, and more." },
-  { icon: Scale,      title: "Efficient Frontier",    description: "Mean-variance optimization, Max Sharpe and Min Volatility allocations, and an asset correlation matrix — where you stand vs. the theoretical optimum." },
-  { icon: Shield,     title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and a category-level breakdown of what's really driving your risk." },
-];
-
-const stepsData = [
-  { number: 1, icon: UploadCloud,   title: "Upload",   description: "Export transaction history from your broker and upload the CSV or Excel file." },
-  { number: 2, icon: Settings2,     title: "Process",  description: "The AI engine parses, categorises, and analyses every transaction in your history." },
-  { number: 3, icon: DownloadCloud, title: "Download", description: "A professional, branded PDF — with an AI-written executive summary — ready to send to clients or present in a meeting." },
+  { icon: DollarSign,     title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
+  { icon: LayoutDashboard, title: "Daily Dashboard",       description: "Current value, unrealized P/L, composition and costs — refreshed once a day after markets close." },
+  { icon: Mail,           title: "Automatic Periodic Reports", description: "Monthly, quarterly and annual reports arrive in your inbox on their own. Nothing to request, nothing to remember." },
+  { icon: BarChart3,      title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
+  { icon: TrendingUp,     title: "Cash Flow & Dividends", description: "Historical deposits, withdrawals, buy/sell activity, and dividend income broken down by asset — yield, yield on cost, and YoY growth." },
+  { icon: Activity,       title: "Performance & ROI",     description: "Monthly heatmaps, annual returns, trailing period performance, and comparison against a market benchmark — alpha, tracking error, and more." },
+  { icon: Scale,          title: "Efficient Frontier",    description: "Mean-variance optimization, Max Sharpe and Min Volatility allocations, and an asset correlation matrix — where you stand vs. the theoretical optimum." },
+  { icon: Shield,         title: "Risk & Volatility",     description: "21-day rolling volatility, max drawdown, Sharpe ratio, and a category-level breakdown of what's really driving your risk." },
 ];
 
 const audienceData = [
   {
     number: "01", icon: User, title: "Private Investors", role: "Self-directed",
-    description: "Finally understand exactly what's happening inside your portfolio — with institutional-grade metrics, not simplified dashboards.",
-    features: ["Full P&L & ROI history", "Cost transparency by broker", "Risk & drawdown analysis", "PDF ready to archive"],
+    description: "Finally understand exactly what's happening inside your portfolio, day after day — with institutional-grade metrics, not simplified dashboards.",
+    features: ["Daily-updated dashboard", "Automatic periodic reports", "Cost transparency by broker", "Risk & drawdown analysis"],
     highlight: false,
   },
   {
     number: "02", icon: Building2, title: "Financial Advisors", role: "Consultants & Wealth Managers",
-    description: "Deliver branded, professional reports to every client in seconds. Elevate your advisory practice without adding workload.",
-    features: ["White-label PDF reports", "Bulk report generation", "Client-ready formatting", "Branded with your firm's identity"],
+    description: "Every client tracked continuously. Periodic reports go out to your whole book automatically — no manual generation, no chasing.",
+    features: ["Automatic reports for every client", "White-label formatting", "Bulk report generation", "Branded with your firm's identity"],
     highlight: true,
-  },
-  {
-    number: "03", icon: Plug, title: "Brokers & Fintechs", role: "Business & API Integration",
-    description: "Embed portfolio reporting directly into your platform. Offer clients a premium feature without building it from scratch.",
-    features: ["Full REST API access", "White-label & custom branding", "Usage-based pricing", "Dedicated integration support"],
-    highlight: false,
   },
 ];
 
@@ -73,19 +65,22 @@ function SectionHeading({ children, light = false }: { children: React.ReactNode
   );
 }
 
-function AudiencePills() {
-  const pills = ["Private Investors", "Financial Advisors", "Brokers & API"];
-  const [active, setActive] = useState(0);
+function CapabilityBadges() {
+  const badges = [
+    { icon: LayoutDashboard, label: "Daily Dashboard" },
+    { icon: Mail, label: "Automatic Reports" },
+    { icon: DollarSign, label: "Real Cost Transparency" },
+  ];
   return (
     <div className="flex gap-2 flex-wrap">
-      {pills.map((p, i) => (
-        <button key={p} onClick={() => setActive(i)}
-          className="text-[11px] font-medium tracking-widest px-3.5 py-1.5 rounded-sm border uppercase transition-all duration-200"
-          style={active === i
-            ? { background: "#1c1917", color: "#E8C97A", borderColor: "#1c1917" }
-            : { background: "transparent", color: "#a8a29e", borderColor: "#e7e5e0" }
-          }
-        >{p}</button>
+      {badges.map(({ icon: Icon, label }) => (
+        <span key={label}
+          className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide px-3.5 py-1.5 rounded-sm border uppercase"
+          style={{ background: "transparent", color: "#78716c", borderColor: "#e7e5e0" }}
+        >
+          <Icon className="w-3 h-3" style={{ color: "#8A6A28" }} strokeWidth={1.5} />
+          {label}
+        </span>
       ))}
     </div>
   );
@@ -106,7 +101,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.65, ease: "easeOut" }}
       >
-        <SectionEyebrow>AI-Powered Portfolio Intelligence</SectionEyebrow>
+        <SectionEyebrow>Continuous Portfolio Monitoring</SectionEyebrow>
 
         <h1
           className="text-[clamp(38px,5vw,64px)] font-black leading-[1.04] tracking-tight mb-6"
@@ -118,11 +113,12 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </h1>
 
         <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
-          Upload a broker export. PortfoliAI generates an institutional-grade PDF —
-          performance, risk, costs, allocation, benchmark comparison. In minutes.
+          Upload your history once and PortfoliAI takes it from there: a dashboard updated
+          every day, and monthly, quarterly and annual reports that land in your inbox —
+          including the real cost of every trade, spread included.
         </p>
 
-        <div className="mb-8"><AudiencePills /></div>
+        <div className="mb-8"><CapabilityBadges /></div>
 
         <div className="flex items-center gap-5">
           <button onClick={onLogin}
@@ -131,7 +127,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
             onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2820")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
           >
-            Generate Free Report <ArrowRight className="w-4 h-4" />
+            Start Tracking Free <ArrowRight className="w-4 h-4" />
           </button>
           <button onClick={onViewSample}
             className="text-[12px] tracking-wide transition-colors duration-200"
@@ -144,7 +140,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
 
         <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "€ 0", label: "to start" }, { num: "5", label: "report chapters" }, { num: "1", label: "click away" }].map((s, i) => (
+          {[{ num: "Daily", label: "portfolio updates" }, { num: "3", label: "automatic report cadences" }, { num: "100%", label: "of costs shown, explicit + implicit" }].map((s, i) => (
             <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
               <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
               <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
@@ -174,11 +170,11 @@ function ForWhomSection() {
     <section id="audience" className="border-b scroll-mt-20 py-24" style={{ background: "#131210", borderColor: "rgba(255,255,255,0.06)" }}>
       <div className="max-w-6xl mx-auto px-6">
         <SectionEyebrow light>Built for</SectionEyebrow>
-        <SectionHeading light>One platform,<br />three use cases.</SectionHeading>
+        <SectionHeading light>One platform,<br />two ways to use it.</SectionHeading>
         <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
-          Whether analysing your own portfolio or delivering reports at scale for hundreds of clients.
+          Whether monitoring your own portfolio or every client&apos;s, automatically and continuously.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border rounded-sm overflow-hidden"
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x border rounded-sm overflow-hidden"
           style={{ borderColor: "rgba(255,255,255,0.07)", "--tw-divide-opacity": 1 } as React.CSSProperties}>
           {audienceData.map((card, i) => {
             const Icon = card.icon;
@@ -239,7 +235,7 @@ export default function HomePage() {
         </motion.div>
 
         <nav className="hidden md:flex gap-7 text-[12px] font-normal uppercase tracking-[0.06em]">
-          {[{ label: "For Advisors", href: "#audience" }, { label: "For Business", href: "#audience" },
+          {[{ label: "For Advisors", href: "#audience" },
             { label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }, { label: "FAQ", href: "#faq" }
           ].map((item) => (
             <a key={item.label} href={item.href} className="transition-colors duration-200" style={{ color: "#78716c" }}
@@ -262,15 +258,19 @@ export default function HomePage() {
 
       <HeroSection onLogin={login} onViewSample={() => setDemoOpen(true)} />
       <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
+
+      <HowItWorksSection />
+      <ReportTypesSection />
+      <DashboardSection />
       <ForWhomSection />
 
       {/* FEATURES — light */}
       <section id="features" className="border-b py-24 scroll-mt-20" style={{ background: "#F7F5EF", borderColor: "#e7e5e0" }}>
         <div className="max-w-6xl mx-auto px-6">
-          <SectionEyebrow>What&apos;s inside every report</SectionEyebrow>
+          <SectionEyebrow>What&apos;s inside PortfoliAI</SectionEyebrow>
           <SectionHeading>Every angle,<br />covered.</SectionHeading>
           <p className="mt-3 mb-14 text-[14px] text-stone-400 max-w-sm">
-            Every report follows the same rigorous structure — from a high-level overview to granular per-asset breakdowns.
+            From the daily dashboard to the deepest report chapter — the same rigorous structure throughout.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {featuresData.map((f, i) => <FeatureCard key={i} index={i} {...f} />)}
@@ -278,21 +278,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* HOW IT WORKS — dark */}
-      <section id="how-it-works" className="py-24 border-b scroll-mt-20" style={{ background: "#131210", borderColor: "rgba(255,255,255,0.06)" }}>
-        <div className="max-w-6xl mx-auto px-6">
-          <SectionEyebrow light>The workflow</SectionEyebrow>
-          <SectionHeading light>Three steps.<br />No friction.</SectionHeading>
-          <p className="mt-3 mb-14 text-[14px] font-light max-w-md" style={{ color: "rgba(255,255,255,0.3)" }}>
-            No account setup, no complex integrations. Just upload and download.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 border rounded-sm overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-            {stepsData.map((s, i) => <StepCard key={i} index={i} {...s} />)}
-          </div>
-        </div>
-      </section>
-
-      <SubscriptionSection />
+      <SubscriptionSection onCta={login} />
       <FaqSection />
 
       {/* FOOTER */}

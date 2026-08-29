@@ -5,17 +5,18 @@ import { Playfair_Display } from "next/font/google";
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair" });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://portfoliai.online";
-const SITE_DESCRIPTION = "PortfoliAI is a personal finance management tool that helps you track and analyze your investments. With PortfoliAI, you can easily import your transaction data, visualize your portfolio performance, and make informed decisions to optimize your financial future.";
+const SITE_TITLE = "PortfoliAI: Portfolio Monitoring & Real Costs";
+const SITE_DESCRIPTION = "Track your portfolio with a daily dashboard and automatic monthly, quarterly and annual reports. The only tool that reveals hidden bid-ask spread costs.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "PortfoliAI",
+    default: SITE_TITLE,
     template: "%s | PortfoliAI",
   },
   description: SITE_DESCRIPTION,
   openGraph: {
-    title: "PortfoliAI",
+    title: SITE_TITLE,
     description: SITE_DESCRIPTION,
     url: "/",
     siteName: "PortfoliAI",
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "PortfoliAI",
+    title: SITE_TITLE,
     description: SITE_DESCRIPTION,
   },
 };

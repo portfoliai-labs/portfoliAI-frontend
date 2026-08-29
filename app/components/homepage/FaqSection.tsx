@@ -11,8 +11,24 @@ interface FaqData {
 
 const faqData: FaqData[] = [
   {
+    question: "How often does my data update?",
+    answer: "Prices and portfolio metrics refresh once a day, after markets close. It's a deliberate choice: PortfoliAI is built for monitoring your positions over time, not for intraday trading decisions.",
+  },
+  {
+    question: "Do I have to re-upload all my transactions every month?",
+    answer: "No. You upload your full history once. After that, you only add new transactions as they happen — buys, sells, deposits — and the dashboard and reports update from there.",
+  },
+  {
+    question: "What's the difference between the full analysis and a periodic report?",
+    answer: "The full analysis covers your entire history in depth — performance, risk, costs, allocation, efficient frontier, benchmark comparison. Periodic reports are short and automatic: what changed this month, quarter, or year, without you asking.",
+  },
+  {
+    question: "How do you calculate implicit costs?",
+    answer: "For every trade, we estimate the bid-ask spread you paid from that session's price range on the exchange. It's an estimate, not an exact figure from your broker, but it's the only way to see a cost that never appears on a statement.",
+  },
+  {
     question: "How does the AI analysis work?",
-    answer: "Our engine uses advanced LLMs to parse your CSV and Excel broker statements, identifying every transaction, commission, and implicit spread, then builds the full report from that data.",
+    answer: "Our engine parses your CSV and Excel broker statements, identifying every transaction, commission, and implicit spread, then builds the full report from that data.",
   },
   {
     question: "Is my financial data secure?",
@@ -20,11 +36,7 @@ const faqData: FaqData[] = [
   },
   {
     question: "Can I brand the reports with my firm's logo?",
-    answer: "Yes. Pro and Business plans include white-label PDF reports with your firm's logo, colours, and contact details on every page — ready to send directly to clients.",
-  },
-  {
-    question: "How does the API integration work?",
-    answer: "Send a broker export to our REST endpoint and receive a fully rendered PDF report in return. Full documentation and a sandbox environment are provided on sign-up.",
+    answer: "Yes. The Advisors plan includes white-label reports with your firm's logo, colours, and contact details on every page — ready to send directly to clients.",
   },
   {
     question: "Can I cancel my subscription at any time?",

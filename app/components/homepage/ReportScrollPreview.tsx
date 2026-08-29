@@ -191,7 +191,7 @@ const ReportContent = () => (
       <CostRow label="Fineco (66.2%)"            value="€ 265.70" />
       <div className="flex justify-between items-center mt-3 rounded-[4px] px-3 py-2.5"
         style={{ background: "rgba(196,154,60,0.07)", border: "1px solid rgba(196,154,60,0.2)" }}>
-        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Simulated TER · Cost-to-Value</span>
+        <span className="text-[9px]" style={{ color: "#8A6A28" }}>Cost-to-value ratio</span>
         <span className="text-[12px] font-semibold font-mono" style={{ color: "#8A6A28" }}>1.22%</span>
       </div>
       <AnalysisPanel>
@@ -258,7 +258,7 @@ const ReportContent = () => (
       <DocHeading>Chapter 4.2 — Performance &amp; ROI</DocHeading>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <RiskBadge label="Total Return"  value="48.06%" valueColor="#2D6A4F" />
-        <RiskBadge label="Return / Risk" value="4.3×"  valueColor="#8A6A28" />
+        <RiskBadge label="Return / Risk" value="1.4×"  valueColor="#8A6A28" />
         <RiskBadge label="Beta"          value="0.78"   valueColor="#1c1917" />
       </div>
       <div className="rounded-[4px] p-3" style={{ background: "#fff", border: "1px solid #E8E4DC" }}>
@@ -282,9 +282,9 @@ const ReportContent = () => (
       <AnalysisPanel>
         <AnalysisHeading>Efficiency Audit</AnalysisHeading>
         <AnalysisP>
-          The unrealized 48.06% return comes with an annualized volatility of 11.04% — a return/risk
-          ratio of roughly 4.3×. The Vanguard FTSE North America position alone generates about 37%
-          of total profit.
+          The 48.06% cumulative return works out to roughly 15.8% annualized, against an annualized
+          volatility of 11.04% — a return/risk ratio of about 1.4×. The Vanguard FTSE North America
+          position alone generates about 37% of total profit.
         </AnalysisP>
       </AnalysisPanel>
     </div>
@@ -321,9 +321,10 @@ const ReportContent = () => (
               The 26.36% volatility spike in April 2025 confirms exposure to systemic tariff and
               geopolitical events.
             </RiskAlert>
-            <RiskAlert lead="ETFs drive the volatility.">
-              The cryptocurrency sleeve contributes just 0.02% against 0.11% for ETFs — not a
-              material risk driver.
+            <RiskAlert lead="Crypto drives disproportionate volatility.">
+              Despite just 4.7% of the portfolio, the cryptocurrency sleeve accounts for an
+              estimated 15% of total portfolio volatility — a concentrated, idiosyncratic risk
+              next to the diversified ETF core.
             </RiskAlert>
           </ul>
         </div>
