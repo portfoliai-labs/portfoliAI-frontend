@@ -70,12 +70,6 @@ export default function DashboardOverview() {
     })
   );
 
-  // Realized trades are returned flat across every currency (like `holdings`), grouped
-  // here per currency so each CurrencySection only ever sees its own.
-  const realizedTradesByCurrency = new Map<string, AssetRealizedTrade[]>(
-    byCurrency.map(cb => [cb.currency, realizedTradesByAsset.filter(t => t.currency === cb.currency)])
-  );
-
   // Same flat-then-group pattern, so CurrencySection can derive its own fees-by-asset-class
   // breakdown (not returned pre-aggregated by the backend) from each holding's own fees.
   const holdingsByCurrency = new Map<string, Holding[]>(
@@ -84,16 +78,12 @@ export default function DashboardOverview() {
 
   const activeCurrencyData = byCurrency.find(cb => cb.currency === selectedCurrency) ?? byCurrency[0];
 
-  // Snapshots grouped by currency and sorted oldest→newest — the backend doesn't guarantee
-  // ordering, and both the latest-value stats and the history charts need it ascending.
-  const snapshotsByCurrency = new Map<string, PortfolioSnapshot[]>();
-  for (const s of snapshots) {
-    const arr = snapshotsByCurrency.get(s.currency);
-    if (arr) arr.push(s); else snapshotsByCurrency.set(s.currency, [s]);
-  }
-  for (const arr of snapshotsByCurrency.values()) {
-    arr.sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
-  }
+  // Snapshots are always tagged with the user's reference-currency *preference*
+  // (`user_profile.reference_currency`), completely independent of the currencies their
+  // holdings/transactions are actually denominated in — a 100%-EUR portfolio can have a
+  // USD reference currency. So unlike holdings/byCurrency, these are never matched against
+  // a currency tab; just sorted oldest→newest (the backend doesn't guarantee ordering).
+  const sortedSnapshots = [...snapshots].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
 
   return (
     <div className="px-0 py-6 space-y-8">
@@ -117,6 +107,9 @@ export default function DashboardOverview() {
           </div>
         </div>
       </div>
+
+      {/* LIVE VALUE — always in the user's reference currency, independent of byCurrency (see comment above) */}
+      <LiveValueModule snapshots={sortedSnapshots} />
 
       {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
       {activeCurrencyData && (
@@ -147,10 +140,24 @@ export default function DashboardOverview() {
           <CurrencySection
             data={activeCurrencyData}
             topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)}
-            snapshots={snapshotsByCurrency.get(activeCurrencyData.currency) ?? []}
-            realizedTrades={realizedTradesByCurrency.get(activeCurrencyData.currency) ?? []}
             holdings={holdingsByCurrency.get(activeCurrencyData.currency) ?? []}
           />
+        </div>
+      )}
+
+      {/* REALIZED TRADES — already normalized to the reference currency by the backend, so
+          shown once here rather than per currency tab (see CurrencySection's own realized-P&L
+          scoreboard for the native-currency aggregate instead). */}
+      {realizedTradesByAsset.length > 0 && (
+        <div>
+          <SectionHeader
+            eyebrow="Performance"
+            title="Realized Trades"
+            subtitle={`Every closed position, normalized to your reference currency (${realizedTradesByAsset[0].currency}) so assets in different currencies can be compared.`}
+          />
+          <div className="mt-6">
+            <RealizedTradesModule trades={realizedTradesByAsset} />
+          </div>
         </div>
       )}
 
@@ -172,22 +179,25 @@ export default function DashboardOverview() {
 
 /**
  * CURRENCY SECTION — every monetary aggregate (invested, fees, broker/asset-class
- * breakdowns, realized P&L) lives inside one of these, scoped to a single currency.
+ * breakdowns, realized P&L totals) lives inside one of these, scoped to a single currency.
  * A ticker's currency isn't something this app converts, so summing across sections
  * would silently add e.g. USD and EUR as if they were the same unit — small multiples
  * (one full section per currency) avoid that instead of one misleading combined total.
+ * Live value (daily snapshots) and the per-trade realized breakdown live OUTSIDE this
+ * component: both are returned by the backend already normalized to the user's reference
+ * currency, not scoped per native currency, so matching them to a currency tab here would
+ * be a false join — see LiveValueModule / RealizedTradesModule, rendered once at the top level.
  */
 function CurrencySection({
-  data, topHolding, snapshots, realizedTrades, holdings,
+  data, topHolding, holdings,
 }: {
-  data: CurrencyBreakdown; topHolding?: Holding; snapshots: PortfolioSnapshot[]; realizedTrades: AssetRealizedTrade[]; holdings: Holding[];
+  data: CurrencyBreakdown; topHolding?: Holding; holdings: Holding[];
 }) {
   const { currency } = data;
   // feesByAssetClass (derived below) is grouped by class, so a class with $0 in fees
   // could still get a row — an empty-array check wouldn't catch that. totalFeesPaid
   // reflects the actual amount.
   const hasFees = data.totalFeesPaid > 0;
-  const maxAbsPL = Math.max(0, ...realizedTrades.map(t => Math.abs(t.realizedPl)));
 
   // Not returned pre-aggregated by the backend (unlike purchasesByBroker/AssetClass) —
   // derived here from each holding's own `fees`, grouped by assetClass.
@@ -199,9 +209,6 @@ function CurrencySection({
 
   return (
     <div className="space-y-6">
-
-      {/* MODULE 0 — LIVE VALUE, from daily market snapshots rather than recorded transactions */}
-      <LiveValueModule currency={currency} snapshots={snapshots} />
 
       {/* MODULE 1 — AT A GLANCE */}
       <Module>
@@ -274,12 +281,15 @@ function CurrencySection({
         </div>
       </Module>
 
-      {/* MODULE 3 — REALIZED PERFORMANCE */}
+      {/* MODULE 3 — REALIZED PERFORMANCE, native-currency aggregate only. The per-trade
+          breakdown isn't native-currency-scoped at all (it's returned already normalized to
+          the reference currency), so it can't be filtered/joined here — see RealizedTradesModule
+          at the top level for that. */}
       <Module>
         <ModuleHead
           eyebrow="Closed positions"
           title="Realized gains & losses"
-          desc="Based on your recorded buy and sell prices, aggregated per asset."
+          desc={`Aggregated total for your ${currency}-denominated trades, from recorded buy and sell prices.`}
           right={
             <Scoreboard
               items={[
@@ -289,58 +299,95 @@ function CurrencySection({
                   tone: data.totalRealizedPl >= 0 ? "good" : "bad",
                 },
                 { label: "Sell Transactions", value: data.sellCount.toString() },
-                { label: "Win Rate", value: data.sellCount > 0 ? `${data.winRate.toFixed(0)}%` : "—" },
+                { label: "Win Rate", value: data.sellCount > 0 ? `${(data.winRate * 100).toFixed(0)}%` : "—" },
               ]}
             />
           }
         />
-        <div className="p-6 md:p-7">
-          {realizedTrades.length === 0 ? (
-            <p className="text-sm text-slate-400 py-6">No completed sells in {currency} yet.</p>
-          ) : (
-            <div className="space-y-5">
-              {realizedTrades.map((t) => {
-                const isGain = t.realizedPl >= 0;
-                const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.realizedPl) / maxAbsPL) * 50 : 0;
-                const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
-                return (
-                  <div key={t.assetId}>
-                    <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                      <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
-                      <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-                        {isGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
-                      </span>
-                    </div>
-                    <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
-                      {isGain ? (
-                        <div
-                          className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500"
-                          style={{ width: `${halfWidthPct}%` }}
-                        />
-                      ) : (
-                        <div
-                          className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500"
-                          style={{ width: `${halfWidthPct}%` }}
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[11px] text-slate-400">
-                        {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
-                        {t.sellCount > 1 && ` · ${t.winRate.toFixed(0)}% win rate`}
-                      </span>
-                      <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        <div className="px-6 md:px-7 py-4">
+          <p className="text-xs text-slate-400">
+            See the trade-by-trade breakdown in Realized Trades below, normalized to your reference currency.
+          </p>
         </div>
       </Module>
 
     </div>
+  );
+}
+
+/**
+ * REALIZED TRADES MODULE — every closed position, across every native currency, already
+ * normalized into the user's reference currency by the backend (TransactionsSummary docs:
+ * "converted to the user's reference currency so P&L is comparable across assets traded in
+ * different currencies"). Shown once, independent of the currency tabs above — it was never
+ * meant to be filtered per native currency the way holdings/byCurrency are.
+ */
+function RealizedTradesModule({ trades }: { trades: AssetRealizedTrade[] }) {
+  const maxAbsPL = Math.max(0, ...trades.map(t => Math.abs(t.realizedPl)));
+  const totalPl = trades.reduce((sum, t) => sum + t.realizedPl, 0);
+  const totalSells = trades.reduce((sum, t) => sum + t.sellCount, 0);
+  const referenceCurrency = trades[0]?.currency ?? "";
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Reference currency"
+        title="Every closed trade"
+        desc="Based on your recorded buy and sell prices, normalized so assets traded in different currencies can be compared."
+        right={
+          <Scoreboard
+            items={[
+              {
+                label: "Total P&L",
+                value: `${totalPl >= 0 ? "+" : ""}${formatCurrency(totalPl, referenceCurrency, 2)}`,
+                tone: totalPl >= 0 ? "good" : "bad",
+              },
+              { label: "Sell Transactions", value: totalSells.toString() },
+            ]}
+          />
+        }
+      />
+      <div className="p-6 md:p-7">
+        <div className="space-y-5">
+          {trades.map((t) => {
+            const isGain = t.realizedPl >= 0;
+            const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.realizedPl) / maxAbsPL) * 50 : 0;
+            const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
+            return (
+              <div key={t.assetId}>
+                <div className="flex items-baseline justify-between gap-4 mb-1.5">
+                  <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
+                  <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+                    {isGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
+                  </span>
+                </div>
+                <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
+                  {isGain ? (
+                    <div
+                      className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500"
+                      style={{ width: `${halfWidthPct}%` }}
+                    />
+                  ) : (
+                    <div
+                      className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500"
+                      style={{ width: `${halfWidthPct}%` }}
+                    />
+                  )}
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[11px] text-slate-400">
+                    {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
+                    {t.sellCount > 1 && ` · ${(t.winRate * 100).toFixed(0)}% win rate`}
+                  </span>
+                  <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Module>
   );
 }
 
@@ -349,21 +396,24 @@ const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US"
 /**
  * LIVE VALUE MODULE — the portfolio's current worth, from daily market-price snapshots
  * (totalMarketValue, totalUnrealizedPnl, totalDividendIncome) rather than recorded
- * transactions. Kept as its own module, clearly labeled "Live", since every other figure
- * in this section is transaction-derived cost basis and the two shouldn't be conflated.
+ * transactions. Always in the user's reference currency (a profile-level display
+ * preference, set independently of what currencies the holdings themselves are in) — so
+ * unlike CurrencySection this is rendered once, not per currency tab, and its currency
+ * label comes from the snapshot itself rather than from byCurrency.
  */
-function LiveValueModule({ currency, snapshots }: { currency: string; snapshots: PortfolioSnapshot[] }) {
+function LiveValueModule({ snapshots }: { snapshots: PortfolioSnapshot[] }) {
   if (snapshots.length === 0) return null;
 
   const latest = snapshots[snapshots.length - 1];
+  const currency = latest.currency;
   const pnlIsGain = latest.totalUnrealizedPnl >= 0;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={`${currency} · Live`}
+        eyebrow={`${currency} · Live · Your reference currency`}
         title="Current value"
-        desc={`As of ${chartDateLabel(latest.snapshotAt)} — from daily market prices, not just what you paid.`}
+        desc={`As of ${chartDateLabel(latest.snapshotAt)} — from daily market prices, converted into your reference currency.`}
       />
       <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
         <Stat
