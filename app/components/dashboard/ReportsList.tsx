@@ -228,7 +228,8 @@ export function ReportsList({
       setFirstReportGenerated(true);
       loadDocuments();
     } else {
-      setReportError("Report generation failed. Please try again.");
+      const cause = (completed.payload as Record<string, unknown> | undefined)?.error_message as string | undefined;
+      setReportError(cause ?? "Report generation failed. Please try again.");
     }
   }, [notifications, isReportPending]);
 

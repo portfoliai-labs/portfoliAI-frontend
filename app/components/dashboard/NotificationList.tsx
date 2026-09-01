@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2, Clock, Bell } from "lucide-react";
 import type { NotificationResponse } from "../../services/notificationService";
 
@@ -55,6 +56,18 @@ function getJobId(n: NotificationResponse): string | undefined {
   return n.payload?.job_id as string | undefined;
 }
 
+function getDocumentId(n: NotificationResponse): string | undefined {
+  return n.payload?.document_id as string | undefined;
+}
+
+function getErrorMessage(n: NotificationResponse): string | undefined {
+  return n.payload?.error_message as string | undefined;
+}
+
+function getReportName(n: NotificationResponse): string | undefined {
+  return n.payload?.report_name as string | undefined;
+}
+
 function formatDate(iso: string): string {
   const date = new Date(iso);
   const diffMs = Date.now() - date.getTime();
@@ -94,6 +107,9 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
       {notifications.map((n) => {
         const cfg = getJobStatus(n);
         const jobId = getJobId(n);
+        const documentId = getDocumentId(n);
+        const errorMessage = getErrorMessage(n);
+        const reportName = getReportName(n);
         const isUnread = n.read_at === null;
 
         return (
@@ -110,22 +126,38 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
                   {isUnread && (
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C49A3C] shrink-0" />
                   )}
-                  Report job
+                  {reportName || "Report job"}
                 </span>
                 <span className="text-[10px] text-[#a8a29e] shrink-0">
                   {formatDate(n.created_at)}
                 </span>
               </div>
-              {jobId && (
+              {jobId && !documentId && !reportName && (
                 <p className="text-[11px] text-[#78716c] truncate mb-2">
                   ID: {jobId}
                 </p>
               )}
-              <span
-                className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.pill}`}
-              >
-                {cfg.label}
-              </span>
+              {errorMessage && (
+                <p className="text-[11px] text-rose-600 mb-2">
+                  {errorMessage}
+                </p>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.pill}`}
+                >
+                  {cfg.label}
+                </span>
+                {documentId && (
+                  <Link
+                    href={`/reports/${documentId}`}
+                    target="_blank"
+                    className="text-[10px] font-bold text-[#C49A3C] hover:text-[#a87f2f] underline underline-offset-2"
+                  >
+                    View report
+                  </Link>
+                )}
+              </div>
             </div>
           </li>
         );
