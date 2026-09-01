@@ -1,27 +1,34 @@
 // app/components/dashboard/DashboardOverview.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Layers,
   Wallet,
+  Coins,
   TrendingUp,
   TrendingDown,
   CircleDollarSign,
-  Receipt,
   Search,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Info,
 } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { userService } from "../../services/userService";
 import type { PortfolioSummary, PortfolioSnapshot, CurrencyBreakdown, Holding, AssetRealizedTrade } from "../../models/Portfolio";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 
+// Below this many closed sells, a win rate is more noise than signal — this is a
+// long-horizon investing product, not a trading platform, so the metric is withheld
+// rather than shown with false precision on a handful of trades.
+const MIN_SELLS_FOR_WIN_RATE = 20;
+
 export default function DashboardOverview() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
-  const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
+  const [preferredCurrency, setPreferredCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -34,10 +41,7 @@ export default function DashboardOverview() {
         ]);
         setPortfolio(data.summary);
         setSnapshots(data.snapshots);
-        // Default to the user's preferred currency when they hold positions in it,
-        // otherwise fall back to whichever currency comes first in the data.
-        const preferred = data.summary.byCurrency.find(cb => cb.currency === profile.currency);
-        setSelectedCurrency(preferred?.currency ?? data.summary.byCurrency[0]?.currency ?? null);
+        setPreferredCurrency(profile.currency ?? null);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -59,31 +63,18 @@ export default function DashboardOverview() {
   const byCurrency = portfolio?.byCurrency ?? [];
   const realizedTradesByAsset = portfolio?.realizedTradesByAsset ?? [];
 
-  // The top holding within each currency — a cross-currency "top holding" would need an
-  // FX rate to compare, so this is computed per currency instead of once globally.
-  const topHoldingByCurrency = new Map<string, Holding | undefined>(
-    byCurrency.map(cb => {
-      const inCurrency = [...holdings]
-        .filter(h => h.currency === cb.currency)
-        .sort((a, b) => b.investedValue - a.investedValue);
-      return [cb.currency, inCurrency[0]];
-    })
-  );
-
-  // Same flat-then-group pattern, so CurrencySection can derive its own fees-by-asset-class
-  // breakdown (not returned pre-aggregated by the backend) from each holding's own fees.
-  const holdingsByCurrency = new Map<string, Holding[]>(
-    byCurrency.map(cb => [cb.currency, holdings.filter(h => h.currency === cb.currency)])
-  );
-
-  const activeCurrencyData = byCurrency.find(cb => cb.currency === selectedCurrency) ?? byCurrency[0];
-
-  // Snapshots are always tagged with the user's reference-currency *preference*
-  // (`user_profile.reference_currency`), completely independent of the currencies their
-  // holdings/transactions are actually denominated in — a 100%-EUR portfolio can have a
-  // USD reference currency. So unlike holdings/byCurrency, these are never matched against
-  // a currency tab; just sorted oldest→newest (the backend doesn't guarantee ordering).
+  // Snapshots are always tagged with the user's reference-currency preference — sorted
+  // oldest→newest since the backend doesn't guarantee ordering.
   const sortedSnapshots = [...snapshots].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
+  const latestSnapshot = sortedSnapshots[sortedSnapshots.length - 1];
+
+  // The multi-currency apparatus (tabs, breakdowns, the "in your own currency" note) only
+  // earns its place when there's something to disambiguate — i.e. either more than one
+  // native currency, or a single native currency that isn't the reference currency.
+  const isSingleCurrencyMatchingReference = !!latestSnapshot
+    && byCurrency.length === 1
+    && byCurrency[0].currency === latestSnapshot.currency;
+  const showCurrencyDisclosure = !isSingleCurrencyMatchingReference;
 
   return (
     <div className="px-0 py-6 space-y-8">
@@ -108,99 +99,213 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* LIVE VALUE — always in the user's reference currency, independent of byCurrency (see comment above) */}
-      <LiveValueModule snapshots={sortedSnapshots} />
+      {/* BLOCK 1 — YOUR PORTFOLIO TODAY. Answers "what's it all worth?" — the one place
+          currencies are summed together, because that's the only way to answer that question. */}
+      <PortfolioTodayModule snapshots={sortedSnapshots} byCurrency={byCurrency} showInvestedBreakdown={showCurrencyDisclosure} />
 
-      {/* PER-CURRENCY BREAKDOWN — see CurrencySection for why these are never merged */}
-      {activeCurrencyData && (
-        <div className="space-y-4">
-          {byCurrency.length > 1 && (
-            <div className="inline-flex gap-1 p-1 bg-slate-100 rounded-full w-fit">
-              {byCurrency.map((cb) => {
-                const active = cb.currency === activeCurrencyData.currency;
-                return (
-                  <button
-                    key={cb.currency}
-                    onClick={() => setSelectedCurrency(cb.currency)}
-                    className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-colors ${
-                      active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    {cb.currency}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {byCurrency.length > 1 && (
-            <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-              Figures below are shown in {activeCurrencyData.currency} only, never combined with other currencies — converting between them would need a live FX rate.
-            </p>
-          )}
-          <CurrencySection
-            data={activeCurrencyData}
-            topHolding={topHoldingByCurrency.get(activeCurrencyData.currency)}
-            holdings={holdingsByCurrency.get(activeCurrencyData.currency) ?? []}
-          />
-        </div>
-      )}
+      {/* BLOCK 2 — COMPOSITION. Answers "where does the money sit?" */}
+      <PerCurrencyModule
+        byCurrency={byCurrency}
+        holdings={holdings}
+        preferredCurrency={preferredCurrency}
+        title="Composition"
+        renderDesc={compositionDesc}
+        renderBody={CompositionBody}
+      />
 
-      {/* REALIZED TRADES — already normalized to the reference currency by the backend, so
-          shown once here rather than per currency tab (see CurrencySection's own realized-P&L
-          scoreboard for the native-currency aggregate instead). */}
-      {realizedTradesByAsset.length > 0 && (
-        <div>
-          <SectionHeader
-            eyebrow="Performance"
-            title="Realized Trades"
-            subtitle={`Every closed position, normalized to your reference currency (${realizedTradesByAsset[0].currency}) so assets in different currencies can be compared.`}
-          />
-          <div className="mt-6">
-            <RealizedTradesModule trades={realizedTradesByAsset} />
-          </div>
-        </div>
-      )}
-
-      {/* ALL HOLDINGS — detail table, every currency together, since nothing here is summed */}
-      <div>
-        <SectionHeader
-          eyebrow="Portfolio"
-          title="All Holdings"
-          subtitle="Every position across all currencies — search or filter to narrow the list"
+      {/* BLOCK 3 — YOUR ACTIVITY. Answers "what did I actually do, and what did it cost?" */}
+      <div className="space-y-5">
+        <PerCurrencyModule
+          byCurrency={byCurrency}
+          holdings={holdings}
+          preferredCurrency={preferredCurrency}
+          title="Costs"
+          renderDesc={costsDesc}
+          renderRight={costsRight}
+          renderBody={CostsBody}
         />
-        <div className="mt-6">
-          <HoldingsExplorer holdings={holdings} />
-        </div>
+        <PerCurrencyModule
+          byCurrency={byCurrency}
+          holdings={holdings}
+          trades={realizedTradesByAsset}
+          preferredCurrency={preferredCurrency}
+          title="Realized P&L"
+          renderDesc={realizedPlDesc}
+          renderRight={realizedPlRight}
+          renderBody={RealizedPLBody}
+        />
       </div>
+
+      {/* POSITIONS — detail table, every currency together, since nothing here is summed */}
+      <HoldingsExplorer holdings={holdings} />
 
     </div>
   );
 }
 
-/**
- * CURRENCY SECTION — every monetary aggregate (invested, fees, broker/asset-class
- * breakdowns, realized P&L totals) lives inside one of these, scoped to a single currency.
- * A ticker's currency isn't something this app converts, so summing across sections
- * would silently add e.g. USD and EUR as if they were the same unit — small multiples
- * (one full section per currency) avoid that instead of one misleading combined total.
- * Live value (daily snapshots) and the per-trade realized breakdown live OUTSIDE this
- * component: both are returned by the backend already normalized to the user's reference
- * currency, not scoped per native currency, so matching them to a currency tab here would
- * be a false join — see LiveValueModule / RealizedTradesModule, rendered once at the top level.
- */
-function CurrencySection({
-  data, topHolding, holdings,
-}: {
-  data: CurrencyBreakdown; topHolding?: Holding; holdings: Holding[];
-}) {
-  const { currency } = data;
-  // feesByAssetClass (derived below) is grouped by class, so a class with $0 in fees
-  // could still get a row — an empty-array check wouldn't catch that. totalFeesPaid
-  // reflects the actual amount.
-  const hasFees = data.totalFeesPaid > 0;
+const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // Not returned pre-aggregated by the backend (unlike purchasesByBroker/AssetClass) —
-  // derived here from each holding's own `fees`, grouped by assetClass.
+/**
+ * PER-CURRENCY MODULE — one Module/card whose head (currency label, description, right-side
+ * content) and body independently page through every native currency present. A single
+ * currency renders with no nav chrome at all (nothing to switch between). With more than
+ * one, the currency switcher lives inside this card's own head — no shared selector above
+ * multiple cards, and each card's carousel position is independent of the others'. When
+ * `renderBody` is given, the body is a native scroll-snap track (swipe/scroll, or use the
+ * arrows/dots) that scrolls in sync with the head; when omitted (a card with no body, e.g.
+ * Realized P&L below), only the head's arrows/dots page through currencies.
+ */
+function PerCurrencyModule({
+  byCurrency, holdings, trades = [], preferredCurrency, title, renderDesc, renderRight, renderBody,
+}: {
+  byCurrency: CurrencyBreakdown[];
+  holdings: Holding[];
+  trades?: AssetRealizedTrade[];
+  preferredCurrency: string | null;
+  title: string;
+  renderDesc?: (data: CurrencyBreakdown) => string | undefined;
+  renderRight?: (data: CurrencyBreakdown) => React.ReactNode;
+  renderBody?: (data: CurrencyBreakdown, holdings: Holding[], trades: AssetRealizedTrade[]) => React.ReactNode;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const preferredIndex = Math.max(0, byCurrency.findIndex(cb => cb.currency === preferredCurrency));
+  const [activeIndex, setActiveIndex] = useState(preferredIndex);
+
+  // Land on the preferred currency's slide immediately on mount, no animation — this is
+  // establishing the initial view, not a user-triggered navigation.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || preferredIndex === 0) return;
+    track.scrollLeft = preferredIndex * track.clientWidth;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (byCurrency.length === 0) return null;
+
+  const multi = byCurrency.length > 1;
+  const active = byCurrency[activeIndex] ?? byCurrency[0];
+  const activeHoldings = holdings.filter(h => h.currency === active.currency);
+  const activeTrades = trades.filter(t => t.currency === active.currency);
+
+  const scrollToIndex = (i: number) => {
+    const clamped = Math.max(0, Math.min(byCurrency.length - 1, i));
+    setActiveIndex(clamped);
+    const track = trackRef.current;
+    if (track) track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
+  };
+
+  const handleScroll = () => {
+    const track = trackRef.current;
+    if (!track || track.clientWidth === 0) return;
+    setActiveIndex(Math.round(track.scrollLeft / track.clientWidth));
+  };
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow={active.currency}
+        title={title}
+        desc={renderDesc?.(active)}
+        right={
+          <div className="flex items-center gap-3">
+            {renderRight?.(active)}
+            {multi && (
+              <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
+                <button
+                  onClick={() => scrollToIndex(activeIndex - 1)}
+                  disabled={activeIndex === 0}
+                  aria-label="Previous currency"
+                  className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </button>
+                <div className="flex items-center gap-1">
+                  {byCurrency.map((cb, i) => (
+                    <button
+                      key={cb.currency}
+                      onClick={() => scrollToIndex(i)}
+                      aria-label={`Go to ${cb.currency}`}
+                      className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => scrollToIndex(activeIndex + 1)}
+                  disabled={activeIndex === byCurrency.length - 1}
+                  aria-label="Next currency"
+                  className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        }
+      />
+      {renderBody && (
+        multi ? (
+          <div
+            ref={trackRef}
+            onScroll={handleScroll}
+            className="flex overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
+            style={{ scrollbarWidth: "none" }}
+          >
+            {byCurrency.map((cb) => (
+              <div key={cb.currency} className="w-full shrink-0 snap-center">
+                {renderBody(cb, holdings.filter(h => h.currency === cb.currency), trades.filter(t => t.currency === cb.currency))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          renderBody(active, activeHoldings, activeTrades)
+        )
+      )}
+    </Module>
+  );
+}
+
+const compositionDesc = (data: CurrencyBreakdown) =>
+  `${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}, weighted by invested capital.`;
+
+function CompositionBody(data: CurrencyBreakdown, holdings: Holding[]) {
+  const { currency } = data;
+  const byAssetItems = holdings.map(h => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue }));
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+      <AllocPanel title="By asset" subtitle="Individual positions">
+        <CompositionDonut items={byAssetItems} currency={currency} />
+      </AllocPanel>
+      <AllocPanel title="By category" subtitle="Asset class">
+        <CompositionDonut
+          items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
+          currency={currency}
+        />
+      </AllocPanel>
+      <AllocPanel title="By broker" subtitle="Where your orders were placed">
+        <CompositionDonut
+          items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
+          currency={currency}
+        />
+      </AllocPanel>
+    </div>
+  );
+}
+
+const costsDesc = () => "Commissions and fees from your recorded transactions.";
+
+const costsRight = (data: CurrencyBreakdown) => (
+  <Scoreboard items={[{ label: "Total Paid", value: formatCurrency(data.totalFeesPaid, data.currency, 2) }]} />
+);
+
+function CostsBody(data: CurrencyBreakdown, holdings: Holding[]) {
+  const { currency } = data;
+  if (data.totalFeesPaid <= 0) {
+    return <p className="text-sm text-slate-400 p-6 md:p-7">No fees recorded yet.</p>;
+  }
+
+  // Not returned pre-aggregated by the backend (unlike feesByBroker) — derived here from
+  // each holding's own `fees`, grouped by assetClass.
   const feesByAssetClassMap = new Map<string, number>();
   for (const h of holdings) {
     feesByAssetClassMap.set(h.assetClass, (feesByAssetClassMap.get(h.assetClass) ?? 0) + h.fees);
@@ -208,200 +313,107 @@ function CurrencySection({
   const feesByAssetClass = [...feesByAssetClassMap.entries()].map(([assetClass, totalFees]) => ({ assetClass, totalFees }));
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+      <AllocPanel title="By broker" subtitle="Where the costs came from">
+        <BarListBody items={data.feesByBroker.map(f => ({ label: f.broker, value: f.totalFees }))} currency={currency} />
+      </AllocPanel>
+      <AllocPanel title="By asset class" subtitle="What drove the costs">
+        <BarListBody items={feesByAssetClass.map(f => ({ label: f.assetClass, value: f.totalFees }))} currency={currency} />
+      </AllocPanel>
+    </div>
+  );
+}
 
-      {/* MODULE 1 — AT A GLANCE */}
-      <Module>
-        <ModuleHead
-          eyebrow={`${currency} · Positions`}
-          title="At a glance"
-          desc="The four numbers that matter most for your positions in this currency."
-        />
-        <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr_1fr_1fr] divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-          <Stat
-            hero
-            title="Total Invested"
-            value={formatCurrency(data.totalInvested, currency, 0)}
-            icon={<Wallet className="h-4.5 w-4.5 text-[#C49A3C]" />}
-            description={`Across ${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}`}
-            color="gold"
-          />
-          <Stat
-            title="Holdings"
-            value={data.holdingsCount.toString()}
-            icon={<Layers className="h-4 w-4 text-blue-600" />}
-            description={`Distinct assets in ${currency}`}
-            color="blue"
-          />
-          <Stat
-            title="Most Invested In"
-            value={topHolding?.ticker ?? "—"}
-            icon={<TrendingUp className="h-4 w-4 text-emerald-600" />}
-            description={topHolding ? `${formatCurrency(topHolding.investedValue, currency)} invested` : "No holdings yet"}
-            color="emerald"
-          />
-          <Stat
-            title="Total Fees Paid"
-            value={formatCurrency(data.totalFeesPaid, currency, 2)}
-            icon={<Receipt className="h-4 w-4 text-violet-600" />}
-            description={`Across all ${currency} transactions`}
-            color="violet"
-          />
-        </div>
-      </Module>
+const realizedPlDesc = () => "From closed positions, based on recorded buy and sell prices.";
 
-      {/* MODULE 2 — ALLOCATION */}
-      <Module>
-        <ModuleHead
-          eyebrow="Allocation"
-          title="Where the money went"
-          desc={`Broker, asset class and cost — all scaled to the same ${formatCurrency(data.totalInvested, currency, 0)}`}
-        />
-        <div className={`grid grid-cols-1 divide-y divide-slate-100 md:divide-y-0 md:divide-x ${hasFees ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-          <AllocPanel title="Purchases by broker" subtitle="Where your orders were placed">
-            <BarListBody
-              items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
-              currency={currency}
-            />
-          </AllocPanel>
-          <AllocPanel title="Purchases by asset class" subtitle="Stocks, ETFs, bonds, and the rest">
-            <BarListBody
-              items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
-              currency={currency}
-            />
-          </AllocPanel>
-          {hasFees && (
-            <AllocPanel title="Fees by asset class" subtitle="Where your trading costs came from">
-              <BarListBody
-                items={feesByAssetClass.map(f => ({ label: f.assetClass, value: f.totalFees }))}
-                currency={currency}
-              />
-            </AllocPanel>
-          )}
-        </div>
-      </Module>
+// Win rate withheld below MIN_SELLS_FOR_WIN_RATE — on a handful of trades it reads as a
+// precise statistic when it isn't one, and this product isn't a trading platform.
+const realizedPlRight = (data: CurrencyBreakdown) => {
+  const items: { label: string; value: string; tone?: "good" | "bad" }[] = [
+    {
+      label: "Total P&L",
+      value: `${data.totalRealizedPl >= 0 ? "+" : ""}${formatCurrency(data.totalRealizedPl, data.currency, 2)}`,
+      tone: data.totalRealizedPl >= 0 ? "good" : "bad",
+    },
+    { label: "Sell Transactions", value: data.sellCount.toString() },
+  ];
+  if (data.sellCount >= MIN_SELLS_FOR_WIN_RATE) {
+    items.push({ label: "Win Rate", value: `${(data.winRate * 100).toFixed(0)}%` });
+  }
+  return <Scoreboard items={items} />;
+};
 
-      {/* MODULE 3 — REALIZED PERFORMANCE, native-currency aggregate only. The per-trade
-          breakdown isn't native-currency-scoped at all (it's returned already normalized to
-          the reference currency), so it can't be filtered/joined here — see RealizedTradesModule
-          at the top level for that. */}
-      <Module>
-        <ModuleHead
-          eyebrow="Closed positions"
-          title="Realized gains & losses"
-          desc={`Aggregated total for your ${currency}-denominated trades, from recorded buy and sell prices.`}
-          right={
-            <Scoreboard
-              items={[
-                {
-                  label: "Total P&L",
-                  value: `${data.totalRealizedPl >= 0 ? "+" : ""}${formatCurrency(data.totalRealizedPl, currency, 2)}`,
-                  tone: data.totalRealizedPl >= 0 ? "good" : "bad",
-                },
-                { label: "Sell Transactions", value: data.sellCount.toString() },
-                { label: "Win Rate", value: data.sellCount > 0 ? `${(data.winRate * 100).toFixed(0)}%` : "—" },
-              ]}
-            />
-          }
-        />
-        <div className="px-6 md:px-7 py-4">
-          <p className="text-xs text-slate-400">
-            See the trade-by-trade breakdown in Realized Trades below, normalized to your reference currency.
-          </p>
-        </div>
-      </Module>
+/**
+ * REALIZED P&L BODY — the trade-by-trade detail: each closed asset, its P&L, and the
+ * buy/sell amounts it came from, in the currency it was actually traded in (confirmed
+ * native per-trade currency, not a reference-currency conversion — see
+ * transactions_summary_builder). Trades are grouped by (currency, assetId) upstream, so the
+ * same ticker can legitimately appear once per currency it was traded in; nothing here
+ * needs to dedupe by assetId alone.
+ */
+function RealizedPLBody(_data: CurrencyBreakdown, _holdings: Holding[], trades: AssetRealizedTrade[]) {
+  if (trades.length === 0) {
+    return <p className="text-sm text-slate-400 p-6 md:p-7">No closed positions yet.</p>;
+  }
 
+  const maxAbsPL = Math.max(0, ...trades.map(t => Math.abs(t.realizedPl)));
+
+  return (
+    <div className="p-6 md:p-7">
+      <div className="space-y-5">
+        {trades.map((t) => {
+          const isGain = t.realizedPl >= 0;
+          const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.realizedPl) / maxAbsPL) * 50 : 0;
+          const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
+          return (
+            <div key={`${t.currency}::${t.assetId}`}>
+              <div className="flex items-baseline justify-between gap-4 mb-1.5">
+                <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
+                <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+                  {isGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
+                </span>
+              </div>
+              <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
+                {isGain ? (
+                  <div
+                    className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500"
+                    style={{ width: `${halfWidthPct}%` }}
+                  />
+                ) : (
+                  <div
+                    className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500"
+                    style={{ width: `${halfWidthPct}%` }}
+                  />
+                )}
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[11px] text-slate-400">
+                  {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
+                  {t.sellCount > 1 && ` · ${(t.winRate * 100).toFixed(0)}% win rate`}
+                </span>
+                <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 /**
- * REALIZED TRADES MODULE — every closed position, across every native currency, already
- * normalized into the user's reference currency by the backend (TransactionsSummary docs:
- * "converted to the user's reference currency so P&L is comparable across assets traded in
- * different currencies"). Shown once, independent of the currency tabs above — it was never
- * meant to be filtered per native currency the way holdings/byCurrency are.
+ * PORTFOLIO TODAY MODULE — Block 1. The four numbers that only make sense combined across
+ * every currency: market value, invested capital, unrealized P&L, dividends. Always in the
+ * user's reference currency (a profile-level preference, independent of what currencies the
+ * holdings themselves are in) and always dated, since a converted figure without a date is
+ * meaningless — see the "As of ..." line below.
  */
-function RealizedTradesModule({ trades }: { trades: AssetRealizedTrade[] }) {
-  const maxAbsPL = Math.max(0, ...trades.map(t => Math.abs(t.realizedPl)));
-  const totalPl = trades.reduce((sum, t) => sum + t.realizedPl, 0);
-  const totalSells = trades.reduce((sum, t) => sum + t.sellCount, 0);
-  const referenceCurrency = trades[0]?.currency ?? "";
-
-  return (
-    <Module>
-      <ModuleHead
-        eyebrow="Reference currency"
-        title="Every closed trade"
-        desc="Based on your recorded buy and sell prices, normalized so assets traded in different currencies can be compared."
-        right={
-          <Scoreboard
-            items={[
-              {
-                label: "Total P&L",
-                value: `${totalPl >= 0 ? "+" : ""}${formatCurrency(totalPl, referenceCurrency, 2)}`,
-                tone: totalPl >= 0 ? "good" : "bad",
-              },
-              { label: "Sell Transactions", value: totalSells.toString() },
-            ]}
-          />
-        }
-      />
-      <div className="p-6 md:p-7">
-        <div className="space-y-5">
-          {trades.map((t) => {
-            const isGain = t.realizedPl >= 0;
-            const halfWidthPct = maxAbsPL > 0 ? (Math.abs(t.realizedPl) / maxAbsPL) * 50 : 0;
-            const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
-            return (
-              <div key={t.assetId}>
-                <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                  <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
-                  <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-                    {isGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
-                  </span>
-                </div>
-                <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
-                  {isGain ? (
-                    <div
-                      className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500"
-                      style={{ width: `${halfWidthPct}%` }}
-                    />
-                  ) : (
-                    <div
-                      className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500"
-                      style={{ width: `${halfWidthPct}%` }}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-[11px] text-slate-400">
-                    {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
-                    {t.sellCount > 1 && ` · ${(t.winRate * 100).toFixed(0)}% win rate`}
-                  </span>
-                  <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </Module>
-  );
-}
-
-const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-/**
- * LIVE VALUE MODULE — the portfolio's current worth, from daily market-price snapshots
- * (totalMarketValue, totalUnrealizedPnl, totalDividendIncome) rather than recorded
- * transactions. Always in the user's reference currency (a profile-level display
- * preference, set independently of what currencies the holdings themselves are in) — so
- * unlike CurrencySection this is rendered once, not per currency tab, and its currency
- * label comes from the snapshot itself rather than from byCurrency.
- */
-function LiveValueModule({ snapshots }: { snapshots: PortfolioSnapshot[] }) {
+function PortfolioTodayModule({
+  snapshots, byCurrency, showInvestedBreakdown,
+}: {
+  snapshots: PortfolioSnapshot[]; byCurrency: CurrencyBreakdown[]; showInvestedBreakdown: boolean;
+}) {
   if (snapshots.length === 0) return null;
 
   const latest = snapshots[snapshots.length - 1];
@@ -411,15 +423,16 @@ function LiveValueModule({ snapshots }: { snapshots: PortfolioSnapshot[] }) {
   return (
     <Module>
       <ModuleHead
-        eyebrow={`${currency} · Live · Your reference currency`}
-        title="Current value"
-        desc={`As of ${chartDateLabel(latest.snapshotAt)} — from daily market prices, converted into your reference currency.`}
+        eyebrow={currency}
+        title="Your portfolio today"
+        desc={`As of ${chartDateLabel(latest.snapshotAt)} — from daily market prices.`}
       />
-      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+      <div className="grid grid-cols-1 md:grid-cols-4 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+        <InvestedStat latest={latest} byCurrency={byCurrency} showBreakdown={showInvestedBreakdown} />
         <Stat
           title="Market Value"
           value={formatCurrency(latest.totalMarketValue, currency, 0)}
-          icon={<Wallet className="h-4 w-4 text-[#C49A3C]" />}
+          icon={<Coins className="h-4 w-4 text-[#C49A3C]" />}
           description="What your positions are worth today"
           color="gold"
         />
@@ -427,7 +440,7 @@ function LiveValueModule({ snapshots }: { snapshots: PortfolioSnapshot[] }) {
           title="Unrealized P&L"
           value={`${pnlIsGain ? "+" : ""}${formatCurrency(latest.totalUnrealizedPnl, currency, 0)}`}
           icon={pnlIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          description={`vs ${formatCurrency(latest.totalInvestedCapital, currency, 0)} invested`}
+          description="Vs your invested capital"
           color={pnlIsGain ? "emerald" : "red"}
         />
         <Stat
@@ -438,29 +451,70 @@ function LiveValueModule({ snapshots }: { snapshots: PortfolioSnapshot[] }) {
           color="blue"
         />
       </div>
-
     </Module>
   );
 }
 
 /**
- * SECTION HEADER — a prominent "chapter" break between major groups of cards:
- * small colored eyebrow, a large bold title, an optional subtitle, and a divider rule.
+ * INVESTED STAT — Total Invested lives here exclusively (removed from the per-currency
+ * detail below). It's the only Block 1 figure with a native-currency counterpart to expand
+ * into (byCurrency[].totalInvested), so it's the only one that gets the breakdown affordance.
+ * A rate is only shown when there's exactly one native currency — with more than one, this
+ * app has no way to know how much of the converted total came from each (that split would
+ * need the backend to convert per-currency, which it doesn't do for this endpoint), so the
+ * native amounts are shown without a fabricated rate rather than guessing.
  */
-function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle?: string }) {
+function InvestedStat({
+  latest, byCurrency, showBreakdown,
+}: {
+  latest: PortfolioSnapshot; byCurrency: CurrencyBreakdown[]; showBreakdown: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const currency = latest.currency;
+  const impliedRate = byCurrency.length === 1 ? latest.totalInvestedCapital / byCurrency[0].totalInvested : null;
+
   return (
-    <div className="pt-2 pb-3 border-b border-slate-200">
-      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-      <h2 className="text-xl md:text-2xl font-black text-slate-900">{title}</h2>
-      {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+    <div className="p-6 md:p-7 flex flex-col gap-2.5">
+      <div className="w-9 h-9 rounded-xl border flex items-center justify-center bg-[#C49A3C]/10 text-[#C49A3C] border-[#C49A3C]/20">
+        <Wallet className="h-4 w-4" />
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Invested</p>
+      <p
+        className="font-black text-slate-900 text-xl md:text-2xl"
+        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      >
+        {formatCurrency(latest.totalInvestedCapital, currency, 0)}
+      </p>
+      {showBreakdown ? (
+        <>
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="flex items-center gap-1 text-[13px] font-medium text-slate-500 hover:text-slate-700 transition-colors -ml-0.5 w-fit"
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+            Breakdown by currency
+          </button>
+          {open && (
+            <div className="flex flex-col gap-1 pl-4.5">
+              {byCurrency.map(cb => (
+                <div key={cb.currency} className="flex items-center justify-between gap-3 text-[12px] text-slate-500">
+                  <span>{formatCurrency(cb.totalInvested, cb.currency, 0)}</span>
+                  {impliedRate !== null && <span className="font-mono text-slate-400">rate {impliedRate.toFixed(3)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="text-[13px] font-medium text-slate-500 leading-relaxed">Capital deployed to date</p>
+      )}
     </div>
   );
 }
 
+
 /**
- * MODULE — the card shell every group of related content lives in. Restructured from the
- * old one-card-per-metric layout: related stats/charts now share a single Module, separated
- * by internal dividers, instead of each getting its own bordered/shadowed box.
+ * MODULE — the card shell every group of related content lives in.
  */
 function Module({ children }: { children: React.ReactNode }) {
   return (
@@ -493,9 +547,8 @@ function ModuleHead({
 }
 
 /**
- * SCOREBOARD — inline stat badges in a module head, used where the old design gave a metric
- * its own full StatCard (e.g. P&L / win rate). Numbers stay neutral ink unless the value itself
- * carries a sign (gain/loss), matching how the rest of the app already colors P&L text.
+ * SCOREBOARD — inline stat badges in a module head. Numbers stay neutral ink unless the
+ * value itself carries a sign (gain/loss).
  */
 function Scoreboard({ items }: { items: { label: string; value: string; tone?: "good" | "bad" }[] }) {
   return (
@@ -516,8 +569,7 @@ function Scoreboard({ items }: { items: { label: string; value: string; tone?: "
 }
 
 /**
- * STAT — one segment of a Module's stat strip. `hero` marks the single most important figure
- * in the strip (larger type), giving real hierarchy instead of four equally-weighted boxes.
+ * STAT — one segment of a Module's stat strip.
  */
 interface StatProps {
   title: string;
@@ -525,10 +577,9 @@ interface StatProps {
   icon: React.ReactNode;
   description: string;
   color: "blue" | "emerald" | "violet" | "red" | "gold";
-  hero?: boolean;
 }
 
-function Stat({ title, value, icon, description, color, hero }: StatProps) {
+function Stat({ title, value, icon, description, color }: StatProps) {
   const colorMap = {
     blue: "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -544,7 +595,7 @@ function Stat({ title, value, icon, description, color, hero }: StatProps) {
       </div>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
       <p
-        className={`font-black text-slate-900 ${hero ? "text-[28px] md:text-[32px]" : "text-xl md:text-2xl"}`}
+        className="font-black text-slate-900 text-xl md:text-2xl"
         style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
       >
         {value}
@@ -555,7 +606,7 @@ function Stat({ title, value, icon, description, color, hero }: StatProps) {
 }
 
 /**
- * ALLOC PANEL — one third of the "Where the money went" Module (was its own bordered card).
+ * ALLOC PANEL — one column of a multi-column Module body.
  */
 function AllocPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
@@ -568,10 +619,8 @@ function AllocPanel({ title, subtitle, children }: { title: string; subtitle: st
 }
 
 /**
- * BAR LIST BODY — magnitude comparison across a handful of named categories that all share
- * one currency (broker, asset class). Never fed cross-currency values: bar length directly
- * encodes size, so mixing units would visually imply a comparison that isn't real. Lives inside
- * an AllocPanel now rather than owning its own card.
+ * BAR LIST BODY — amount-first magnitude comparison, for facts you can check against a
+ * statement (costs). All items must already share one currency.
  */
 function BarListBody({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
   const max = Math.max(0, ...items.map(i => i.value));
@@ -596,6 +645,74 @@ function BarListBody({ items, currency }: { items: { label: string; value: numbe
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Shades of the brand gold, ordered for adjacent-slice contrast; long tails collapse into
+// a single muted "Other" slice rather than a 9th near-indistinguishable color.
+const DONUT_COLORS = ["#C49A3C", "#E8C97A", "#8A6A28", "#D4B96A", "#B8935A", "#A67C3D"];
+const DONUT_OTHER_COLOR = "#CBD5E1";
+const DONUT_MAX_SLICES = 5;
+
+/**
+ * COMPOSITION DONUT — percentage-first composition view, replacing a column of stacked bars
+ * that didn't scale past a couple of items (8 individual holdings in one narrow column read
+ * as noise). A donut + compact legend reads at a glance regardless of item count; anything
+ * past DONUT_MAX_SLICES collapses into "Other" so the chart and legend both stay legible.
+ * All items must already share one currency — percentages from mixed currencies would
+ * silently treat e.g. 1 EUR and 1 USD as equal weight.
+ */
+function CompositionDonut({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
+  }
+
+  const total = items.reduce((sum, i) => sum + i.value, 0);
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  const grouped = sorted.length <= DONUT_MAX_SLICES
+    ? sorted
+    : [
+        ...sorted.slice(0, DONUT_MAX_SLICES),
+        { label: "Other", value: sorted.slice(DONUT_MAX_SLICES).reduce((sum, i) => sum + i.value, 0) },
+      ];
+
+  return (
+    <div className="flex items-center gap-5">
+      <div className="w-24 h-24 shrink-0">
+        <PieChart width={96} height={96}>
+          <Pie data={grouped} dataKey="value" nameKey="label" innerRadius={30} outerRadius={48} paddingAngle={2} stroke="none">
+            {grouped.map((entry, i) => (
+              <Cell key={entry.label} fill={entry.label === "Other" ? DONUT_OTHER_COLOR : DONUT_COLORS[i % DONUT_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={(value, name) => {
+              const num = Number(value) || 0;
+              const pct = total > 0 ? ((num / total) * 100).toFixed(1) : "0";
+              return [`${formatCurrency(num, currency, 0)} (${pct}%)`, name];
+            }}
+            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+          />
+        </PieChart>
+      </div>
+      <div className="flex-1 min-w-0 space-y-1.5">
+        {grouped.map((item, i) => {
+          const pct = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <div key={item.label} className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: item.label === "Other" ? DONUT_OTHER_COLOR : DONUT_COLORS[i % DONUT_COLORS.length] }}
+                />
+                <span className="font-bold text-slate-900 truncate">{item.label}</span>
+              </span>
+              <span className="font-bold text-slate-500 shrink-0 tabular-nums">{pct.toFixed(1)}%</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
