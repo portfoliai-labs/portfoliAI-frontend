@@ -115,6 +115,7 @@ export default function DashboardOverview() {
 
       {/* BLOCK 3 — YOUR ACTIVITY. Answers "what did I actually do, and what did it cost?" */}
       <div className="space-y-5">
+        {/* COSTS — commented out for now, not removed: undecided whether to keep it.
         <PerCurrencyModule
           byCurrency={byCurrency}
           holdings={holdings}
@@ -124,6 +125,7 @@ export default function DashboardOverview() {
           renderRight={costsRight}
           renderBody={CostsBody}
         />
+        */}
         <PerCurrencyModule
           byCurrency={byCurrency}
           holdings={holdings}
@@ -292,37 +294,39 @@ function CompositionBody(data: CurrencyBreakdown, holdings: Holding[]) {
   );
 }
 
-const costsDesc = () => "Commissions and fees from your recorded transactions.";
-
-const costsRight = (data: CurrencyBreakdown) => (
-  <Scoreboard items={[{ label: "Total Paid", value: formatCurrency(data.totalFeesPaid, data.currency, 2) }]} />
-);
-
-function CostsBody(data: CurrencyBreakdown, holdings: Holding[]) {
-  const { currency } = data;
-  if (data.totalFeesPaid <= 0) {
-    return <p className="text-sm text-slate-400 p-6 md:p-7">No fees recorded yet.</p>;
-  }
-
-  // Not returned pre-aggregated by the backend (unlike feesByBroker) — derived here from
-  // each holding's own `fees`, grouped by assetClass.
-  const feesByAssetClassMap = new Map<string, number>();
-  for (const h of holdings) {
-    feesByAssetClassMap.set(h.assetClass, (feesByAssetClassMap.get(h.assetClass) ?? 0) + h.fees);
-  }
-  const feesByAssetClass = [...feesByAssetClassMap.entries()].map(([assetClass, totalFees]) => ({ assetClass, totalFees }));
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-      <AllocPanel title="By broker" subtitle="Where the costs came from">
-        <BarListBody items={data.feesByBroker.map(f => ({ label: f.broker, value: f.totalFees }))} currency={currency} />
-      </AllocPanel>
-      <AllocPanel title="By asset class" subtitle="What drove the costs">
-        <BarListBody items={feesByAssetClass.map(f => ({ label: f.assetClass, value: f.totalFees }))} currency={currency} />
-      </AllocPanel>
-    </div>
-  );
-}
+// COSTS — commented out for now alongside its call site above, not removed: undecided
+// whether to keep this section.
+// const costsDesc = () => "Commissions and fees from your recorded transactions.";
+//
+// const costsRight = (data: CurrencyBreakdown) => (
+//   <Scoreboard items={[{ label: "Total Paid", value: formatCurrency(data.totalFeesPaid, data.currency, 2) }]} />
+// );
+//
+// function CostsBody(data: CurrencyBreakdown, holdings: Holding[]) {
+//   const { currency } = data;
+//   if (data.totalFeesPaid <= 0) {
+//     return <p className="text-sm text-slate-400 p-6 md:p-7">No fees recorded yet.</p>;
+//   }
+//
+//   // Not returned pre-aggregated by the backend (unlike feesByBroker) — derived here from
+//   // each holding's own `fees`, grouped by assetClass.
+//   const feesByAssetClassMap = new Map<string, number>();
+//   for (const h of holdings) {
+//     feesByAssetClassMap.set(h.assetClass, (feesByAssetClassMap.get(h.assetClass) ?? 0) + h.fees);
+//   }
+//   const feesByAssetClass = [...feesByAssetClassMap.entries()].map(([assetClass, totalFees]) => ({ assetClass, totalFees }));
+//
+//   return (
+//     <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+//       <AllocPanel title="By broker" subtitle="Where the costs came from">
+//         <BarListBody items={data.feesByBroker.map(f => ({ label: f.broker, value: f.totalFees }))} currency={currency} />
+//       </AllocPanel>
+//       <AllocPanel title="By asset class" subtitle="What drove the costs">
+//         <BarListBody items={feesByAssetClass.map(f => ({ label: f.assetClass, value: f.totalFees }))} currency={currency} />
+//       </AllocPanel>
+//     </div>
+//   );
+// }
 
 const realizedPlDesc = () => "From closed positions, based on recorded buy and sell prices.";
 
@@ -618,36 +622,34 @@ function AllocPanel({ title, subtitle, children }: { title: string; subtitle: st
   );
 }
 
-/**
- * BAR LIST BODY — amount-first magnitude comparison, for facts you can check against a
- * statement (costs). All items must already share one currency.
- */
-function BarListBody({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
-  const max = Math.max(0, ...items.map(i => i.value));
-
-  if (items.length === 0) {
-    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {items.map((item) => {
-        const widthPct = max > 0 ? (item.value / max) * 100 : 0;
-        return (
-          <div key={item.label}>
-            <div className="flex items-baseline justify-between gap-4 mb-1">
-              <span className="text-xs font-bold text-slate-900">{item.label}</span>
-              <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(item.value, currency, 0)}</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// BAR LIST BODY — only used by the commented-out Costs section above; commented out
+// alongside it, not removed, so it comes back with everything else if Costs is reinstated.
+// function BarListBody({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
+//   const max = Math.max(0, ...items.map(i => i.value));
+//
+//   if (items.length === 0) {
+//     return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
+//   }
+//
+//   return (
+//     <div className="space-y-4">
+//       {items.map((item) => {
+//         const widthPct = max > 0 ? (item.value / max) * 100 : 0;
+//         return (
+//           <div key={item.label}>
+//             <div className="flex items-baseline justify-between gap-4 mb-1">
+//               <span className="text-xs font-bold text-slate-900">{item.label}</span>
+//               <span className="text-xs font-bold text-slate-900 shrink-0">{formatCurrency(item.value, currency, 0)}</span>
+//             </div>
+//             <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+//               <div className="h-full rounded-r-full bg-[#C49A3C]" style={{ width: `${widthPct}%` }} />
+//             </div>
+//           </div>
+//         );
+//       })}
+//     </div>
+//   );
+// }
 
 // Shades of the brand gold, ordered for adjacent-slice contrast; long tails collapse into
 // a single muted "Other" slice rather than a 9th near-indistinguishable color.
