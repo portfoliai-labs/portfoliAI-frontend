@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import { createPortal } from "react-dom";
 import {
   UploadCloud, AlertCircle, Loader2, Send,
-  FileText, CheckCircle2, X, FileSpreadsheet, PlusCircle
+  FileText, CheckCircle2, X, PlusCircle
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -20,10 +19,10 @@ import {
   RawRow,
 } from "../../lib/parser";
 import { StandardTransaction } from "../../models/Report";
-import { REQUIRED_FIELDS } from "../../lib/parser/config";
 import type { TransactionInput, TransactionResponse } from "../../models/Transaction";
 import { TransactionModal } from "./TransactionModal";
 import { FileMappingModal } from "./FileMappingModal";
+import { ImportWizard } from "./import/ImportWizard";
 import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
@@ -122,9 +121,10 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const [status, setStatus] = useState<"idle" | "preview" | "saved" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
-  const [showExampleModal, setShowExampleModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  // Files awaiting the AI-assisted import wizard, processed one at a time.
+  const [wizardQueue, setWizardQueue] = useState<File[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -312,8 +312,6 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
 
     setFiles(prev => [...prev, newFile]);
     setMappingModalFileId(id);
-    // A file was picked and is about to be shown for mapping/preview — make sure the upload modal doesn't linger.
-    setShowExampleModal(false);
   };
 
   const handleMappingChange = (fileId: string, stdField: keyof StandardTransaction, csvHeader: string) => {
@@ -490,27 +488,50 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     }
   };
 
+  // Every uploaded file goes through the AI-assisted import wizard first — it accepts
+  // whatever format the broker exports, so the user never has to reformat a spreadsheet
+  // by hand. Multiple files are processed one at a time.
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = event.target.files;
     if (!uploadedFiles) return;
+    // Snapshot into a plain array before resetting the input below — `files` is a live
+    // FileList tied to the input, so clearing `.value` empties it too, and the state
+    // updater below doesn't actually run until after this handler returns.
+    const newFiles = Array.from(uploadedFiles);
+    setWizardQueue((prev) => [...prev, ...newFiles]);
+    if (fileInputRef.current)
+      fileInputRef.current.value = "";
+  };
 
-    for (const file of Array.from(uploadedFiles)) {
+  const advanceWizardQueue = () => setWizardQueue((prev) => prev.slice(1));
+
+  // Re-parses the file with the legacy column-by-column mapper — offered as a fallback from
+  // the wizard when AI analysis can't make sense of a file.
+  const parseFileRawRows = (file: File): Promise<RawRow[]> =>
+    new Promise((resolve, reject) => {
       if (file.name.toLowerCase().endsWith(".csv")) {
-        Papa.parse(file, { header: true, skipEmptyLines: true, complete: (results) => onParseComplete(results.data as RawRow[], file.name) });
+        Papa.parse(file, { header: true, skipEmptyLines: true, complete: (results) => resolve(results.data as RawRow[]), error: reject });
       } else {
         const reader = new FileReader();
         reader.onload = (e) => {
-          const workbook = XLSX.read(e.target?.result, { type: "array" });
-          // defval: "" ensures every row includes ALL column keys even when cells are empty
-          const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" }) as RawRow[];
-          onParseComplete(json, file.name);
+          try {
+            const workbook = XLSX.read(e.target?.result, { type: "array" });
+            // defval: "" ensures every row includes ALL column keys even when cells are empty
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" }) as RawRow[];
+            resolve(json);
+          } catch (err) {
+            reject(err);
+          }
         };
+        reader.onerror = reject;
         reader.readAsArrayBuffer(file);
       }
-    }
+    });
 
-    if (fileInputRef.current)
-      fileInputRef.current.value = "";
+  const handleWizardFallbackToManual = async (file: File) => {
+    const data = await parseFileRawRows(file);
+    onParseComplete(data, file.name);
+    advanceWizardQueue();
   };
 
   const handleAddManualTransaction = (transaction: StandardTransaction) => {
@@ -609,107 +630,6 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         </div>
       )}
 
-      {/* MODAL: Upload file example */}
-      {showExampleModal && createPortal(
-        <div
-          className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
-          onClick={() => setShowExampleModal(false)}
-        >
-          <div
-            className="bg-white rounded-4xl shadow-2xl border border-slate-200 max-w-3xl w-full p-6 md:p-8 space-y-5 animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-50 rounded-xl">
-                  <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Upload a file</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Expected column format for CSV/Excel</p>
-                </div>
-              </div>
-              <button onClick={() => setShowExampleModal(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left border-collapse min-w-225">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      {ALL_FIELDS.map((field) => (
-                        <th key={field} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">
-                          {field} {REQUIRED_FIELDS.includes(field) && <span className="text-rose-500">*</span>}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {[
-                      { date: "2024-01-15", isin: "US0378331005", ticker: "AAPL", operation: "buy", amount: "1852.00", quantity: "10", price: "185.20", currency: "USD", fees: "1.50", broker: "Fineco" },
-                      { date: "2024-02-10", isin: "", ticker: "VWCE.MI", operation: "sell", amount: "491.75", quantity: "5", price: "98.35", currency: "EUR", fees: "0", broker: "" },
-                      { date: "2024-03-05", isin: "IE00B4L5Y983", ticker: "IUSA.MI", operation: "dividend", amount: "42.30", quantity: "", price: "", currency: "EUR", fees: "0", broker: "Directa" },
-                    ].map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50">
-                        {ALL_FIELDS.map((field) => (
-                          <td key={field} className="px-4 py-3 text-sm font-medium text-slate-600 whitespace-nowrap">{(row as Record<string, string>)[field] || <span className="text-slate-300">—</span>}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-2.5">
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold text-rose-600">*</span> required fields: <span className="font-mono">date</span>, <span className="font-mono">ticker</span>, <span className="font-mono">operation</span>, <span className="font-mono">amount</span> and <span className="font-mono">currency</span>. All other columns, including <span className="font-mono">isin</span>, are optional.
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold">ticker</span>: always required, even for rows that also have an <span className="font-mono">isin</span>. Must match the ticker available on <span className="font-bold">Yahoo Finance</span> (e.g. <span className="font-mono">AAPL</span>, <span className="font-mono">VWCE.MI</span>).
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold">operation</span>: must be <span className="font-mono">buy</span>, <span className="font-mono">sell</span>, <span className="font-mono">dividend</span> or <span className="font-mono">other</span>. <span className="font-mono">quantity</span>/<span className="font-mono">price</span> are only required for <span className="font-mono">buy</span>/<span className="font-mono">sell</span>.
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                  <span className="font-bold">amount</span>: the total transaction value ("controvalore"). Required — if left blank, it's derived from <span className="font-mono">quantity × price</span> when both are present.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowExampleModal(false)}
-                className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => { setShowExampleModal(false); fileInputRef.current?.click(); }}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
-              >
-                <UploadCloud className="h-4 w-4" />
-                Upload file
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
       {/* MODAL: Add a single transaction manually */}
       {showAddModal && (
         <TransactionModal
@@ -730,7 +650,26 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         />
       )}
 
-      {/* MODAL: Map a file's columns before its rows join the preview */}
+      {/* MODAL: AI-assisted import wizard — the primary path for every uploaded file */}
+      {wizardQueue[0] && (
+        <ImportWizard
+          key={wizardQueue[0].name + wizardQueue[0].lastModified}
+          file={wizardQueue[0]}
+          forUserUuid={forUserUuid}
+          onClose={advanceWizardQueue}
+          onImported={() => {
+            if (existingPage === 1) {
+              void refreshExisting(1);
+            } else {
+              setExistingPage(1);
+            }
+            advanceWizardQueue();
+          }}
+          onFallbackToManual={() => { void handleWizardFallbackToManual(wizardQueue[0]); }}
+        />
+      )}
+
+      {/* MODAL: Map a file's columns before its rows join the preview (fallback from the AI wizard) */}
       {mappingFile && (
         <FileMappingModal
           file={mappingFile}
@@ -744,7 +683,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       {/* TOOLBAR: upload actions, full width */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div
-          onClick={() => setShowExampleModal(true)}
+          onClick={() => fileInputRef.current?.click()}
           className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
         >
           <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
@@ -752,7 +691,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           </div>
           <div className="text-left overflow-hidden">
             <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
-            <p className="text-xs text-slate-400 truncate">CSV or Excel formats</p>
+            <p className="text-xs text-slate-400 truncate">Any broker export — AI maps the columns for you</p>
           </div>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
         </div>
