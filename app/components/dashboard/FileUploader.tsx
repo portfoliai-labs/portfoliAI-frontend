@@ -21,6 +21,7 @@ import {
 import { StandardTransaction } from "../../models/Report";
 import type { TransactionInput, TransactionResponse } from "../../models/Transaction";
 import { TransactionModal } from "./TransactionModal";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { FileMappingModal } from "./FileMappingModal";
 import { ImportWizard } from "./import/ImportWizard";
 import { UploadedFileState } from "./uploaderTypes";
@@ -118,6 +119,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deletingKeys, setDeletingKeys] = useState<Set<string>>(new Set());
   const [deletingAllExisting, setDeletingAllExisting] = useState(false);
+  const [confirmDeleteKeys, setConfirmDeleteKeys] = useState<string[] | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [status, setStatus] = useState<"idle" | "preview" | "saved" | "processing" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
@@ -448,10 +451,8 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const confirmAndDeleteKeys = (keys: string[]) => {
     const existingCount = keys.filter(k => k.startsWith("existing::")).length;
     if (existingCount > 0) {
-      const confirmed = window.confirm(
-        `Delete ${existingCount} saved transaction${existingCount !== 1 ? 's' : ''}? This cannot be undone.`
-      );
-      if (!confirmed) return;
+      setConfirmDeleteKeys(keys);
+      return;
     }
     void deleteKeys(keys);
   };
@@ -459,13 +460,6 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   // Deletes every saved transaction matching the active filters directly in the backend —
   // not just the current page. With no filters active, this wipes all saved transactions.
   const handleDeleteAllExisting = async () => {
-    const confirmed = window.confirm(
-      hasActiveFilters
-        ? `Delete all ${existingTotal} transactions matching the current filters? This cannot be undone.`
-        : `Delete all ${existingTotal} saved transactions? This cannot be undone.`
-    );
-    if (!confirmed) return;
-
     setDeletingAllExisting(true);
     try {
       await transactionService.deleteAllTransactions(forUserUuid, toServiceFilters(existingFilters));
@@ -658,14 +652,48 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           forUserUuid={forUserUuid}
           onClose={advanceWizardQueue}
           onImported={() => {
+            // Only refreshes the saved-transactions list — the wizard stays open on its
+            // "Import complete" summary until the user dismisses it via the Done button,
+            // which is what actually advances the queue (onClose).
             if (existingPage === 1) {
               void refreshExisting(1);
             } else {
               setExistingPage(1);
             }
-            advanceWizardQueue();
           }}
           onFallbackToManual={() => { void handleWizardFallbackToManual(wizardQueue[0]); }}
+        />
+      )}
+
+      {/* MODAL: confirm deleting a batch of selected saved transactions */}
+      {confirmDeleteKeys && (
+        <ConfirmDialog
+          title="Delete transactions"
+          description={`Delete ${confirmDeleteKeys.filter(k => k.startsWith("existing::")).length} saved transaction${confirmDeleteKeys.filter(k => k.startsWith("existing::")).length !== 1 ? "s" : ""}? This cannot be undone.`}
+          onClose={() => setConfirmDeleteKeys(null)}
+          onConfirm={() => {
+            const keys = confirmDeleteKeys;
+            setConfirmDeleteKeys(null);
+            void deleteKeys(keys);
+          }}
+        />
+      )}
+
+      {/* MODAL: confirm wiping every saved transaction (optionally scoped to the active filters) */}
+      {confirmDeleteAll && (
+        <ConfirmDialog
+          title="Delete all transactions"
+          description={
+            hasActiveFilters
+              ? `Delete all ${existingTotal} transactions matching the current filters? This cannot be undone.`
+              : `Delete all ${existingTotal} saved transactions? This cannot be undone.`
+          }
+          confirming={deletingAllExisting}
+          onClose={() => setConfirmDeleteAll(false)}
+          onConfirm={async () => {
+            await handleDeleteAllExisting();
+            setConfirmDeleteAll(false);
+          }}
         />
       )}
 
@@ -792,7 +820,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
             : "No transactions yet. Add one manually or upload a file to get started."
         }
         filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} />}
-        onDeleteAll={handleDeleteAllExisting}
+        onDeleteAll={() => setConfirmDeleteAll(true)}
         deletingAll={deletingAllExisting}
       />
     </div>

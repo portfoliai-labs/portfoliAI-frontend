@@ -12,6 +12,7 @@ const ANOMALY_LABELS: Record<AnomalyKind, string> = {
   "unexpected-negative": "Unexpected negative quantity/price",
   duplicate: "Exact duplicate row",
   "amount-mismatch": "Amount doesn't match quantity × price",
+  "missing-instrument": "No ticker or ISIN",
 };
 
 interface AnomaliesBlockProps {
@@ -50,6 +51,7 @@ export function AnomaliesBlock({ headers, rows, onGoToValuesTab }: AnomaliesBloc
           {anomalyRows.map((row) => {
             const isOpen = expanded.has(row.index);
             const hasUnmappedType = row.anomalies.includes("unmapped-type");
+            const hasMissingInstrument = row.anomalies.includes("missing-instrument");
             return (
               <div key={row.index} className="border border-amber-200 bg-amber-50/40 rounded-2xl overflow-hidden">
                 <button
@@ -84,9 +86,15 @@ export function AnomaliesBlock({ headers, rows, onGoToValuesTab }: AnomaliesBloc
                         Fix in the Values tab →
                       </button>
                     )}
-                    <p className="text-[11px] text-amber-700 font-medium">
-                      Left unresolved, this row is imported as <span className="font-mono font-bold">ignore</span>.
-                    </p>
+                    {hasMissingInstrument ? (
+                      <p className="text-[11px] text-amber-700 font-medium">
+                        This row has no ticker and no ISIN, so it can&apos;t be matched to an instrument. Fix the source file or the column mapping so at least one resolves for this row.
+                      </p>
+                    ) : hasUnmappedType ? (
+                      <p className="text-[11px] text-amber-700 font-medium">
+                        Left unresolved, this row is imported as <span className="font-mono font-bold">ignore</span>.
+                      </p>
+                    ) : null}
                   </div>
                 )}
               </div>

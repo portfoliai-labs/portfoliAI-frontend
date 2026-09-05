@@ -14,7 +14,8 @@ export type AnomalyKind =
   | "date-out-of-range"
   | "unexpected-negative"
   | "duplicate"
-  | "amount-mismatch";
+  | "amount-mismatch"
+  | "missing-instrument";
 
 export interface ParsedPreviewTransaction {
   date: string;
@@ -81,6 +82,10 @@ function isDateOutOfRange(iso: string): boolean {
 
 const TARGETS: TransactionTarget[] = ["buy", "sell", "dividend"];
 
+// Absolute floor for the amount-vs-quantity*price check, in the transaction's own currency —
+// covers double rounding (price rounded in the file, amount rounded to cents) on small trades.
+const ROUNDING_TOLERANCE_ABS = 0.02;
+
 export function buildPreviewRow(
   index: number,
   row: RawRow,
@@ -106,6 +111,14 @@ export function buildPreviewRow(
   }
   if (type === null) anomalies.push("unmapped-type");
 
+  // An instrument needs at least one identifier to resolve against — a row with neither would
+  // otherwise import silently as an untraceable "ghost" position, so it's flagged here even
+  // though the columns themselves are mapped (this catches broker exports with sporadic blank
+  // cells, not just an unmapped column, which is caught separately in ColumnMappingBlock).
+  const ticker = fieldValue(row, fields.ticker)?.trim();
+  const isin = fieldValue(row, fields.isin)?.trim();
+  if (!ticker && !isin) anomalies.push("missing-instrument");
+
   const amountRaw = fieldValue(row, fields.amount);
   const amount = parseLocaleNumber(amountRaw, fields.amount);
   if (amountRaw !== undefined && amountRaw.trim() !== "" && amount === undefined) anomalies.push("unparsed-number");
@@ -118,11 +131,24 @@ export function buildPreviewRow(
     if ((quantity ?? 0) < 0 || (price ?? 0) < 0) anomalies.push("unexpected-negative");
   }
 
-  if (quantity !== undefined && price !== undefined && amount !== undefined && amount !== 0) {
+  // Only buy/sell follow amount = quantity * price. A dividend's amount is per-share payout
+  // times quantity held — price is meaningless for it (often 0 or blank in broker exports) —
+  // so applying this formula there flags every dividend row as a false mismatch.
+  if ((type === "buy" || type === "sell") && quantity !== undefined && price !== undefined && amount !== undefined && amount !== 0) {
     const expected = Math.abs(quantity * price);
-    const netAmount = Math.abs(amount) - (fees ?? 0);
-    const diffRatio = Math.abs(expected - netAmount) / (expected || 1);
-    if (diffRatio > 0.01) anomalies.push("amount-mismatch");
+    const grossAmount = Math.abs(amount);
+    // A purely relative threshold flags routine cent-level rounding on small trades (e.g. a
+    // €0.01 diff on a €0.50 line is already 2%). Floor it with a small absolute allowance so
+    // only mismatches that exceed normal rounding — on trades of any size — get flagged.
+    const tolerance = Math.max(expected * 0.01, ROUNDING_TOLERANCE_ABS);
+    // Brokers disagree on whether the reported amount already nets out fees — some report the
+    // pure trade value (quantity * price) with fees settled separately, others report the
+    // amount actually charged/credited (fees already subtracted). Accept either convention;
+    // only flag when the amount reconciles with neither, since assuming one over the other
+    // flags every row of files that use the opposite convention.
+    const matchesGross = Math.abs(expected - grossAmount) <= tolerance;
+    const matchesNet = fees !== undefined && Math.abs(expected - (grossAmount - fees)) <= tolerance;
+    if (!matchesGross && !matchesNet) anomalies.push("amount-mismatch");
   }
 
   const parsed: ParsedPreviewTransaction | null =
@@ -130,8 +156,8 @@ export function buildPreviewRow(
       ? {
           date,
           type,
-          ticker: fieldValue(row, fields.ticker) || undefined,
-          isin: fieldValue(row, fields.isin) || undefined,
+          ticker: ticker || undefined,
+          isin: isin || undefined,
           name: fieldValue(row, fields.name) || undefined,
           quantity,
           price,

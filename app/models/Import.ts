@@ -83,6 +83,17 @@ type ValueMappingResponse = CategoricalColumnMappingDTO;
 interface InstrumentOverridePayload {
   ticker: string;
   isin?: string | null;
+  exchange?: string | null;
+}
+
+// A single resolved listing OpenFIGI found for an ambiguous ISIN (e.g. the same ETF on two
+// markets) — offered to the user as a pick instead of asking them to type a ticker blind.
+interface InstrumentCandidateDTO {
+  ticker: string;
+  isin?: string | null;
+  exchange?: string | null; // raw MIC, e.g. "XMIL"
+  exchange_name?: string | null; // human-readable market name, e.g. "Borsa Italiana" — prefer this for display
+  currency?: string | null;
 }
 
 // The JSON carried in commit's `mapping` form field, alongside the uploaded file itself.
@@ -91,6 +102,10 @@ interface CommitMappingPayload {
   confirmed_value_mapping: CategoricalColumnMappingDTO;
   proposed_column_mapping?: ColumnMappingDTO | null;
   manual_instrument_overrides?: Record<string, InstrumentOverridePayload>;
+  // Restricts a recommit to just these row indexes (the still-unresolved ones from the prior
+  // response) so rows already persisted in an earlier round aren't reprocessed and duplicated.
+  // Omitted/null means "process every row" — the original, non-recommit behavior.
+  only_row_indexes?: number[] | null;
 }
 
 interface ImportRowIssueResponse {
@@ -104,9 +119,17 @@ interface ImportIntegrityWarningResponse {
   row_indexes: number[];
 }
 
+// "ambiguous" means OpenFIGI found more than one listing and the row's currency wasn't enough
+// to narrow it to one — `candidates` then carries every listing found, for the user to pick
+// from. "not_found" (the original, still-default case) means candidates is always empty and
+// the user has to type a ticker/ISIN by hand, exactly as before this field existed.
+type UnresolvedReason = "not_found" | "ambiguous";
+
 interface UnresolvedInstrumentResponse {
   raw_identifier: string;
   row_indexes: number[];
+  reason: UnresolvedReason;
+  candidates: InstrumentCandidateDTO[];
 }
 
 interface CommitImportResponse {
@@ -130,9 +153,11 @@ export type {
   CategoricalColumnMappingDTO,
   ValueMappingResponse,
   InstrumentOverridePayload,
+  InstrumentCandidateDTO,
   CommitMappingPayload,
   ImportRowIssueResponse,
   ImportIntegrityWarningResponse,
+  UnresolvedReason,
   UnresolvedInstrumentResponse,
   CommitImportResponse,
 };

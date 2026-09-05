@@ -28,23 +28,6 @@ export function CommitSummary({ summary }: { summary: CommitImportResponse }) {
         </div>
       </div>
 
-      {summary.unresolved_instruments.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-            <h4 className="text-xs font-bold text-slate-700">Unresolved instruments</h4>
-          </div>
-          <div className="space-y-1.5">
-            {summary.unresolved_instruments.map((u) => (
-              <div key={u.raw_identifier} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs">
-                <span className="font-mono font-semibold text-amber-800">{u.raw_identifier}</span>
-                <span className="text-amber-600">{u.row_indexes.length} row{u.row_indexes.length !== 1 ? "s" : ""}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {summary.integrity_warnings.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">

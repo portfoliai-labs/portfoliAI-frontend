@@ -22,6 +22,7 @@ import {
   ColumnMappingDTO,
   CommitImportResponse,
   CommitMappingPayload,
+  InstrumentOverridePayload,
   MappingTarget,
   REQUIRED_MAPPING_TARGETS,
   TransactionTarget,
@@ -31,6 +32,7 @@ import { ValueMappingBlock, ValueMappingRow } from "./ValueMappingBlock";
 import { PreviewBlock } from "./PreviewBlock";
 import { AnomaliesBlock } from "./AnomaliesBlock";
 import { CommitSummary } from "./CommitSummary";
+import { UnresolvedInstrumentsBlock } from "./UnresolvedInstrumentsBlock";
 import { NUMERIC_TARGETS } from "./types";
 
 type Phase = "parsing" | "analyzing" | "confirm" | "committing" | "done" | "error";
@@ -44,7 +46,7 @@ function isPopulated(field: ColumnFieldMapping | undefined): boolean {
 
 function buildFieldForColumn(target: MappingTarget, column: string, values: string[]): ColumnFieldMapping {
   if (target === "date") {
-    return { source_column: column, confidence: "high", date_format: guessDateFormat(values) };
+    return { source_column: column, confidence: "high", date_format: guessDateFormat(values).date_format };
   }
   if (NUMERIC_TARGETS.includes(target)) {
     const decimal = guessDecimalSeparator(values);
@@ -76,6 +78,14 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
   const [valueMapping, setValueMapping] = useState<ValueMappingRow[]>([]);
   const [commitResult, setCommitResult] = useState<CommitImportResponse | null>(null);
   const [committing, setCommitting] = useState(false);
+  // Accumulates across recommits so a raw identifier resolved in an earlier round stays
+  // resolved even though the backend re-processes the whole file from scratch each time.
+  const [manualOverrides, setManualOverrides] = useState<Record<string, InstrumentOverridePayload>>({});
+  const [recommitting, setRecommitting] = useState(false);
+  // True when detectDateFormat couldn't pin the date column to a single confident pattern —
+  // gates confirmation the same way a missing required field does, since importing on a guess
+  // here risks every date being silently day/month-swapped rather than merely absent.
+  const [dateFormatAmbiguous, setDateFormatAmbiguous] = useState(false);
 
   // Fetches (or re-fetches, when the user repoints 'type' at a different column) every
   // distinct value of the categorical column feeding 'type'. Never blocks the wizard on
@@ -127,7 +137,30 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
         });
         if (cancelled) return;
 
-        const initialMapping: ColumnMappingDTO = { fingerprint: response.fingerprint, fields: response.fields, categorical_columns: response.categorical_columns };
+        // The AI proposes decimal_separator/thousands_separator (and date_format) too, but
+        // it's reasoning over a summary, not scanning every value — recompute all three
+        // deterministically from the full column instead of trusting its guess, the same way a
+        // manual column change already does via buildFieldForColumn. For dates specifically,
+        // this catches day/month locale mixups (e.g. guessing MM/dd/yyyy on a day-first file):
+        // every day-<=12 row still "parses" under the wrong pattern, so nothing looks wrong
+        // until a day-13-to-31 row shows up and fails outright.
+        const correctedFields = { ...response.fields };
+        const dateField = correctedFields.date;
+        if (dateField?.source_column) {
+          const values = parsed.rows.map((r) => r[dateField.source_column!] ?? "");
+          const guess = guessDateFormat(values);
+          correctedFields.date = { ...dateField, date_format: guess.date_format };
+          setDateFormatAmbiguous(guess.ambiguous);
+        }
+        for (const target of NUMERIC_TARGETS) {
+          const field = correctedFields[target];
+          if (!field?.source_column) continue;
+          const values = parsed.rows.map((r) => r[field.source_column!] ?? "");
+          const decimal_separator = guessDecimalSeparator(values);
+          correctedFields[target] = { ...field, decimal_separator, thousands_separator: guessThousandsSeparator(values, decimal_separator) };
+        }
+
+        const initialMapping: ColumnMappingDTO = { fingerprint: response.fingerprint, fields: correctedFields, categorical_columns: response.categorical_columns };
         setMapping(initialMapping);
         setProposedMapping(initialMapping);
         setIsFromCache(response.is_from_cache);
@@ -167,12 +200,24 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
     () => (mapping ? REQUIRED_MAPPING_TARGETS.filter((t) => !isPopulated(mapping.fields[t])) : REQUIRED_MAPPING_TARGETS),
     [mapping],
   );
+  // Ticker and ISIN aren't each required (either one is enough to resolve an instrument), but
+  // having neither mapped means every row would import with no way to identify what was
+  // traded — that's an all-or-nothing gate on the mapping, unlike a single row's blank cell
+  // (which surfaces as the "missing-instrument" anomaly instead, without blocking the rest).
+  const hasInstrumentMapping = useMemo(
+    () => (mapping ? isPopulated(mapping.fields.ticker) || isPopulated(mapping.fields.isin) : false),
+    [mapping],
+  );
 
   const handleChangeColumn = (target: MappingTarget, column: string | null) => {
     if (!parsedFile) return;
-    const nextField = column ? buildFieldForColumn(target, column, parsedFile.rows.map((r) => r[column] ?? "")) : emptyField;
+    const values = column ? parsedFile.rows.map((r) => r[column] ?? "") : [];
+    const nextField = column ? buildFieldForColumn(target, column, values) : emptyField;
     setMapping((prev) => (prev ? { ...prev, fields: { ...prev.fields, [target]: nextField } } : prev));
 
+    if (target === "date") {
+      setDateFormatAmbiguous(column ? guessDateFormat(values).ambiguous : false);
+    }
     if (target === "type") {
       if (column) void loadValueMapping(column, parsedFile.rows, sampleRowsForRequests);
       else {
@@ -184,10 +229,21 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
 
   const handleChangeConstant = (target: MappingTarget, value: string) => {
     setMapping((prev) => (prev ? { ...prev, fields: { ...prev.fields, [target]: { confidence: "high", constant_value: value } } } : prev));
+    if (target === "date") setDateFormatAmbiguous(false);
     if (target === "type") {
       setValueColumn(null);
       setValueMapping([]);
     }
+  };
+
+  // Lets the user override the detected date format directly — the only way to resolve a
+  // genuinely ambiguous column (nothing in the data itself can disambiguate dd/MM from MM/dd
+  // when every day is <= 12), and a manual correction is trusted over any guess going forward.
+  const handleChangeDateFormat = (strftimeFormat: string) => {
+    setMapping((prev) =>
+      prev ? { ...prev, fields: { ...prev.fields, date: { ...(prev.fields.date ?? emptyField), date_format: strftimeFormat } } } : prev,
+    );
+    setDateFormatAmbiguous(false);
   };
 
   const handleValueChange = (rawValue: string, target: TransactionTarget | null) => {
@@ -195,7 +251,7 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
   };
 
   const handleConfirm = async () => {
-    if (!parsedFile || !mapping || requiredFieldsMissing.length > 0) return;
+    if (!parsedFile || !mapping || requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous) return;
     setCommitting(true);
     setPhase("committing");
     try {
@@ -216,6 +272,42 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
       setPhase("error");
     } finally {
       setCommitting(false);
+    }
+  };
+
+  // Reimports the same file with manually-resolved instruments added on top of whatever was
+  // already resolved in a previous round — the backend has no memory of prior overrides
+  // between commit calls, so the full set has to travel with every request. Overrides
+  // accumulate across rounds, but only_row_indexes does not: it's the union of row_indexes
+  // from the *current* commitResult's unresolved_instruments, since /commit isn't idempotent
+  // and rows already persisted in an earlier round must not be reprocessed.
+  const handleRecommit = async (newOverrides: Record<string, InstrumentOverridePayload>) => {
+    if (!mapping || !commitResult) return;
+    const merged = { ...manualOverrides, ...newOverrides };
+    setManualOverrides(merged);
+    const onlyRowIndexes = Array.from(new Set(commitResult.unresolved_instruments.flatMap((u) => u.row_indexes)));
+    setRecommitting(true);
+    try {
+      const payload: CommitMappingPayload = {
+        confirmed_column_mapping: mapping,
+        confirmed_value_mapping: {
+          column_name: valueColumn ?? mapping.fields.type?.source_column ?? "",
+          values: valueMapping.map((r) => ({ raw_value: r.raw_value, target: r.target, confidence: r.confidence })),
+        },
+        proposed_column_mapping: proposedMapping ?? undefined,
+        manual_instrument_overrides: merged,
+        only_row_indexes: onlyRowIndexes,
+      };
+      const result = await importService.commit(file, payload, forUserUuid);
+      setCommitResult(result);
+      // A recommit persists new rows just like the initial commit does — the caller's list
+      // needs telling again, or rows resolved in this round never show up without a reload.
+      onImported();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to reimport with the manual overrides.");
+      setPhase("error");
+    } finally {
+      setRecommitting(false);
     }
   };
 
@@ -289,6 +381,13 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
         {phase === "done" && commitResult && (
           <>
             <CommitSummary summary={commitResult} />
+            {commitResult.unresolved_instruments.length > 0 && (
+              <UnresolvedInstrumentsBlock
+                unresolved={commitResult.unresolved_instruments}
+                onRecommit={handleRecommit}
+                submitting={recommitting}
+              />
+            )}
             <div className="flex items-center justify-end pt-2 border-t border-slate-100">
               <button onClick={onClose} className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors">
                 Done
@@ -334,6 +433,8 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
                 exampleRow={parsedFile.rows[0]}
                 onChangeColumn={handleChangeColumn}
                 onChangeConstant={handleChangeConstant}
+                dateFormatAmbiguous={dateFormatAmbiguous}
+                onChangeDateFormat={handleChangeDateFormat}
               />
             )}
             {tab === "values" && (
@@ -352,10 +453,12 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
                   Cancel
                 </button>
                 <button
-                  disabled={requiredFieldsMissing.length > 0 || committing}
+                  disabled={requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous || committing}
                   onClick={handleConfirm}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white transition-colors shadow-md shadow-slate-200 ${
-                    requiredFieldsMissing.length > 0 ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-blue-600"
+                    requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-slate-900 hover:bg-blue-600"
                   }`}
                 >
                   <Send className="h-4 w-4" />
