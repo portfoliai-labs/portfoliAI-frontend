@@ -13,6 +13,7 @@ import {
 import { portfolioService } from "../../services/portfolioService";
 import type { PortfolioSummary, PortfolioSnapshot, CurrencyBreakdown } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
+import { NewsCarouselModule } from "./NewsSection";
 
 export default function DashboardOverview() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
@@ -87,6 +88,10 @@ export default function DashboardOverview() {
           here too — both moved to the Performance section's Today page, which now carries
           the same summary (currently-held assets) alongside the rest of today's figures. */}
       <PortfolioTodayModule snapshots={sortedSnapshots} byCurrency={byCurrency} showInvestedBreakdown={showCurrencyDisclosure} />
+
+      {/* BLOCK 1.5 — TODAY'S NEWS. One story at a time so it doesn't compete for attention
+          with Block 1's figures; renders nothing at all when there's no news today. */}
+      <NewsCarouselModule />
 
       {/* BLOCK 2 — YOUR ACTIVITY. Answers "what did I actually do?"
           COSTS used to live here too — commented out for now, not removed: undecided whether

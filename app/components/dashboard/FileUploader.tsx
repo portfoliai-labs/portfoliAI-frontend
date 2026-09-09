@@ -596,6 +596,20 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12 relative">
 
+      {/* MASTHEAD */}
+      <div className="flex flex-wrap items-end justify-between gap-6">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
+          <h1
+            className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            Transactions
+          </h1>
+          <p className="text-slate-500 font-medium mt-1">Add, review, and manage every transaction in your portfolio.</p>
+        </div>
+      </div>
+
       {/* NOTIFICA TOAST (Visualizzata in base allo stato) */}
       {showToast && (
         <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-100 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${

@@ -11,6 +11,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
+import { NewsModule } from "./NewsSection";
 import type {
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
@@ -455,6 +456,7 @@ function TodayPage({ data }: { data: TodayDashboard }) {
         renderBody={CompositionBody}
       />
       <HoldingsExplorer holdings={data.summary.holdings} />
+      <NewsModule title="Today's Headlines" desc="Market news published today." />
     </div>
   );
 }
@@ -809,7 +811,7 @@ function PeriodHero({
  * these are risk figures, not performance, and mixing them read as one undifferentiated wall
  * of tiles (see the Monthly/Annual detail view this replaces).
  */
-function MonthDetail({ period }: { period: PeriodDashboard }) {
+function MonthDetail({ period, year, month }: { period: PeriodDashboard; year: number; month: number }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
@@ -886,6 +888,7 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
           </Module>
         </>
       )}
+      <NewsModule year={year} month={month} title={`${title} Headlines`} desc="Market news published that month." />
     </div>
   );
 }
@@ -1166,7 +1169,7 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
             <p className="text-sm font-bold">{monthError}</p>
           </div>
         ) : period ? (
-          <MonthDetail period={period} />
+          <MonthDetail period={period} year={selected.year} month={selected.month} />
         ) : (
           <EmptyPeriodState message="No detail available for this month." />
         )}
