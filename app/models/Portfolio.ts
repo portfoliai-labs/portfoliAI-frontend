@@ -99,7 +99,104 @@ interface PortfolioOverview {
   snapshots: PortfolioSnapshot[];
 }
 
+// Matches TodayDashboardResponse (GET /v1/portfolio/today) — today vs. yesterday, and
+// today vs. the start of the current month (month-to-date), always in the user's
+// reference currency. `chart` is the month-to-date daily snapshots (one per day,
+// oldest→newest not guaranteed — sort before use). The endpoint returns null (not a
+// zeroed-out object) when there's no snapshot history yet to compute this from.
+interface TodayDashboard {
+  currentValue: number;
+  previousDayValue: number;
+  deltaDayValue: number;
+  deltaDayValuePct: number;
+  monthStartValue: number;
+  deltaMtdValue: number;
+  deltaMtdValuePct: number;
+  currency: string;
+  chart: PortfolioSnapshot[];
+  // Currently-held assets and their composition (by asset/asset class/broker), same shape as
+  // PortfolioOverview.summary — surfaced here too so the Performance section's Today page can
+  // show "what do I hold right now" alongside today's figures, without a second fetch.
+  summary: PortfolioSummary;
+}
+
+// Matches one entry of PeriodDashboardResponse[] (GET /v1/portfolio/monthly, GET
+// /v1/portfolio/annual) — one row per calendar month (since January of the current year,
+// through the most recently *closed* month — the in-progress month isn't included until a
+// monthly cron closes it out early the following month) or per calendar year (since
+// inception, through the current in-progress year), each diffed against the previous one.
+// No `chart` field: unlike /today and /history, a list entry is one row of a performance
+// table, not its own drill-down. marketEffect isolates price movement from
+// netCapitalContributed (money the user added/withdrew), since deltaValue alone conflates
+// the two. For a portfolio's very first tracked period, t0Value is 0 (no prior baseline)
+// and deltaValuePct/marketEffectPct both come back as exactly 0 rather than a real
+// percentage — see hasPeriodBaseline in PerformanceSection.tsx.
+interface PeriodDashboard {
+  periodStart: string;
+  periodEnd: string;
+  t0Value: number;
+  t1Value: number;
+  deltaValue: number;
+  deltaValuePct: number;
+  marketEffect: number;
+  marketEffectPct: number;
+  netCapitalContributed: number;
+  tradingCostsInPeriod: number;
+  dividendsInPeriod: number;
+  // Annualized stdev of daily returns, as a percentage (e.g. 8.4). Computed once a month
+  // from the full historical return series — same formula the full-history PDF report's
+  // Risk and Volatility Analysis section uses. Null on /annual entries always (an annual
+  // row's underlying data is really just its last MONTHLY row, so its volatility would only
+  // describe that one month, not the year — showing it under an "annual" label would be
+  // misleading, so the backend suppresses it there). On /monthly, null until the monthly
+  // cron has processed that particular month since this field shipped (gradual backfill,
+  // not missing data).
+  volatilityPct: number | null;
+  // Peak-to-trough max drawdown within the period, as a percentage (e.g. -1.46 — always ≤0).
+  // Same nullability rules as volatilityPct.
+  maxDrawdownPct: number | null;
+  currency: string;
+  // Set only once a report covering this exact period has been generated — null is normal
+  // for the current in-progress year (annual) or for a month too recent to have a report yet.
+  reportDocumentId: string | null;
+}
+
+// One month's market-effect percentage, keyed by calendar year/month rather than a date
+// range — the compact shape behind the All Time page's year-by-month returns heatmap.
+// Only months with computable data are included (mirrors PeriodDashboard.marketEffectPct);
+// a (year, month) pair simply absent means "nothing to show", not zero.
+interface MonthlyMarketEffectEntry {
+  year: number;
+  month: number;
+  marketEffectPct: number;
+}
+
+// Matches FullHistoryDashboardResponse (GET /v1/portfolio/history) — lifetime figures
+// since the portfolio's first recorded transaction (inceptionDate).
+interface FullHistoryDashboard {
+  inceptionDate: string;
+  currentValue: number;
+  totalInvestedCapital: number;
+  totalRealizedPnl: number;
+  totalUnrealizedPnl: number;
+  totalDividendIncome: number;
+  lifetimeTradingCosts: number;
+  lifetimeDividends: number;
+  currency: string;
+  chart: PortfolioSnapshot[];
+  // Every asset with at least one closed round-trip, lifetime — same shape/semantics as
+  // PortfolioSummary.realizedTradesByAsset, surfaced here too so the All Time page (which
+  // merges Month/Year/Full History into one section) can show realized P&L without a second
+  // fetch. Not scoped to one currency — group by each trade's own `currency` before summing.
+  realizedTradesByAsset: AssetRealizedTrade[];
+  // Backs the returns heatmap: one entry per (year, month) with computable market effect,
+  // across the portfolio's full history. Not necessarily sorted.
+  monthlyMarketEffect: MonthlyMarketEffectEntry[];
+  reportDocumentId: string | null;
+}
+
 export type {
   Holding, PortfolioSummary, PortfolioSnapshot, PortfolioOverview,
   CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, AssetRealizedTrade,
+  TodayDashboard, PeriodDashboard, FullHistoryDashboard, MonthlyMarketEffectEntry,
 };

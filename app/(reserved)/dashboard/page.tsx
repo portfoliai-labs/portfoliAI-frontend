@@ -13,13 +13,15 @@ import { ReportsList } from "../../components/dashboard/ReportsList";
 import { ClientsSection } from "../../components/dashboard/ClientsSection";
 import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
 import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsList";
+import { PerformanceSection } from "../../components/dashboard/PerformanceSection";
+import { AdvisorPerformanceSection } from "../../components/dashboard/AdvisorPerformanceSection";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { Loader2 } from "lucide-react";
 
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'profile', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'performance', 'profile', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -51,6 +53,8 @@ function DashboardPageContent() {
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
+      case 'performance':
+        return isAdvisor ? <AdvisorPerformanceSection /> : <PerformanceSection onNavigate={setActiveSection} />;
       case 'profile':
         return isAdvisor ? <AdvisorProfileSection /> : <ProfileSection />;
       case 'settings':
