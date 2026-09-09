@@ -1,7 +1,7 @@
 // components/dashboard/NewsSection.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, ExternalLink,
   Newspaper, TrendingUp, Globe2, LineChart, Landmark, Coins,
@@ -36,6 +36,9 @@ const PLACEHOLDER_THEMES: { gradient: string; icon: typeof Newspaper }[] = [
 // needs a small buffer; Insights grids show every story at once, so they get a roomier cap.
 const DASHBOARD_NEWS_LIMIT = 4;
 const INSIGHTS_NEWS_LIMIT = 10;
+
+// How long each story stays on screen before the dashboard carousel auto-advances.
+const AUTOPLAY_INTERVAL_MS = 6000;
 
 function themeFor(seed: string) {
   let hash = 0;
@@ -181,7 +184,7 @@ function FeaturedNewsCard({ item }: { item: NewsItem }) {
   const body = (
     <div className="flex flex-col sm:flex-row">
       <div
-        className="sm:w-56 h-40 sm:h-auto shrink-0 flex items-center justify-center relative overflow-hidden"
+        className="sm:w-72 h-48 sm:h-auto shrink-0 flex items-center justify-center relative overflow-hidden"
         style={showImage ? undefined : { backgroundImage: theme.gradient }}
       >
         {showImage ? (
@@ -193,25 +196,25 @@ function FeaturedNewsCard({ item }: { item: NewsItem }) {
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <Icon className="h-12 w-12 text-white/85" />
+          <Icon className="h-14 w-14 text-white/85" />
         )}
         <span className="absolute top-3 left-3 text-[10px] font-black uppercase tracking-wider text-white px-2.5 py-1 rounded-full bg-black/25 backdrop-blur-sm">
           {item.topic}
         </span>
       </div>
-      <div className="flex-1 p-6 md:p-7 flex flex-col gap-2.5 min-w-0">
-        <h3 className="text-lg font-black text-slate-900 leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+      <div className="flex-1 p-7 md:p-8 flex flex-col gap-3 min-w-0 justify-center">
+        <h3 className="text-xl md:text-2xl font-black text-slate-900 leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
           {item.title}
         </h3>
-        {item.description && <p className="text-sm text-slate-500 leading-relaxed">{item.description}</p>}
+        {item.description && <p className="text-sm md:text-base text-slate-500 leading-relaxed line-clamp-3">{item.description}</p>}
         <div className="flex items-center gap-2 text-xs text-slate-400 font-semibold mt-1">
           {item.source && <span>{item.source}</span>}
           {item.source && published && <span>·</span>}
           {published && <span>{published}</span>}
         </div>
         {clickable && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#C49A3C] mt-2 group-hover:underline w-fit">
-            Read article <ExternalLink className="h-3.5 w-3.5" />
+          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#C49A3C] mt-1 group-hover:underline w-fit">
+            Read article <ExternalLink className="h-4 w-4" />
           </span>
         )}
       </div>
@@ -230,19 +233,33 @@ function FeaturedNewsCard({ item }: { item: NewsItem }) {
  * arrows/dots in the module head to page through the rest (same nav pattern as
  * PerformanceSection's CurrencyCarouselModule). Renders nothing at all — not an empty card —
  * when there's no news today or the fetch fails, so a non-critical, supplementary module
- * doesn't clutter the main dashboard when it has nothing to show.
+ * doesn't clutter the main dashboard when it has nothing to show. Auto-advances every
+ * AUTOPLAY_INTERVAL_MS while there's more than one story, pausing while the pointer is over
+ * the card so a story someone's actually reading doesn't get swapped out from under them;
+ * any manual nav (arrows/dots) restarts the wait rather than advancing on top of it, since
+ * the interval is recreated whenever `index` changes.
  */
 export function NewsCarouselModule() {
   const { items, loading, error } = useNews(undefined, undefined, DASHBOARD_NEWS_LIMIT);
   const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
   // Clamped rather than reset via an effect: a shorter `items` array (e.g. a refetch) could
   // otherwise leave `index` pointing past the end.
   const activeIndex = items.length > 0 ? Math.min(index, items.length - 1) : 0;
+  const multi = items.length > 1;
+
+  useEffect(() => {
+    if (!multi || paused) return;
+    const id = setInterval(() => {
+      setIndex(i => (i + 1) % items.length);
+    }, AUTOPLAY_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [multi, paused, items.length, index]);
 
   if (loading) {
     return (
       <Module>
-        <div className="flex h-48 items-center justify-center">
+        <div className="flex h-64 items-center justify-center">
           <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
         </div>
       </Module>
@@ -252,44 +269,45 @@ export function NewsCarouselModule() {
   if (error || items.length === 0) return null;
 
   const active = items[activeIndex];
-  const multi = items.length > 1;
 
   return (
     <Module>
-      <ModuleHead
-        eyebrow="Market News"
-        title="Today's Headlines"
-        desc="Stories published today, one at a time."
-        right={multi && (
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setIndex(i => (i - 1 + items.length) % items.length)}
-              aria-label="Previous story"
-              className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
-            >
-              <ChevronLeft className="h-3 w-3" />
-            </button>
-            <div className="flex items-center gap-1">
-              {items.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setIndex(i)}
-                  aria-label={`Go to story ${i + 1}`}
-                  className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
-                />
-              ))}
+      <div onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+        <ModuleHead
+          eyebrow="Market News"
+          title="Today's Headlines"
+          desc="Stories published today, one at a time."
+          right={multi && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIndex(i => (i - 1 + items.length) % items.length)}
+                aria-label="Previous story"
+                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronLeft className="h-3 w-3" />
+              </button>
+              <div className="flex items-center gap-1">
+                {items.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setIndex(i)}
+                    aria-label={`Go to story ${i + 1}`}
+                    className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => setIndex(i => (i + 1) % items.length)}
+                aria-label="Next story"
+                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronRight className="h-3 w-3" />
+              </button>
             </div>
-            <button
-              onClick={() => setIndex(i => (i + 1) % items.length)}
-              aria-label="Next story"
-              className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
-            >
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-      />
-      <FeaturedNewsCard item={active} />
+          )}
+        />
+        <FeaturedNewsCard item={active} />
+      </div>
     </Module>
   );
 }
