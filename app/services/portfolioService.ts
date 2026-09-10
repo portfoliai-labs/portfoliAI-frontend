@@ -1,5 +1,5 @@
 // services/portfolioService.ts
-import type { PortfolioOverview, TodayDashboard, PeriodDashboard, FullHistoryDashboard } from "../models/Portfolio";
+import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDashboard } from "../models/Portfolio";
 import { apiFetch } from "./apiClient";
 
 const forUserUuidQuery = (forUserUuid?: string | null) =>
@@ -15,11 +15,11 @@ const buildQuery = (params: Record<string, string | number | null | undefined>) 
 };
 
 export const portfolioService = {
-  // GET /v1/portfolio/ — advisors pass for_user_uuid to fetch a client's portfolio.
-  // date_from/date_to default server-side to the last 90 days and scope only the snapshots
-  // returned, not the transaction-derived summary (which always covers full history).
-  async getPortfolioOverview(forUserUuid?: string | null): Promise<PortfolioOverview> {
-    return apiFetch<PortfolioOverview>(`/v1/portfolio/${forUserUuidQuery(forUserUuid)}`);
+  // GET /v1/portfolio/ — the latest portfolio-value snapshot (advisors pass for_user_uuid to
+  // fetch a client's). Returns null when there's no snapshot yet, same convention as
+  // getTodayDashboard/getFullHistoryDashboard below.
+  async getPortfolioOverview(forUserUuid?: string | null): Promise<PortfolioSnapshot | null> {
+    return apiFetch<PortfolioSnapshot | null>(`/v1/portfolio/${forUserUuidQuery(forUserUuid)}`);
   },
 
   // GET /v1/portfolio/today — today vs. yesterday, and today vs. the start of the current

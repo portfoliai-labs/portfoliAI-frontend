@@ -81,6 +81,10 @@ interface PortfolioSummary {
 // A single day's snapshot of the portfolio's live state in one currency — unlike the rest of
 // this file, these figures DO come from current market prices (totalMarketValue, totalUnrealizedPnl),
 // not just recorded transactions. One entry per currency per day.
+//
+// Also the exact shape GET /v1/portfolio/ itself returns (the latest one, or null when there's
+// no snapshot yet) — that endpoint used to wrap it in a PortfolioOverviewResponse alongside the
+// transaction-derived summary and a snapshot history list, both dropped as unused.
 interface PortfolioSnapshot {
   snapshotAt: string;
   currency: string;
@@ -89,14 +93,6 @@ interface PortfolioSnapshot {
   totalUnrealizedPnl: number;
   totalRealizedPnl: number;
   totalDividendIncome: number;
-}
-
-// Matches PortfolioOverviewResponse (GET /v1/portfolio/)
-interface PortfolioOverview {
-  summary: PortfolioSummary;
-  // Newest-first or oldest-first isn't guaranteed by the backend — sort before relying on order.
-  // Defaults to the last 90 days unless date_from/date_to were passed to the request.
-  snapshots: PortfolioSnapshot[];
 }
 
 // Matches TodayDashboardResponse (GET /v1/portfolio/today) — today vs. yesterday, and
@@ -114,9 +110,9 @@ interface TodayDashboard {
   deltaMtdValuePct: number;
   currency: string;
   chart: PortfolioSnapshot[];
-  // Currently-held assets and their composition (by asset/asset class/broker), same shape as
-  // PortfolioOverview.summary — surfaced here too so the Performance section's Today page can
-  // show "what do I hold right now" alongside today's figures, without a second fetch.
+  // Currently-held assets and their composition (by asset/asset class/broker) — surfaced here
+  // so the Performance section's Today page can show "what do I hold right now" alongside
+  // today's figures. GET /v1/portfolio/ itself no longer returns this (see PortfolioSnapshot).
   summary: PortfolioSummary;
 }
 
@@ -196,7 +192,7 @@ interface FullHistoryDashboard {
 }
 
 export type {
-  Holding, PortfolioSummary, PortfolioSnapshot, PortfolioOverview,
+  Holding, PortfolioSummary, PortfolioSnapshot,
   CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, AssetRealizedTrade,
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, MonthlyMarketEffectEntry,
 };

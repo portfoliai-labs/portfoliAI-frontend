@@ -1,5 +1,5 @@
 // services/newsService.ts
-import type { NewsItem } from "../models/News";
+import type { NewsItem, DailyArticle } from "../models/News";
 import { apiFetch } from "./apiClient";
 
 const buildQuery = (params: Record<string, string | number | null | undefined>) => {
@@ -16,5 +16,10 @@ export const newsService = {
   // or for today when both are omitted. `limit` caps how many stories come back.
   async getNews(year?: number, month?: number, limit?: number): Promise<NewsItem[]> {
     return apiFetch<NewsItem[]>(`/v1/news/${buildQuery({ year, month, limit })}`);
+  },
+
+  // GET /v1/news/daily-article — the global "article of the day", same for every user.
+  async getDailyArticle(): Promise<DailyArticle> {
+    return apiFetch<DailyArticle>(`/v1/news/daily-article`);
   },
 };

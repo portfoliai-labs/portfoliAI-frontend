@@ -6,8 +6,8 @@ import {
   Loader2, AlertCircle, ChevronLeft, ChevronRight, ExternalLink,
   Newspaper, TrendingUp, Globe2, LineChart, Landmark, Coins,
 } from "lucide-react";
-import { useNews } from "../../hooks/useNews";
-import type { NewsItem } from "../../models/News";
+import { useNews, useDailyArticle } from "../../hooks/useNews";
+import type { NewsItem, DailyArticle } from "../../models/News";
 
 /**
  * NEWS SECTION — shared building blocks for showing market news, used by both the Dashboard
@@ -308,6 +308,85 @@ export function NewsCarouselModule() {
         />
         <FeaturedNewsCard item={active} />
       </div>
+    </Module>
+  );
+}
+
+/**
+ * DAILY ARTICLE CARD — same layout family as FeaturedNewsCard, including the same
+ * image-with-placeholder-fallback art (DailyArticle has no `topic`, so the placeholder is
+ * seeded by the article's title instead).
+ */
+function DailyArticleCard({ article }: { article: DailyArticle }) {
+  const theme = themeFor(article.title);
+  const Icon = theme.icon;
+  const published = article.publishedAt ? dateLabel(article.publishedAt) : null;
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = !!article.imageUrl && !imageFailed;
+
+  return (
+    <a href={article.url} target="_blank" rel="noreferrer" className="group block hover:bg-slate-50/60 transition-colors">
+      <div className="flex flex-col sm:flex-row">
+        <div
+          className="sm:w-72 h-48 sm:h-auto shrink-0 flex items-center justify-center relative overflow-hidden"
+          style={showImage ? undefined : { backgroundImage: theme.gradient }}
+        >
+          {showImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={article.imageUrl!}
+              alt=""
+              onError={() => setImageFailed(true)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <Icon className="h-14 w-14 text-white/85" />
+          )}
+        </div>
+        <div className="flex-1 p-7 md:p-8 flex flex-col gap-3 min-w-0 justify-center">
+          <h3 className="text-xl md:text-2xl font-black text-slate-900 leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+            {article.title}
+          </h3>
+          {article.summary && <p className="text-sm md:text-base text-slate-500 leading-relaxed line-clamp-3">{article.summary}</p>}
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-semibold mt-1">
+            <span>{article.source}</span>
+            {published && <span>·</span>}
+            {published && <span>{published}</span>}
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#C49A3C] mt-1 group-hover:underline w-fit">
+            Read article <ExternalLink className="h-4 w-4" />
+          </span>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+/**
+ * DAILY ARTICLE MODULE — the day's featured read, same article for every user (not a
+ * per-user or per-portfolio pick). Renders nothing at all — not an empty card — while
+ * loading fails or there's nothing to show, same "stay out of the way" rule as
+ * NewsCarouselModule for a non-critical, supplementary module.
+ */
+export function DailyArticleModule() {
+  const { article, loading, error } = useDailyArticle();
+
+  if (loading) {
+    return (
+      <Module>
+        <div className="flex h-48 items-center justify-center">
+          <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
+        </div>
+      </Module>
+    );
+  }
+
+  if (error || !article) return null;
+
+  return (
+    <Module>
+      <ModuleHead eyebrow="Daily Read" title="Article of the Day" desc="One story worth your time today." />
+      <DailyArticleCard article={article} />
     </Module>
   );
 }

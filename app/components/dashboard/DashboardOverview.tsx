@@ -7,17 +7,15 @@ import {
   Coins,
   TrendingUp,
   TrendingDown,
-  ChevronDown,
   Info,
 } from "lucide-react";
 import { portfolioService } from "../../services/portfolioService";
-import type { PortfolioSummary, PortfolioSnapshot, CurrencyBreakdown } from "../../models/Portfolio";
+import type { PortfolioSnapshot } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
-import { NewsCarouselModule } from "./NewsSection";
+import { NewsCarouselModule, DailyArticleModule } from "./NewsSection";
 
 export default function DashboardOverview() {
-  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
-  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
+  const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -25,8 +23,7 @@ export default function DashboardOverview() {
       try {
         setLoading(true);
         const data = await portfolioService.getPortfolioOverview();
-        setPortfolio(data.summary);
-        setSnapshots(data.snapshots);
+        setSnapshot(data);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -44,21 +41,6 @@ export default function DashboardOverview() {
     );
   }
 
-  const byCurrency = portfolio?.byCurrency ?? [];
-
-  // Snapshots are always tagged with the user's reference-currency preference — sorted
-  // oldest→newest since the backend doesn't guarantee ordering.
-  const sortedSnapshots = [...snapshots].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
-  const latestSnapshot = sortedSnapshots[sortedSnapshots.length - 1];
-
-  // The multi-currency apparatus (tabs, breakdowns, the "in your own currency" note) only
-  // earns its place when there's something to disambiguate — i.e. either more than one
-  // native currency, or a single native currency that isn't the reference currency.
-  const isSingleCurrencyMatchingReference = !!latestSnapshot
-    && byCurrency.length === 1
-    && byCurrency[0].currency === latestSnapshot.currency;
-  const showCurrencyDisclosure = !isSingleCurrencyMatchingReference;
-
   return (
     <div className="px-0 py-6 space-y-8">
 
@@ -74,12 +56,6 @@ export default function DashboardOverview() {
           </h1>
           <p className="text-slate-500 font-medium mt-1">Track your portfolio performance.</p>
         </div>
-        <div className="flex flex-col items-end gap-3">
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-slate-200 bg-white text-xs text-slate-500 font-medium">
-            <Info className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-            Positions below come from your recorded transactions — live value updates once a day
-          </div>
-        </div>
       </div>
 
       {/* BLOCK 1 — YOUR PORTFOLIO TODAY. Answers "what's it all worth?" — the one place
@@ -87,11 +63,15 @@ export default function DashboardOverview() {
           Composition (by asset/category/broker) and the holdings detail table used to live
           here too — both moved to the Performance section's Today page, which now carries
           the same summary (currently-held assets) alongside the rest of today's figures. */}
-      <PortfolioTodayModule snapshots={sortedSnapshots} byCurrency={byCurrency} showInvestedBreakdown={showCurrencyDisclosure} />
+      <PortfolioTodayModule snapshot={snapshot} />
 
       {/* BLOCK 1.5 — TODAY'S NEWS. One story at a time so it doesn't compete for attention
           with Block 1's figures; renders nothing at all when there's no news today. */}
       <NewsCarouselModule />
+
+      {/* BLOCK 1.6 — ARTICLE OF THE DAY. The same global pick for every user, not scoped to
+          this portfolio — renders nothing at all if it fails to load. */}
+      <DailyArticleModule />
 
       {/* BLOCK 2 — YOUR ACTIVITY. Answers "what did I actually do?"
           COSTS used to live here too — commented out for now, not removed: undecided whether
@@ -157,36 +137,31 @@ const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US"
  * holdings themselves are in) and always dated, since a converted figure without a date is
  * meaningless — see the "As of ..." line below.
  */
-function PortfolioTodayModule({
-  snapshots, byCurrency, showInvestedBreakdown,
-}: {
-  snapshots: PortfolioSnapshot[]; byCurrency: CurrencyBreakdown[]; showInvestedBreakdown: boolean;
-}) {
-  if (snapshots.length === 0) return null;
+function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot | null }) {
+  if (!snapshot) return null;
 
-  const latest = snapshots[snapshots.length - 1];
-  const currency = latest.currency;
-  const pnlIsGain = latest.totalUnrealizedPnl >= 0;
+  const currency = snapshot.currency;
+  const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
 
   return (
     <Module>
       <ModuleHead
         eyebrow={currency}
         title="Your portfolio today"
-        desc={`As of ${chartDateLabel(latest.snapshotAt)} — from daily market prices.`}
+        desc={`As of ${chartDateLabel(snapshot.snapshotAt)} — from daily market prices.`}
       />
       <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-        <InvestedStat latest={latest} byCurrency={byCurrency} showBreakdown={showInvestedBreakdown} />
+        <InvestedStat snapshot={snapshot} />
         <Stat
           title="Market Value"
-          value={formatCurrency(latest.totalMarketValue, currency, 0)}
+          value={formatCurrency(snapshot.totalMarketValue, currency, 0)}
           icon={<Coins className="h-4 w-4 text-[#C49A3C]" />}
           description="What your positions are worth today"
           color="gold"
         />
         <Stat
           title="Unrealized P&L"
-          value={`${pnlIsGain ? "+" : ""}${formatCurrency(latest.totalUnrealizedPnl, currency, 0)}`}
+          value={`${pnlIsGain ? "+" : ""}${formatCurrency(snapshot.totalUnrealizedPnl, currency, 0)}`}
           icon={pnlIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
           description="Vs your invested capital"
           color={pnlIsGain ? "emerald" : "red"}
@@ -197,22 +172,12 @@ function PortfolioTodayModule({
 }
 
 /**
- * INVESTED STAT — Total Invested lives here exclusively (removed from the per-currency
- * detail below). It's the only Block 1 figure with a native-currency counterpart to expand
- * into (byCurrency[].totalInvested), so it's the only one that gets the breakdown affordance.
- * A rate is only shown when there's exactly one native currency — with more than one, this
- * app has no way to know how much of the converted total came from each (that split would
- * need the backend to convert per-currency, which it doesn't do for this endpoint), so the
- * native amounts are shown without a fabricated rate rather than guessing.
+ * INVESTED STAT — the per-currency breakdown this used to expand into (byCurrency, from the
+ * old PortfolioOverviewResponse.summary) is gone now that GET /v1/portfolio/ only returns the
+ * latest snapshot — just the converted total.
  */
-function InvestedStat({
-  latest, byCurrency, showBreakdown,
-}: {
-  latest: PortfolioSnapshot; byCurrency: CurrencyBreakdown[]; showBreakdown: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const currency = latest.currency;
-  const impliedRate = byCurrency.length === 1 ? latest.totalInvestedCapital / byCurrency[0].totalInvested : null;
+function InvestedStat({ snapshot }: { snapshot: PortfolioSnapshot }) {
+  const currency = snapshot.currency;
 
   return (
     <div className="p-6 md:p-7 flex flex-col gap-2.5">
@@ -224,31 +189,9 @@ function InvestedStat({
         className="font-black text-slate-900 text-xl md:text-2xl"
         style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
       >
-        {formatCurrency(latest.totalInvestedCapital, currency, 0)}
+        {formatCurrency(snapshot.totalInvestedCapital, currency, 0)}
       </p>
-      {showBreakdown ? (
-        <>
-          <button
-            onClick={() => setOpen(o => !o)}
-            className="flex items-center gap-1 text-[13px] font-medium text-slate-500 hover:text-slate-700 transition-colors -ml-0.5 w-fit"
-          >
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
-            Breakdown by currency
-          </button>
-          {open && (
-            <div className="flex flex-col gap-1 pl-4.5">
-              {byCurrency.map(cb => (
-                <div key={cb.currency} className="flex items-center justify-between gap-3 text-[12px] text-slate-500">
-                  <span>{formatCurrency(cb.totalInvested, cb.currency, 0)}</span>
-                  {impliedRate !== null && <span className="font-mono text-slate-400">rate {impliedRate.toFixed(3)}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <p className="text-[13px] font-medium text-slate-500 leading-relaxed">Capital deployed to date</p>
-      )}
+      <p className="text-[13px] font-medium text-slate-500 leading-relaxed">Capital deployed to date</p>
     </div>
   );
 }
