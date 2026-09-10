@@ -939,7 +939,7 @@ function MonthlyReturnsHeatmap({
 
   return (
     <div className="p-6 md:p-7 overflow-x-auto">
-      <table className="border-collapse min-w-150 w-full">
+      <table className="border-collapse min-w-150 w-full table-fixed">
         <thead>
           <tr>
             <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 pb-3 pr-3 w-16">Year</th>
