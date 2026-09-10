@@ -8,12 +8,14 @@ import {
   Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft,
   Search, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+} from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 import { NewsModule } from "./NewsSection";
 import type {
-  TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot,
+  TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, DailyValueChange,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
 
@@ -337,6 +339,68 @@ function ChartCard({ chart, currency, title, desc }: { chart: PortfolioSnapshot[
   );
 }
 
+/**
+ * DAY CHANGE CHART — /today's chart entries are now day-over-day deltas rather than fresh
+ * absolute-value snapshots (backend no longer duplicates the absolute value inside the chart
+ * now that TodayDashboard's own top-level scalars already cover it), so a bar per day colored
+ * by the sign of that day's move reads better than the area/line SnapshotChart uses for /history,
+ * which still gets real snapshots.
+ */
+function DayChangeChart({ chart, currency }: { chart: DailyValueChange[]; currency: string }) {
+  if (chart.length === 0) {
+    return <p className="text-sm text-slate-400 p-6 md:p-7">Not enough history yet to chart.</p>;
+  }
+
+  const sorted = [...chart].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
+  const data = sorted.map(s => ({ date: s.snapshotAt, deltaValue: s.deltaValue, deltaValuePct: s.deltaValuePct }));
+
+  return (
+    <div className="p-6 md:p-7 h-64">
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+        <BarChart data={data} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tickFormatter={chartDateLabel}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={30}
+          />
+          <YAxis
+            tickFormatter={(v) => formatCurrency(v, currency, 0)}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            width={80}
+          />
+          <Tooltip
+            labelFormatter={(label) => fullDateLabel(label as string)}
+            formatter={(value, name, props) => [
+              `${formatCurrency(Number(value), currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
+              "Day change",
+            ]}
+            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+          />
+          <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
+            {data.map((d) => (
+              <Cell key={d.date} fill={d.deltaValue >= 0 ? "#10b981" : "#f43f5e"} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function DayChangeChartCard({ chart, currency, title, desc }: { chart: DailyValueChange[]; currency: string; title: string; desc: string }) {
+  return (
+    <Module>
+      <ModuleHead eyebrow={currency} title={title} desc={desc} />
+      <DayChangeChart chart={chart} currency={currency} />
+    </Module>
+  );
+}
+
 function ViewReportLink({ documentId }: { documentId: string | null }) {
   if (!documentId) return null;
   return (
@@ -442,11 +506,11 @@ function TodayPage({ data }: { data: TodayDashboard }) {
           color={isMtdGain ? "emerald" : "red"}
         />
       </StatCardGroup>
-      <ChartCard
+      <DayChangeChartCard
         chart={data.chart}
         currency={data.currency}
         title="Month-to-Date Trend"
-        desc="Daily portfolio market value since the start of the month."
+        desc="Daily portfolio value change since the start of the month."
       />
       <CurrencyCarouselModule
         byCurrency={data.summary.byCurrency}

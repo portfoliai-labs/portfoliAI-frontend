@@ -95,9 +95,21 @@ interface PortfolioSnapshot {
   totalDividendIncome: number;
 }
 
+// Matches DailyValueChangeResponse (one entry of TodayDashboardResponse.chart) — a day-over-day
+// delta rather than a fresh absolute-value snapshot (see PortfolioSnapshot, still what /history's
+// chart returns). Absolute-value context for /today lives in TodayDashboard's own top-level
+// scalars (currentValue, monthStartValue, etc.), not duplicated here.
+interface DailyValueChange {
+  snapshotAt: string;
+  value: number;
+  previousValue: number;
+  deltaValue: number;
+  deltaValuePct: number;
+}
+
 // Matches TodayDashboardResponse (GET /v1/portfolio/today) — today vs. yesterday, and
 // today vs. the start of the current month (month-to-date), always in the user's
-// reference currency. `chart` is the month-to-date daily snapshots (one per day,
+// reference currency. `chart` is the month-to-date day-over-day deltas (one per day,
 // oldest→newest not guaranteed — sort before use). The endpoint returns null (not a
 // zeroed-out object) when there's no snapshot history yet to compute this from.
 interface TodayDashboard {
@@ -109,7 +121,7 @@ interface TodayDashboard {
   deltaMtdValue: number;
   deltaMtdValuePct: number;
   currency: string;
-  chart: PortfolioSnapshot[];
+  chart: DailyValueChange[];
   // Currently-held assets and their composition (by asset/asset class/broker) — surfaced here
   // so the Performance section's Today page can show "what do I hold right now" alongside
   // today's figures. GET /v1/portfolio/ itself no longer returns this (see PortfolioSnapshot).
@@ -192,7 +204,7 @@ interface FullHistoryDashboard {
 }
 
 export type {
-  Holding, PortfolioSummary, PortfolioSnapshot,
+  Holding, PortfolioSummary, PortfolioSnapshot, DailyValueChange,
   CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, AssetRealizedTrade,
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, MonthlyMarketEffectEntry,
 };
