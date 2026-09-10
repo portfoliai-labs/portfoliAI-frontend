@@ -84,8 +84,9 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
 
   return (
     <div className="px-0 py-6 space-y-6">
-      {/* MASTHEAD */}
-      <div className="flex flex-wrap items-end justify-between gap-6">
+      {/* MASTHEAD — page switcher sits on the same row as the title, pushed to the right,
+          rather than as its own row below. */}
+      <div className="flex flex-wrap items-center justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
           <h1
@@ -96,24 +97,24 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           </h1>
           <p className="text-slate-500 font-medium mt-1">A closer look at your portfolio, one time horizon at a time.</p>
         </div>
-      </div>
 
-      {/* PAGE SWITCHER — only tabs with data show up here */}
-      {availablePages.length > 0 && (
-        <div className="flex bg-slate-100/80 p-1.5 rounded-xl border border-slate-200 w-full sm:w-fit overflow-x-auto">
-          {availablePages.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setActive(p.id)}
-              className={`flex-1 sm:flex-none flex justify-center items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-                effectiveActive === p.id ? "bg-white shadow-sm text-[#C49A3C]" : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <p.icon className="h-4 w-4" /> {p.label}
-            </button>
-          ))}
-        </div>
-      )}
+        {/* PAGE SWITCHER — only tabs with data show up here */}
+        {availablePages.length > 0 && (
+          <div className="flex bg-slate-100/80 p-1.5 rounded-xl border border-slate-200 w-full sm:w-fit overflow-x-auto">
+            {availablePages.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setActive(p.id)}
+                className={`flex-1 sm:flex-none flex justify-center items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                  effectiveActive === p.id ? "bg-white shadow-sm text-[#C49A3C]" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <p.icon className="h-4 w-4" /> {p.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
