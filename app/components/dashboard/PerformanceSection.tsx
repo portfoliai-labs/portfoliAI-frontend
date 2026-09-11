@@ -468,7 +468,6 @@ function TodayPage({ data }: { data: TodayDashboard }) {
   if (isTodayEmpty(data)) {
     return (
       <div className="space-y-6">
-        <PageHeader eyebrow={data.currency} title="Today" desc="Compared with yesterday and with the start of the month." />
         <EmptyPeriodState message="Add or upload transactions to see today's portfolio value." />
       </div>
     );
@@ -476,7 +475,6 @@ function TodayPage({ data }: { data: TodayDashboard }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={data.currency} title="Today" desc="Compared with yesterday and with the start of the month." />
       <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y divide-slate-100 sm:divide-x xl:divide-y-0">
         <StatContent
           title="Month Start Value"
@@ -1253,12 +1251,6 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={data.currency}
-        title="All Time"
-        desc={`Since inception — ${fullDateLabel(data.inceptionDate)}.`}
-        right={<ViewReportLink documentId={data.reportDocumentId} />}
-      />
       <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
         <StatContent
           title="Invested Capital"
