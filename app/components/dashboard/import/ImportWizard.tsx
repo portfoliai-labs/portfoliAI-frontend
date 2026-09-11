@@ -194,6 +194,22 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
     return buildPreviewRows(parsedFile.rows, mapping, valueMap);
   }, [parsedFile, mapping, valueMap]);
 
+  // One full source row per distinct raw value — every original column, not a guessed subset,
+  // since which column actually reveals buy-vs-sell (a sign, a "Causale" column, a description)
+  // varies by broker and can't be predicted. Lets the user recognize the real transaction
+  // instead of judging a bare code from date/instrument/amount alone, which often looks
+  // identical between a buy and a sell.
+  const valueExamples = useMemo<Record<string, RawRow>>(() => {
+    if (!parsedFile || !valueColumn) return {};
+    const examples: Record<string, RawRow> = {};
+    for (const row of parsedFile.rows) {
+      const raw = (row[valueColumn] ?? "").trim();
+      if (raw in examples) continue;
+      examples[raw] = row;
+    }
+    return examples;
+  }, [parsedFile, valueColumn]);
+
   const anomalyCount = useMemo(() => previewRows.filter((r) => r.anomalies.length > 0).length, [previewRows]);
   const unresolvedValueCount = useMemo(() => valueMapping.filter((r) => r.target === null).length, [valueMapping]);
   const requiredFieldsMissing = useMemo(
@@ -438,7 +454,13 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
               />
             )}
             {tab === "values" && (
-              <ValueMappingBlock columnName={valueColumn ?? mapping.fields.type?.source_column ?? ""} rows={valueMapping} onChange={handleValueChange} />
+              <ValueMappingBlock
+                columnName={valueColumn ?? mapping.fields.type?.source_column ?? ""}
+                headers={parsedFile.headers}
+                rows={valueMapping}
+                examples={valueExamples}
+                onChange={handleValueChange}
+              />
             )}
             {tab === "preview" && <PreviewBlock rows={previewRows} />}
             {tab === "issues" && <AnomaliesBlock headers={parsedFile.headers} rows={previewRows} onGoToValuesTab={() => setTab("values")} />}

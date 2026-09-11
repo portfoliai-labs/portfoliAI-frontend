@@ -25,7 +25,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { FileMappingModal } from "./FileMappingModal";
 import { ImportWizard } from "./import/ImportWizard";
 import { UploadedFileState } from "./uploaderTypes";
-import { TransactionsSection, TransactionRow, DisplayTransaction } from "./TransactionsSection";
+import { TransactionsSection, TransactionRow, DisplayTransaction, BulkOperation } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
 
 const EXISTING_PAGE_SIZE = 10;
@@ -118,6 +118,9 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deletingKeys, setDeletingKeys] = useState<Set<string>>(new Set());
+  const [updatingKeys, setUpdatingKeys] = useState<Set<string>>(new Set());
+  // Rows mid-mutation (deleting or bulk-editing) — dimmed and non-interactive in the table.
+  const busyKeys = useMemo(() => new Set([...deletingKeys, ...updatingKeys]), [deletingKeys, updatingKeys]);
   const [deletingAllExisting, setDeletingAllExisting] = useState(false);
   const [confirmDeleteKeys, setConfirmDeleteKeys] = useState<string[] | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -567,6 +570,65 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     }
   };
 
+  // Reassigns `operation` for every selected row in one go — the manual counterpart to the
+  // AI's per-distinct-value mapping in the import wizard, but usable any time afterwards
+  // (not just during import) on whichever rows it got wrong, regardless of how many there are.
+  const handleBulkEditOperation = async (keys: string[], operation: BulkOperation) => {
+    const manualIds = new Set<string>();
+    const fileGroups = new Map<string, Set<number>>();
+    const existingIds = new Set<string>();
+
+    keys.forEach(key => {
+      const [type, ...rest] = key.split("::");
+      if (type === "manual") {
+        manualIds.add(rest[0]);
+      } else if (type === "file") {
+        const [fileId, idxStr] = rest;
+        if (!fileGroups.has(fileId)) fileGroups.set(fileId, new Set());
+        fileGroups.get(fileId)!.add(Number(idxStr));
+      } else if (type === "existing") {
+        existingIds.add(rest[0]);
+      }
+    });
+
+    if (manualIds.size > 0) {
+      setManualTransactions(prev => prev.map(t => manualIds.has(t.id) ? { ...t, operation } : t));
+    }
+
+    // File-sourced rows are regenerated from raw data + column mapping on every render and
+    // can't hold a one-off edit — same as a single-row edit, detach the edited ones into
+    // standalone manual transactions instead of mutating the file in place.
+    fileGroups.forEach((idxSet, fileId) => {
+      const file = files.find(f => f.id === fileId);
+      if (!file) return;
+      const edited = file.previewData.filter((_, i) => idxSet.has(i)).map(tx => ({ ...tx, operation }));
+      updateFileRawData(fileId, file.rawData.filter((_, i) => !idxSet.has(i)));
+      setManualTransactions(prev => [...prev, ...edited]);
+    });
+
+    if (existingIds.size > 0) {
+      const existingKeys = Array.from(existingIds).map(id => `existing::${id}`);
+      setUpdatingKeys(prev => new Set([...prev, ...existingKeys]));
+      try {
+        const toEdit = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
+        await Promise.all(
+          toEdit.map(tx => transactionService.updateTransaction(tx.transaction_uuid, toTransactionInput({ ...existingToDisplay(tx), operation }))),
+        );
+        await refreshExisting(existingPage);
+      } catch (error: unknown) {
+        setStatus("error");
+        setErrorMessage(error instanceof Error ? error.message : "Failed to update some transactions.");
+        setShowToast(true);
+      } finally {
+        setUpdatingKeys(prev => {
+          const next = new Set(prev);
+          existingKeys.forEach(k => next.delete(k));
+          return next;
+        });
+      }
+    }
+  };
+
   const handleConfirmUpload = async () => {
     if (!canSubmit) return;
     try {
@@ -795,8 +857,9 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
           onToggleRow={toggleRowSelection}
           onToggleAll={toggleSelectAllForKeys}
           onDeleteSelected={confirmAndDeleteKeys}
+          onBulkEditOperation={handleBulkEditOperation}
           onRowClick={setEditingKey}
-          deletingKeys={deletingKeys}
+          deletingKeys={busyKeys}
           emptyMessage="No new transactions."
           headerAction={
             <button

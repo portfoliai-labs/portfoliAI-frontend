@@ -27,6 +27,10 @@ export interface TransactionRow {
   errorFields: Set<string>;
 }
 
+// The three operations a user can bulk-reassign selected rows to — "other" is deliberately
+// excluded, same as TransactionModal's own edit form: it's not a value a user picks by hand.
+export type BulkOperation = "buy" | "sell" | "dividend";
+
 interface TransactionsSectionProps {
   title: string;
   rows: TransactionRow[]; // current page only
@@ -39,6 +43,10 @@ interface TransactionsSectionProps {
   onToggleRow: (key: string) => void;
   onToggleAll: (keysOnPage: string[]) => void;
   onDeleteSelected: (keys: string[]) => void;
+  // Reassigns the operation (buy/sell/dividend) for every selected row at once — the manual
+  // equivalent of what the AI's value-mapping step does per distinct raw value, but usable
+  // any time afterwards on rows it got wrong, not just during import. Omit to hide the control.
+  onBulkEditOperation?: (keys: string[], operation: BulkOperation) => void;
   onRowClick: (key: string) => void;
   deletingKeys: Set<string>;
   emptyMessage: string;
@@ -72,7 +80,7 @@ function rowIdentifier(tx: DisplayTransaction): string {
 
 export function TransactionsSection({
   title, rows, totalCount, page, pageSize, onPageChange, loading,
-  selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onRowClick, deletingKeys,
+  selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onBulkEditOperation, onRowClick, deletingKeys,
   emptyMessage, headerAction, filterBar, onDeleteAll, deletingAll,
 }: TransactionsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -115,13 +123,31 @@ export function TransactionsSection({
             <span className="text-xs font-semibold text-slate-500">Select all on this page</span>
           </label>
           {selectedOnPage.length > 0 && (
-            <button
-              onClick={() => onDeleteSelected(selectedOnPage)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 text-xs font-bold transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete selected ({selectedOnPage.length})
-            </button>
+            <div className="flex items-center gap-2">
+              {onBulkEditOperation && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const operation = e.target.value as BulkOperation;
+                    if (operation) onBulkEditOperation(selectedOnPage, operation);
+                    e.target.value = "";
+                  }}
+                  className="text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl px-3 py-2 outline-none cursor-pointer transition-all focus:ring-4 focus:ring-slate-50"
+                >
+                  <option value="" disabled>Set operation ({selectedOnPage.length})…</option>
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                  <option value="dividend">Dividend</option>
+                </select>
+              )}
+              <button
+                onClick={() => onDeleteSelected(selectedOnPage)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 text-xs font-bold transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete selected ({selectedOnPage.length})
+              </button>
+            </div>
           )}
         </div>
       )}
