@@ -28,7 +28,7 @@ const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
 /**
- * ALERTS SETTINGS — the Settings tab for managing alert rules: list them (with their state, a
+ * ALERTS SETTINGS — the Profile tab for managing alert rules: list them (with their state, a
  * switch to turn each on or off, edit, delete) and create new ones. The Dashboard shows the same
  * rules as dials; this is where they're configured. A user can have at most ALERT_RULE_LIMIT.
  */

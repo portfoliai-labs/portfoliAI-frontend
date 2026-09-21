@@ -26,12 +26,12 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Alerts live in Settings; this section only shows them, so "Manage alerts" (and the empty
-  // state's button) open Settings on its Alerts tab — via the URL hash, which SettingsSection
+  // Alerts are managed in Profile; this section only shows them, so "Manage alerts" (and the empty
+  // state's button) open Profile on its Alerts tab — via the URL hash, which ProfileSection
   // reads when it mounts.
   const openAlertSettings = () => {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#alerts`);
-    onNavigate?.("settings");
+    onNavigate?.("profile");
   };
 
   useEffect(() => {

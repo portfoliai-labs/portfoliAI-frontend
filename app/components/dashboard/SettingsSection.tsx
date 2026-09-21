@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
+import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
 import { userService } from "../../services/userService";
 import { ipsService } from "../../services/ipsService";
 import type { SubscriptionResponse, UserMetrics, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
-import { AlertsSettings } from "./AlertsSettings";
 import { Toggle } from "./Toggle";
 import { useUser } from "../../context/UserContext";
 
@@ -57,7 +56,6 @@ function ReadOnlyField({ label, value, className = "" }: { label: string; value:
 const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
   { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "alerts", label: "Alerts", icon: BellRing },
   { id: "account", label: "Account", icon: UserIcon },
 ] as const;
 
@@ -65,10 +63,7 @@ type TabId = (typeof TABS)[number]["id"];
 
 export function SettingsSection() {
   const { user, logout } = useUser();
-  // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
-  const [activeTab, setActiveTab] = useState<TabId>(() =>
-    typeof window !== "undefined" && window.location.hash === "#alerts" ? "alerts" : "subscription",
-  );
+  const [activeTab, setActiveTab] = useState<TabId>("subscription");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
@@ -93,14 +88,6 @@ export function SettingsSection() {
       .then(setPreferences)
       .catch((error) => console.error("Failed to load notification preferences:", error))
       .finally(() => setPreferencesLoading(false));
-  }, []);
-
-  // The hash only carries the request to open a tab; clear it so opening Settings later, from the
-  // sidebar, doesn't jump to Alerts again.
-  useEffect(() => {
-    if (window.location.hash === "#alerts") {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    }
   }, []);
 
   useEffect(() => {
@@ -163,7 +150,7 @@ export function SettingsSection() {
           Settings
         </h2>
         <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
-          Manage your subscription, notification preferences and alerts
+          Manage your subscription, notification preferences and account
         </p>
       </div>
 
@@ -328,8 +315,6 @@ export function SettingsSection() {
           )}
         </div>
       )}
-
-      {activeTab === "alerts" && <AlertsSettings />}
 
       {activeTab === "account" && (
         <div className="space-y-8">
