@@ -183,14 +183,20 @@ function Module({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ModuleHead({ eyebrow, title, desc, right }: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode }) {
+function ModuleHead({
+  eyebrow, title, desc, right, icon,
+}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; icon?: React.ReactNode }) {
+  const heading = (
+    <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+      {title}
+    </h2>
+  );
+
   return (
     <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-        <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          {title}
-        </h2>
+        {icon ? <div className="flex items-center gap-2.5">{icon}{heading}</div> : heading}
         {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
       </div>
       {right}
@@ -1998,12 +2004,29 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
 function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
   const { data, loading, failed } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, forUserUuid);
 
+  const showFigure = data !== null && data.status !== "insufficient_history";
+
   return (
     <Module>
       <ModuleHead
         eyebrow="Risk"
         title="Volatility"
-        desc={data?.rollingWindowDays ? `Annualized, over a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."}
+        icon={
+          <InfoTip text="How widely your portfolio's daily returns swing, scaled to a year (the standard deviation of daily returns, annualized). A higher figure means bigger ups and downs along the way.">
+            <div className="w-8 h-8 rounded-xl border flex items-center justify-center cursor-help bg-[#C49A3C]/10 text-[#C49A3C] border-[#C49A3C]/20">
+              <Activity className="h-4 w-4" />
+            </div>
+          </InfoTip>
+        }
+        desc={data?.rollingWindowDays ? `The chart uses a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."}
+        right={showFigure ? (
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Annualized volatility</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {data.annualizedVolatilityPct === null ? "—" : `${data.annualizedVolatilityPct.toFixed(2)}%`}
+            </p>
+          </div>
+        ) : undefined}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -2017,17 +2040,7 @@ function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
           {data.status === "insufficient_history" ? (
             <ModuleMessage>Volatility needs at least a year of history — it will appear once your portfolio has one.</ModuleMessage>
           ) : (
-            <>
-              <StatContent
-                title="Annualized Volatility"
-                value={data.annualizedVolatilityPct === null ? "—" : `${data.annualizedVolatilityPct.toFixed(2)}%`}
-                icon={<Activity className="h-4 w-4 text-[#C49A3C]" />}
-                description="Standard deviation of daily returns, annualized"
-                color="gold"
-                info="How widely your portfolio's daily returns swing, scaled to a year. A higher figure means bigger ups and downs along the way."
-              />
-              {data.rollingVolatilityPct && <RollingVolatilityChart series={data.rollingVolatilityPct} />}
-            </>
+            data.rollingVolatilityPct && <RollingVolatilityChart series={data.rollingVolatilityPct} />
           )}
         </>
       )}
