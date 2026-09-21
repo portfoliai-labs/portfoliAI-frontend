@@ -9,17 +9,30 @@ import {
   TrendingDown,
   Info,
   AlertCircle,
+  Loader2,
+  BellRing,
 } from "lucide-react";
 import { portfolioService } from "../../services/portfolioService";
 import type { PortfolioSnapshot } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { NewsCarouselModule, DailyArticleModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
+import { AlertGaugeCard } from "./AlertGauge";
+import { useAlertRules } from "../../hooks/useAlertRules";
+import { alertState, type AlertState } from "../../lib/alerts";
 
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Alerts live in Settings; this section only shows them, so "Manage alerts" (and the empty
+  // state's button) open Settings on its Alerts tab — via the URL hash, which SettingsSection
+  // reads when it mounts.
+  const openAlertSettings = () => {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#alerts`);
+    onNavigate?.("settings");
+  };
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -83,7 +96,14 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
           onNavigate={onNavigate}
         />
       ) : (
-        <PortfolioTodayModule snapshot={snapshot} />
+        <>
+          <PortfolioTodayModule snapshot={snapshot} />
+
+          {/* BLOCK 1.2 — ALERTS. Each alert as a fuel-gauge style dial showing how close it is
+              to its limit. Shown only alongside real portfolio data, since an alert with no
+              portfolio to watch has nothing to measure. */}
+          <AlertsModule onManage={openAlertSettings} />
+        </>
       )}
 
       {/* BLOCK 1.5 — TODAY'S NEWS. One story at a time so it doesn't compete for attention
@@ -186,6 +206,70 @@ function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot }) {
           color={pnlIsGain ? "emerald" : "red"}
         />
       </div>
+    </Module>
+  );
+}
+
+// Most urgent first: a triggered alert leads, a switched-off one comes last. Rules of the same
+// state keep the backend's order (oldest first).
+const ALERT_ORDER: Record<AlertState["kind"], number> = {
+  triggered: 0, reached: 1, approaching: 2, ok: 3, pending: 4, unavailable: 5, off: 6,
+};
+
+/**
+ * ALERTS MODULE — Block 1.2. The user's alert rules as dials, refreshed every minute (the
+ * backend re-checks every rule about every 5 minutes, so a reading changes while the page is
+ * open). With no rules it invites the user to create one instead of rendering an empty card.
+ */
+function AlertsModule({ onManage }: { onManage: () => void }) {
+  const { rules, loading, error } = useAlertRules(60_000);
+
+  const sorted = rules === null
+    ? []
+    : [...rules].sort((a, b) => ALERT_ORDER[alertState(a).kind] - ALERT_ORDER[alertState(b).kind]);
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Alerts"
+        title="Your alerts"
+        desc="How close each alert is to its limit. Checked about every 5 minutes."
+        right={
+          <button
+            onClick={onManage}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
+          >
+            Manage alerts
+          </button>
+        }
+      />
+      {loading ? (
+        <div className="flex h-40 items-center justify-center">
+          <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
+        </div>
+      ) : error ? (
+        <p className="text-sm text-slate-500 p-6 md:p-7">Unable to load your alerts right now.</p>
+      ) : sorted.length === 0 ? (
+        <div className="flex flex-col items-center text-center gap-3 px-6 py-10">
+          <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
+            <BellRing className="h-5 w-5 text-slate-300" />
+          </div>
+          <p className="text-sm text-slate-500 max-w-sm">
+            You haven&apos;t set up any alerts. Get notified when your portfolio moves by a set amount, or when a
+            single holding grows past a share you choose.
+          </p>
+          <button
+            onClick={onManage}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors"
+          >
+            Create an alert
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-6 md:p-7">
+          {sorted.map((rule) => <AlertGaugeCard key={rule.ruleId} rule={rule} />)}
+        </div>
+      )}
     </Module>
   );
 }

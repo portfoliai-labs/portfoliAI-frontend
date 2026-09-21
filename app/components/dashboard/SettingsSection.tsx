@@ -2,33 +2,17 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
+import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
 import { userService } from "../../services/userService";
 import type { SubscriptionResponse, UserMetrics, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
+import { AlertsSettings } from "./AlertsSettings";
+import { Toggle } from "./Toggle";
 import { useUser } from "../../context/UserContext";
 
 // Tally form used for tester applications: https://tally.so/r/QKWeYg
 const TESTER_APPLICATION_FORM_ID = "QKWeYg";
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${checked ? "bg-[#C49A3C]" : "bg-[#E0DACC]"}`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-5" : "translate-x-0"
-        }`}
-      />
-    </button>
-  );
-}
 
 function PreferenceRow({
   title,
@@ -72,6 +56,7 @@ function ReadOnlyField({ label, value, className = "" }: { label: string; value:
 const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
   { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "alerts", label: "Alerts", icon: BellRing },
   { id: "account", label: "Account", icon: UserIcon },
 ] as const;
 
@@ -79,7 +64,10 @@ type TabId = (typeof TABS)[number]["id"];
 
 export function SettingsSection() {
   const { user, logout } = useUser();
-  const [activeTab, setActiveTab] = useState<TabId>("subscription");
+  // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    typeof window !== "undefined" && window.location.hash === "#alerts" ? "alerts" : "subscription",
+  );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
@@ -104,6 +92,14 @@ export function SettingsSection() {
       .then(setPreferences)
       .catch((error) => console.error("Failed to load notification preferences:", error))
       .finally(() => setPreferencesLoading(false));
+  }, []);
+
+  // The hash only carries the request to open a tab; clear it so opening Settings later, from the
+  // sidebar, doesn't jump to Alerts again.
+  useEffect(() => {
+    if (window.location.hash === "#alerts") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
   }, []);
 
   useEffect(() => {
@@ -165,13 +161,13 @@ export function SettingsSection() {
           Settings
         </h2>
         <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
-          Manage your subscription and notification preferences
+          Manage your subscription, notification preferences and alerts
         </p>
       </div>
 
-      {/* Tab bar — a full-width 3-column grid on mobile (so the selector never
+      {/* Tab bar — a full-width 2-column grid on mobile (so the selector never
           scrolls sideways), the original inline pill row from sm and up. */}
-      <div className="grid grid-cols-3 sm:inline-flex gap-1 p-1 bg-white rounded-2xl sm:rounded-full border border-[rgba(196,154,60,0.2)]">
+      <div className="grid grid-cols-2 sm:inline-flex gap-1 p-1 bg-white rounded-2xl sm:rounded-full border border-[rgba(196,154,60,0.2)]">
         {TABS.map((tab) => {
           const active = tab.id === activeTab;
           return (
@@ -330,6 +326,8 @@ export function SettingsSection() {
           )}
         </div>
       )}
+
+      {activeTab === "alerts" && <AlertsSettings />}
 
       {activeTab === "account" && (
         <div className="space-y-8">

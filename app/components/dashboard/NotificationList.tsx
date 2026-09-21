@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, XCircle, Loader2, Clock, Bell } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Clock, Bell, BellRing } from "lucide-react";
 import type { NotificationResponse } from "../../services/notificationService";
+import { formatAlertPct, WINDOW_LABEL } from "../../lib/alerts";
+import type { AlertWindow } from "../../models/Alert";
 
 interface NotificationListProps {
   notifications: NotificationResponse[];
@@ -68,6 +70,38 @@ function getReportName(n: NotificationResponse): string | undefined {
   return n.payload?.report_name as string | undefined;
 }
 
+// An alert firing (type ALERT_TRIGGERED). Its payload is snake_case with numbers already in %:
+// rule_type, threshold_pct, and either asset_id / asset_name / ticker / weight_pct (asset_weight)
+// or direction / window / change_pct (portfolio_change).
+const ALERT_CONFIG = {
+  label: "Alert",
+  icon: <BellRing className="w-5 h-5 text-amber-500 shrink-0" />,
+  pill: "bg-amber-50 text-amber-700 border-amber-200",
+};
+
+function getAlertSummary(n: NotificationResponse): { title: string; detail: string } {
+  const p = n.payload ?? {};
+  const threshold = typeof p.threshold_pct === "number" ? formatAlertPct(p.threshold_pct) : null;
+
+  if (p.rule_type === "asset_weight") {
+    const asset = (p.ticker as string | null) ?? (p.asset_name as string | null) ?? "An asset";
+    return {
+      title: threshold ? `${asset} above ${threshold} of your portfolio` : `${asset} passed its weight limit`,
+      detail: typeof p.weight_pct === "number" ? `Now ${formatAlertPct(p.weight_pct)} of your portfolio` : "",
+    };
+  }
+
+  const direction = p.direction === "up" ? "up" : "down";
+  const window = WINDOW_LABEL[p.window as AlertWindow];
+  return {
+    title: threshold ? `Portfolio ${direction} ${threshold}` : "Portfolio alert",
+    detail:
+      typeof p.change_pct === "number"
+        ? `${formatAlertPct(p.change_pct, true)}${window ? ` over ${window}` : ""}`
+        : "",
+  };
+}
+
 function formatDate(iso: string): string {
   const date = new Date(iso);
   const diffMs = Date.now() - date.getTime();
@@ -105,7 +139,9 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
   return (
     <ul className="divide-y divide-[rgba(196,154,60,0.1)]">
       {notifications.map((n) => {
-        const cfg = getJobStatus(n);
+        const isAlert = n.type === "ALERT_TRIGGERED";
+        const cfg = isAlert ? ALERT_CONFIG : getJobStatus(n);
+        const alertSummary = isAlert ? getAlertSummary(n) : null;
         const jobId = getJobId(n);
         const documentId = getDocumentId(n);
         const errorMessage = getErrorMessage(n);
@@ -126,12 +162,15 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
                   {isUnread && (
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C49A3C] shrink-0" />
                   )}
-                  {reportName || "Report job"}
+                  {alertSummary ? alertSummary.title : reportName || "Report job"}
                 </span>
                 <span className="text-[10px] text-[#a8a29e] shrink-0">
                   {formatDate(n.created_at)}
                 </span>
               </div>
+              {alertSummary?.detail && (
+                <p className="text-[11px] text-[#78716c] mb-2">{alertSummary.detail}</p>
+              )}
               {jobId && !documentId && !reportName && (
                 <p className="text-[11px] text-[#78716c] truncate mb-2">
                   ID: {jobId}
