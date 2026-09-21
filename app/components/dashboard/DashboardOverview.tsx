@@ -8,24 +8,29 @@ import {
   TrendingUp,
   TrendingDown,
   Info,
+  AlertCircle,
 } from "lucide-react";
 import { portfolioService } from "../../services/portfolioService";
 import type { PortfolioSnapshot } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { NewsCarouselModule, DailyArticleModule } from "./NewsSection";
+import { NoDataEmptyState } from "./NoDataEmptyState";
 
-export default function DashboardOverview() {
+export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+        setError(null);
         const data = await portfolioService.getPortfolioOverview();
         setSnapshot(data);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
+      } catch (err) {
+        console.error("Failed to fetch dashboard data:", err);
+        setError(err instanceof Error ? err.message : "Failed to load portfolio data");
       } finally {
         setLoading(false);
       }
@@ -62,8 +67,24 @@ export default function DashboardOverview() {
           currencies are summed together, because that's the only way to answer that question.
           Composition (by asset/category/broker) and the holdings detail table used to live
           here too — both moved to the Performance section's Today page, which now carries
-          the same summary (currently-held assets) alongside the rest of today's figures. */}
-      <PortfolioTodayModule snapshot={snapshot} />
+          the same summary (currently-held assets) alongside the rest of today's figures.
+          With no snapshot at all (a new account with no transactions) it's replaced by the
+          same "no data yet" window Insights shows; a failed request gets an error banner
+          instead, since "no data" would be the wrong thing to tell the user then. */}
+      {error ? (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <p className="text-sm font-bold">{error}</p>
+        </div>
+      ) : snapshot === null ? (
+        <NoDataEmptyState
+          title="No portfolio data yet"
+          message="Add or upload your transactions and this is where you'll see what your portfolio is worth today."
+          onNavigate={onNavigate}
+        />
+      ) : (
+        <PortfolioTodayModule snapshot={snapshot} />
+      )}
 
       {/* BLOCK 1.5 — TODAY'S NEWS. One story at a time so it doesn't compete for attention
           with Block 1's figures; renders nothing at all when there's no news today. */}
@@ -137,9 +158,7 @@ const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US"
  * holdings themselves are in) and always dated, since a converted figure without a date is
  * meaningless — see the "As of ..." line below.
  */
-function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot | null }) {
-  if (!snapshot) return null;
-
+function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot }) {
   const currency = snapshot.currency;
   const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
 

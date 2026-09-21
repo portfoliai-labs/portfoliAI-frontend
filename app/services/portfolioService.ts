@@ -1,5 +1,9 @@
 // services/portfolioService.ts
 import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDashboard } from "../models/Portfolio";
+import type {
+  HoldingsResponse, ExposureResponse, PerformanceResponse, VolatilityResponse, CategoriesResponse,
+  DividendsResponse, TradingCostsResponse, BenchmarkResponse, RiskModelResponse,
+} from "../models/PortfolioData";
 import { apiFetch } from "./apiClient";
 
 const forUserUuidQuery = (forUserUuid?: string | null) =>
@@ -51,5 +55,69 @@ export const portfolioService = {
   // null when there's no portfolio history at all (no transactions ever recorded).
   async getFullHistoryDashboard(forUserUuid?: string | null): Promise<FullHistoryDashboard | null> {
     return apiFetch<FullHistoryDashboard | null>(`/v1/portfolio/history${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // The analytics endpoints below all answer 200 with either the document or null (nothing
+  // computed for this user yet — "being prepared", not an error). Where a document has
+  // `status` / `isStale`, see models/PortfolioData.ts for how each state should be shown.
+
+  // GET /v1/portfolio/holdings — currently-held positions as of the last snapshot tick
+  // (refreshed about every 5 minutes), largest first. No status / isStale.
+  async getHoldings(forUserUuid?: string | null): Promise<HoldingsResponse | null> {
+    return apiFetch<HoldingsResponse | null>(`/v1/portfolio/holdings${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/exposure/sector — sector breakdown of the held positions (look-through
+  // into funds), as of the last snapshot tick. No status / isStale.
+  async getSectorExposure(forUserUuid?: string | null): Promise<ExposureResponse | null> {
+    return apiFetch<ExposureResponse | null>(`/v1/portfolio/exposure/sector${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/exposure/region — same as getSectorExposure, grouped by geography.
+  async getRegionExposure(forUserUuid?: string | null): Promise<ExposureResponse | null> {
+    return apiFetch<ExposureResponse | null>(`/v1/portfolio/exposure/region${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/performance — returns, drawdown, and horizon / monthly / annual
+  // breakdowns over the whole history, rebuilt daily at 04:00 UTC and after transaction edits.
+  // Long histories make this a few hundred KB — downsample the series before charting.
+  async getPerformance(forUserUuid?: string | null): Promise<PerformanceResponse | null> {
+    return apiFetch<PerformanceResponse | null>(`/v1/portfolio/performance${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/volatility — annualized and rolling volatility, plus stress episodes.
+  async getVolatility(forUserUuid?: string | null): Promise<VolatilityResponse | null> {
+    return apiFetch<VolatilityResponse | null>(`/v1/portfolio/volatility${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/categories — per-asset-class allocation and, past a year of history,
+  // each class's own performance.
+  async getCategories(forUserUuid?: string | null): Promise<CategoriesResponse | null> {
+    return apiFetch<CategoriesResponse | null>(`/v1/portfolio/categories${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/dividends — trailing-12-month and lifetime income, yields, per-asset rows.
+  async getDividends(forUserUuid?: string | null): Promise<DividendsResponse | null> {
+    return apiFetch<DividendsResponse | null>(`/v1/portfolio/dividends${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/trading-costs — explicit fees plus implicit spread cost, by platform
+  // and by asset, and the cumulative cost over time.
+  async getTradingCosts(forUserUuid?: string | null): Promise<TradingCostsResponse | null> {
+    return apiFetch<TradingCostsResponse | null>(`/v1/portfolio/trading-costs${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/benchmark — portfolio vs. a synthetic benchmark of proxy ETFs fed the
+  // same cash flows: paired return / volatility / drawdown, beta, alpha, tracking error, and
+  // the two cumulative-return curves (in %, base 0).
+  async getBenchmark(forUserUuid?: string | null): Promise<BenchmarkResponse | null> {
+    return apiFetch<BenchmarkResponse | null>(`/v1/portfolio/benchmark${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/risk-model — mean-variance model over the held assets: max-Sharpe /
+  // min-volatility allocations, efficient frontier, correlation matrix. Expected returns are
+  // trailing historical means, not forecasts.
+  async getRiskModel(forUserUuid?: string | null): Promise<RiskModelResponse | null> {
+    return apiFetch<RiskModelResponse | null>(`/v1/portfolio/risk-model${forUserUuidQuery(forUserUuid)}`);
   },
 };

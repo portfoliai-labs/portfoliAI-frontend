@@ -148,7 +148,10 @@ function NewsGridBody({ items }: { items: NewsItem[] }) {
  * (TodayPage, MonthDetail) don't need to thread news state through their own data loading.
  */
 export function NewsModule({ year, month, title, desc }: { year?: number; month?: number; title: string; desc: string }) {
-  const { items, loading, error } = useNews(year, month, INSIGHTS_NEWS_LIMIT);
+  const { items, loading, error, notFound } = useNews(year, month, INSIGHTS_NEWS_LIMIT);
+
+  // No articles found for the period: hide just this section rather than showing an error.
+  if (notFound) return null;
 
   return (
     <Module>
@@ -240,7 +243,7 @@ function FeaturedNewsCard({ item }: { item: NewsItem }) {
  * the interval is recreated whenever `index` changes.
  */
 export function NewsCarouselModule() {
-  const { items, loading, error } = useNews(undefined, undefined, DASHBOARD_NEWS_LIMIT);
+  const { items, loading, error, notFound } = useNews(undefined, undefined, DASHBOARD_NEWS_LIMIT);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   // Clamped rather than reset via an effect: a shorter `items` array (e.g. a refetch) could
@@ -266,7 +269,7 @@ export function NewsCarouselModule() {
     );
   }
 
-  if (error || items.length === 0) return null;
+  if (notFound || error || items.length === 0) return null;
 
   const active = items[activeIndex];
 
@@ -369,7 +372,7 @@ function DailyArticleCard({ article }: { article: DailyArticle }) {
  * NewsCarouselModule for a non-critical, supplementary module.
  */
 export function DailyArticleModule() {
-  const { article, loading, error } = useDailyArticle();
+  const { article, loading, error, notFound } = useDailyArticle();
 
   if (loading) {
     return (
@@ -381,7 +384,7 @@ export function DailyArticleModule() {
     );
   }
 
-  if (error || !article) return null;
+  if (notFound || error || !article) return null;
 
   return (
     <Module>

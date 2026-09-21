@@ -5,19 +5,24 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Sun, History,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
-  Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft,
+  Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale,
   Search, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
+import { toChartPoints } from "../../lib/series";
 import { NewsModule } from "./NewsSection";
+import { NoDataEmptyState } from "./NoDataEmptyState";
 import type {
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, DailyValueChange,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
+import type {
+  ExposureEntryResponse, RiskModelResponse, BenchmarkResponse, VolatilityResponse, TimeSeries,
+} from "../../models/PortfolioData";
 
 type PageId = "today" | "history";
 
@@ -128,44 +133,18 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
         </div>
       ) : availablePages.length === 0 ? (
-        <NoHistoryEmptyState onNavigate={onNavigate} />
+        <NoDataEmptyState
+          title="No performance data yet"
+          message="Add or upload your transactions and this is where you'll track how your portfolio moves over time."
+          onNavigate={onNavigate}
+        />
       ) : (
         <>
-          {effectiveActive === "today" && today && <TodayPage data={today} />}
+          {effectiveActive === "today" && today && <TodayPage key={forUserUuid ?? "self"} data={today} forUserUuid={forUserUuid} />}
           {effectiveActive === "history" && history && (
             <HistoryPage key={forUserUuid ?? "self"} data={history} forUserUuid={forUserUuid} />
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-/**
- * NO HISTORY EMPTY STATE — shown instead of the switcher and any page when every endpoint
- * came back null, i.e. there's no portfolio history at all yet (typically a brand new
- * account with no transactions recorded). One unified message reads far better here than
- * two tabs that would each individually be hidden, leaving nothing on screen at all.
- */
-function NoHistoryEmptyState({ onNavigate }: { onNavigate?: (section: string) => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 px-6 text-center bg-white border border-slate-200 border-dashed rounded-4xl">
-      <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-4">
-        <TrendingUp className="h-6 w-6 text-slate-300" />
-      </div>
-      <h3 className="text-lg font-bold text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-        No performance data yet
-      </h3>
-      <p className="text-slate-500 text-sm mt-1.5 max-w-sm">
-        Add or upload your transactions and this is where you&apos;ll track how your portfolio moves over time.
-      </p>
-      {onNavigate && (
-        <button
-          onClick={() => onNavigate("upload")}
-          className="mt-5 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
-        >
-          Add transactions
-        </button>
       )}
     </div>
   );
@@ -435,6 +414,26 @@ function EmptyPeriodState({ message }: { message: string }) {
   );
 }
 
+/**
+ * UPDATING NOTE — shown when an analytics document has `isStale: true`, i.e. the user edited
+ * transactions after it was computed and a rebuild is already queued. The numbers next to it
+ * are the previous ones and still render as usual, so this is a soft heads-up, not a loading
+ * state that blocks the module.
+ */
+function UpdatingNote() {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700">
+      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+      <p className="text-xs font-bold">Updating after a recent change — the figures below may be slightly out of date.</p>
+    </div>
+  );
+}
+
+/** Placeholder line for a module whose analytics can't be drawn (yet). */
+function ModuleMessage({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-slate-400 p-6 md:p-7">{children}</p>;
+}
+
 const isTodayEmpty = (data: TodayDashboard) =>
   data.currentValue === 0 && data.previousDayValue === 0 && data.deltaDayValue === 0 &&
   data.monthStartValue === 0 && data.deltaMtdValue === 0 && data.chart.length === 0;
@@ -457,13 +456,77 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.lifetimeDividends === 0 && data.chart.length === 0;
 
+type TodaySubTabId = "overview" | "composition";
+
+const TODAY_SUB_TABS: { id: TodaySubTabId; label: string; icon: typeof Sun }[] = [
+  { id: "overview", label: "Overview", icon: Sun },
+  { id: "composition", label: "Composition", icon: LayoutGrid },
+];
+
+function TodaySubTabSwitcher({ active, onChange }: { active: TodaySubTabId; onChange: (id: TodaySubTabId) => void }) {
+  return (
+    <div className="flex bg-slate-100/80 p-1 rounded-lg border border-slate-200 w-fit">
+      {TODAY_SUB_TABS.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
+            active === t.id ? "bg-white shadow-sm text-[#C49A3C]" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <t.icon className="h-3.5 w-3.5" /> {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Each is null while the backend hasn't computed it for this user yet.
+interface TodayComposition {
+  sector: ExposureEntryResponse[] | null;
+  region: ExposureEntryResponse[] | null;
+  riskModel: RiskModelResponse | null;
+}
+
 /**
- * TODAY PAGE — current value against two references (yesterday, and the start of the
- * current month), plus the month-to-date daily snapshots that back those deltas.
+ * TODAY PAGE — split into two sub-tabs: Overview (current value against two references —
+ * yesterday, and the start of the current month — plus the month-to-date daily snapshots
+ * that back those deltas, and today's news) and Composition (what's actually held right
+ * now, by currency/asset/broker from TodayDashboard.summary, plus sector/region exposure
+ * and the holdings correlation matrix — the latter three fetched lazily on first visit to
+ * this sub-tab, since /today itself doesn't carry them).
  */
-function TodayPage({ data }: { data: TodayDashboard }) {
+function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: string | null }) {
   const isDayGain = data.deltaDayValue >= 0;
   const isMtdGain = data.deltaMtdValue >= 0;
+  const [subTab, setSubTab] = useState<TodaySubTabId>("overview");
+  const [composition, setComposition] = useState<TodayComposition | null>(null);
+  const [compositionLoading, setCompositionLoading] = useState(false);
+  const [compositionError, setCompositionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (subTab !== "composition" || composition !== null) return;
+    let cancelled = false;
+    const loadComposition = async () => {
+      setCompositionLoading(true);
+      setCompositionError(null);
+      try {
+        const [sector, region, riskModel] = await Promise.all([
+          portfolioService.getSectorExposure(forUserUuid),
+          portfolioService.getRegionExposure(forUserUuid),
+          portfolioService.getRiskModel(forUserUuid),
+        ]);
+        if (cancelled) return;
+        setComposition({ sector: sector?.entries ?? null, region: region?.entries ?? null, riskModel });
+      } catch (err) {
+        if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
+      } finally {
+        if (!cancelled) setCompositionLoading(false);
+      }
+    };
+    loadComposition();
+    return () => { cancelled = true; };
+  }, [subTab, composition, forUserUuid]);
 
   if (isTodayEmpty(data)) {
     return (
@@ -475,51 +538,71 @@ function TodayPage({ data }: { data: TodayDashboard }) {
 
   return (
     <div className="space-y-6">
-      <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y divide-slate-100 sm:divide-x xl:divide-y-0">
-        <StatContent
-          title="Month Start Value"
-          value={formatCurrency(data.monthStartValue, data.currency, 0)}
-          icon={<Wallet className="h-4 w-4 text-slate-500" />}
-          description="Market value on the 1st of this month"
-          color="slate"
-        />
-        <StatContent
-          title="Current Value"
-          value={formatCurrency(data.currentValue, data.currency, 0)}
-          icon={<Wallet className="h-4 w-4 text-[#C49A3C]" />}
-          description="Market value as of today"
-          color="gold"
-        />
-        <StatContent
-          title="Day Change"
-          value={`${isDayGain ? "+" : ""}${formatCurrency(data.deltaDayValue, data.currency, 0)} (${isDayGain ? "+" : ""}${data.deltaDayValuePct.toFixed(2)}%)`}
-          icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          description="Day-over-day move"
-          color={isDayGain ? "emerald" : "red"}
-        />
-        <StatContent
-          title="Month-to-Date Change"
-          value={`${isMtdGain ? "+" : ""}${formatCurrency(data.deltaMtdValue, data.currency, 0)} (${isMtdGain ? "+" : ""}${data.deltaMtdValuePct.toFixed(2)}%)`}
-          icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          description="Move since the start of the month"
-          color={isMtdGain ? "emerald" : "red"}
-        />
-      </StatCardGroup>
-      <DayChangeChartCard
-        chart={data.chart}
-        currency={data.currency}
-        title="Month-to-Date Trend"
-        desc="Daily portfolio value change since the start of the month."
-      />
-      <CurrencyCarouselModule
-        byCurrency={data.summary.byCurrency}
-        holdings={data.summary.holdings}
-        title="Composition"
-        renderDesc={compositionDesc}
-        renderBody={CompositionBody}
-      />
-      <HoldingsExplorer holdings={data.summary.holdings} />
-      <NewsModule title="Today's Headlines" desc="Market news published today." />
+      <TodaySubTabSwitcher active={subTab} onChange={setSubTab} />
+
+      {subTab === "overview" ? (
+        <>
+          <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y divide-slate-100 sm:divide-x xl:divide-y-0">
+            <StatContent
+              title="Month Start Value"
+              value={formatCurrency(data.monthStartValue, data.currency, 0)}
+              icon={<Wallet className="h-4 w-4 text-slate-500" />}
+              description="Market value on the 1st of this month"
+              color="slate"
+            />
+            <StatContent
+              title="Current Value"
+              value={formatCurrency(data.currentValue, data.currency, 0)}
+              icon={<Wallet className="h-4 w-4 text-[#C49A3C]" />}
+              description="Market value as of today"
+              color="gold"
+            />
+            <StatContent
+              title="Day Change"
+              value={`${isDayGain ? "+" : ""}${formatCurrency(data.deltaDayValue, data.currency, 0)} (${isDayGain ? "+" : ""}${data.deltaDayValuePct.toFixed(2)}%)`}
+              icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+              description="Day-over-day move"
+              color={isDayGain ? "emerald" : "red"}
+            />
+            <StatContent
+              title="Month-to-Date Change"
+              value={`${isMtdGain ? "+" : ""}${formatCurrency(data.deltaMtdValue, data.currency, 0)} (${isMtdGain ? "+" : ""}${data.deltaMtdValuePct.toFixed(2)}%)`}
+              icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+              description="Move since the start of the month"
+              color={isMtdGain ? "emerald" : "red"}
+            />
+          </StatCardGroup>
+          <DayChangeChartCard
+            chart={data.chart}
+            currency={data.currency}
+            title="Month-to-Date Trend"
+            desc="Daily portfolio value change since the start of the month."
+          />
+          <NewsModule title="Today's Headlines" desc="Market news published today." />
+        </>
+      ) : compositionLoading && !composition ? (
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
+        </div>
+      ) : compositionError ? (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <p className="text-sm font-bold">{compositionError}</p>
+        </div>
+      ) : (
+        <>
+          <CurrencyCarouselModule
+            byCurrency={data.summary.byCurrency}
+            holdings={data.summary.holdings}
+            title="By Currency"
+            renderDesc={compositionDesc}
+            renderBody={CompositionBody}
+          />
+          <SectorRegionModule sector={composition?.sector ?? null} region={composition?.region ?? null} />
+          <CorrelationMatrixModule riskModel={composition?.riskModel ?? null} />
+          <HoldingsExplorer holdings={data.summary.holdings} />
+        </>
+      )}
     </div>
   );
 }
@@ -724,6 +807,151 @@ function CompositionDonut({ items, currency }: { items: { label: string; value: 
         })}
       </div>
     </div>
+  );
+}
+
+// "Unknown" collects assets with no known breakdown — a data gap, not a real sector/region —
+// so it gets a neutral bar instead of taking a slot in the gold palette.
+const UNKNOWN_EXPOSURE_COLOR = "#cbd5e1";
+
+/**
+ * EXPOSURE BREAKDOWN — a ranked bar list for a percentage-weighted breakdown (sector/region
+ * exposure). Simpler than CompositionDonut: these entries already carry a weightPct
+ * (0-100), not a currency amount that needs a percentage computed from a total first.
+ */
+function ExposureBreakdown({ entries }: { entries: ExposureEntryResponse[] }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
+  }
+
+  const sorted = [...entries].sort((a, b) => b.weightPct - a.weightPct);
+  const max = Math.max(...sorted.map((e) => e.weightPct), 0.01);
+  let colorIndex = 0;
+
+  return (
+    <div className="space-y-3">
+      {sorted.map((e) => {
+        const color = e.label === "Unknown" ? UNKNOWN_EXPOSURE_COLOR : DONUT_COLORS[colorIndex++ % DONUT_COLORS.length];
+        return (
+          <div key={e.label}>
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <span className="text-[13px] font-bold text-slate-900 truncate">{e.label}</span>
+              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{e.weightPct.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${(e.weightPct / max) * 100}%`, background: color }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * SECTOR & REGION MODULE — look-through exposure of the held positions as of the last
+ * snapshot tick (into funds, at today's fund composition — not at any past date). Both
+ * endpoints answer null until the first snapshot tick has run for this user, and carry
+ * neither status nor isStale.
+ */
+function SectorRegionModule({
+  sector, region,
+}: { sector: ExposureEntryResponse[] | null; region: ExposureEntryResponse[] | null }) {
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Composition"
+        title="Sector & Region"
+        desc="Exposure of your current holdings, weighted by market value."
+      />
+      {sector === null && region === null ? (
+        <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+          <AllocPanel title="By sector" subtitle="Where your holdings' companies operate">
+            <ExposureBreakdown entries={sector ?? []} />
+          </AllocPanel>
+          <AllocPanel title="By region" subtitle="Geographic exposure">
+            <ExposureBreakdown entries={region ?? []} />
+          </AllocPanel>
+        </div>
+      )}
+    </Module>
+  );
+}
+
+// Correlation cells share the returns heatmap's emerald/rose scheme (positive/negative) but
+// scale intensity linearly over [-1, 1] rather than a capped magnitude — correlation is
+// already bounded, unlike a percentage return.
+function correlationCellStyle(value: number): React.CSSProperties {
+  const intensity = Math.min(Math.abs(value), 1);
+  const [r, g, b] = value >= 0 ? [16, 185, 129] : [244, 63, 94]; // emerald-500 / rose-500
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${(0.08 + intensity * 0.72).toFixed(3)})`,
+    color: intensity > 0.55 ? "#ffffff" : value >= 0 ? "#047857" : "#be123c",
+  };
+}
+
+/**
+ * CORRELATION MATRIX MODULE — how the held assets' returns moved together over the history
+ * they share (from /risk-model). Needs at least two assets with shared history: below that the
+ * model is "unavailable" (or the matrix is missing) and a message stands in for the table.
+ * Individual cells can be null and render as a dash.
+ */
+function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse | null }) {
+  const correlation = riskModel?.correlation ?? null;
+  const usable = riskModel?.status === "ok" && correlation !== null && correlation.tickers.length >= 2;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk"
+        title="Correlation Matrix"
+        desc="How your holdings moved together, based on past returns."
+      />
+      {riskModel?.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+      {riskModel === null ? (
+        <ModuleMessage>Being prepared — this shows up after the overnight analysis of your portfolio has run.</ModuleMessage>
+      ) : !usable ? (
+        <ModuleMessage>Needs at least two assets with a shared price history to compare.</ModuleMessage>
+      ) : (
+        <div className="p-6 md:p-7 overflow-x-auto custom-scrollbar">
+          <table className="border-collapse min-w-150 w-full table-fixed">
+            <thead>
+              <tr>
+                <th className="w-20" />
+                {correlation.tickers.map((t, j) => (
+                  <th key={`${t}-${j}`} className="text-[10px] font-black uppercase tracking-wider text-slate-400 pb-2 text-center">{t}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {correlation.tickers.map((rowTicker, i) => (
+                <tr key={`${rowTicker}-${i}`}>
+                  <td className="text-xs font-bold text-slate-900 pr-3 py-1 whitespace-nowrap">{rowTicker}</td>
+                  {correlation.tickers.map((colTicker, j) => {
+                    const value = correlation.matrix[i]?.[j] ?? null;
+                    return (
+                      <td key={`${colTicker}-${j}`} className="p-1">
+                        <div
+                          title={`${rowTicker} vs ${colTicker}: ${value === null ? "n/a" : value.toFixed(2)}`}
+                          style={value === null ? undefined : correlationCellStyle(value)}
+                          className={`w-full aspect-square rounded-lg flex items-center justify-center text-[10px] font-bold tabular-nums ${
+                            value === null ? "bg-slate-50 text-slate-300" : ""
+                          }`}
+                        >
+                          {value === null ? "—" : value.toFixed(1)}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Module>
   );
 }
 
@@ -1177,6 +1405,271 @@ function RealizedPnLGroup({ group, showCurrencyLabel }: { group: CurrencyRealize
   );
 }
 
+const monthShortYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+const formatPctOrDash = (pct: number | null) => (pct === null ? "—" : formatPct(pct));
+
+/**
+ * Fetches one analytics document for a module. Every analytics endpoint answers 200 with the
+ * document or null ("being prepared"), so `data` null with `failed` false means "not computed
+ * yet"; `failed` is only for a request that errored. A failed request degrades to the
+ * module's own message rather than the page-level error banner, since the other modules on
+ * the page are unaffected.
+ */
+function useAnalytics<T>(load: (forUserUuid?: string | null) => Promise<T | null>, forUserUuid?: string | null) {
+  const [state, setState] = useState<{ data: T | null; loading: boolean; failed: boolean }>({
+    data: null, loading: true, failed: false,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setState({ data: null, loading: true, failed: false });
+      try {
+        const data = await load(forUserUuid);
+        if (!cancelled) setState({ data, loading: false, failed: false });
+      } catch {
+        if (!cancelled) setState({ data: null, loading: false, failed: true });
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [load, forUserUuid]);
+
+  return state;
+}
+
+/** Shared loading / failed / null placeholder for the analytics modules; null when there's a document to draw. */
+function AnalyticsPlaceholder({
+  loading, failed, hasData, preparingMessage,
+}: { loading: boolean; failed: boolean; hasData: boolean; preparingMessage: string }) {
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
+      </div>
+    );
+  }
+  if (failed) return <ModuleMessage>Unable to load this right now. Try again in a moment.</ModuleMessage>;
+  if (!hasData) return <ModuleMessage>{preparingMessage}</ModuleMessage>;
+  return null;
+}
+
+/**
+ * ROLLING VOLATILITY CHART — annualized volatility over a rolling window, one point per day
+ * from the backend, thinned by toChartPoints before drawing.
+ */
+function RollingVolatilityChart({ series }: { series: TimeSeries }) {
+  const points = useMemo(() => toChartPoints(series), [series]);
+
+  if (points.length < 2) {
+    return <ModuleMessage>Not enough data yet to chart.</ModuleMessage>;
+  }
+
+  return (
+    <div className="p-6 md:p-7 h-64">
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+        <LineChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tickFormatter={monthShortYearLabel}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={40}
+          />
+          <YAxis
+            tickFormatter={(v) => `${v}%`}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            width={48}
+          />
+          <Tooltip
+            labelFormatter={(label) => fullDateLabel(label as string)}
+            formatter={(value) => [`${Number(value).toFixed(2)}%`, "Volatility"]}
+            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+          />
+          <Line type="monotone" dataKey="value" name="Volatility" stroke="#C49A3C" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/**
+ * VOLATILITY MODULE — /volatility: the portfolio's annualized volatility as a headline, and
+ * the rolling series behind it. The document is null until the first analytics run, and
+ * "insufficient_history" (nothing to show but a message) under a year of history.
+ */
+function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
+  const { data, loading, failed } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, forUserUuid);
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk"
+        title="Volatility"
+        desc={data?.rollingWindowDays ? `Annualized, over a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {data.status === "insufficient_history" ? (
+            <ModuleMessage>Volatility needs at least a year of history — it will appear once your portfolio has one.</ModuleMessage>
+          ) : (
+            <>
+              <StatContent
+                title="Annualized Volatility"
+                value={data.annualizedVolatilityPct === null ? "—" : `${data.annualizedVolatilityPct.toFixed(2)}%`}
+                icon={<Activity className="h-4 w-4 text-[#C49A3C]" />}
+                description="Standard deviation of daily returns, annualized"
+                color="gold"
+              />
+              {data.rollingVolatilityPct && <RollingVolatilityChart series={data.rollingVolatilityPct} />}
+            </>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
+/**
+ * CUMULATIVE RETURN CHART — portfolio vs. benchmark, both in percent with base 0 at the start
+ * (not a growth multiple). The backend says both curves share the same dates, but the
+ * benchmark is still looked up by date rather than zipped by index so a gap on either side
+ * can't misalign the lines.
+ */
+function CumulativeReturnChart({ portfolio, benchmark }: { portfolio: TimeSeries; benchmark: TimeSeries }) {
+  const data = useMemo(() => {
+    const benchmarkByDate = new Map(benchmark.dates.map((d, i) => [d, benchmark.values[i]]));
+    return toChartPoints(portfolio).map((p) => ({ date: p.date, portfolio: p.value, benchmark: benchmarkByDate.get(p.date) }));
+  }, [portfolio, benchmark]);
+
+  if (data.length < 2) {
+    return <ModuleMessage>Not enough history yet to chart.</ModuleMessage>;
+  }
+
+  return (
+    <div className="p-6 md:p-7 h-64">
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+        <LineChart data={data} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tickFormatter={monthShortYearLabel}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={40}
+          />
+          <YAxis
+            tickFormatter={(v) => `${v}%`}
+            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            width={56}
+          />
+          <Tooltip
+            labelFormatter={(label) => fullDateLabel(label as string)}
+            formatter={(value, name) => [`${Number(value).toFixed(2)}%`, name]}
+            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+          />
+          <Line type="monotone" dataKey="portfolio" name="Portfolio" stroke="#C49A3C" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="benchmark" name="Benchmark" stroke="#94a3b8" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/**
+ * BENCHMARK MODULE — /benchmark: the portfolio against a synthetic benchmark of proxy ETFs
+ * that receives the same cash flows. All figures are already percentages (or plain ratios),
+ * over the days the portfolio and benchmark share, and any of them can be null. The basket
+ * also lists proxies of closed positions at weight 0, filtered out here so the label names
+ * only what's held today.
+ */
+function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
+  const { data, loading, failed } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, forUserUuid);
+
+  const basket = data?.components
+    .filter((c) => (c.weightPct ?? 0) > 0)
+    .map((c) => c.ticker ?? c.name)
+    .join(", ");
+  const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
+  const outperformed = data?.outperformed ?? null;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="All Time"
+        title="Benchmark Comparison"
+        desc={data ? `${coverage}${basket ? `, vs. ${basket}` : ""}.` : "How your portfolio compares to the market."}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {data.status !== "ok" ? (
+            <ModuleMessage>Not enough overlapping history with the benchmark yet to compare.</ModuleMessage>
+          ) : (
+            <>
+              {data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct && (
+                <CumulativeReturnChart
+                  portfolio={data.portfolioCumulativeReturnPct}
+                  benchmark={data.benchmarkCumulativeReturnPct}
+                />
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x border-t border-slate-100">
+                <StatContent
+                  title="Total Return"
+                  value={`${formatPctOrDash(data.portfolioTotalReturnPct)} vs ${formatPctOrDash(data.benchmarkTotalReturnPct)}`}
+                  icon={outperformed === false ? <TrendingDown className="h-4 w-4 text-rose-600" /> : <TrendingUp className="h-4 w-4 text-emerald-600" />}
+                  description="Portfolio vs. benchmark, over the shared period"
+                  color={outperformed === null ? "slate" : outperformed ? "emerald" : "red"}
+                />
+                <StatContent
+                  title="Excess Return"
+                  value={formatPctOrDash(data.excessReturnPct)}
+                  icon={<Scale className="h-4 w-4 text-slate-500" />}
+                  description="Annualized, portfolio minus benchmark (percentage points)"
+                  color="slate"
+                />
+                <StatContent
+                  title="Alpha"
+                  value={formatPctOrDash(data.alphaPct)}
+                  icon={<Activity className="h-4 w-4 text-slate-500" />}
+                  description="Annualized return not explained by market exposure"
+                  color="slate"
+                />
+                <StatContent
+                  title="Beta"
+                  value={data.beta === null ? "—" : data.beta.toFixed(2)}
+                  icon={<Activity className="h-4 w-4 text-slate-500" />}
+                  description="Sensitivity to benchmark moves"
+                  color="slate"
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
 /**
  * HISTORY PAGE — backs the "All Time" tab, merging what used to be three separate tabs
  * (Monthly, Annual, Full History) into one: lifetime figures + trend chart up top, a
@@ -1280,6 +1773,8 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
         title="Value Since Inception"
         desc="Daily portfolio market value across your full history."
       />
+      <VolatilityModule forUserUuid={forUserUuid} />
+      <BenchmarkModule forUserUuid={forUserUuid} />
       <Module>
         <ModuleHead
           eyebrow={data.currency}

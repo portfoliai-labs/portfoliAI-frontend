@@ -46,7 +46,7 @@ function DashboardPageContent() {
       case 'overview':
         return isAdvisor
           ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
-          : <DashboardOverview />;
+          : <DashboardOverview onNavigate={setActiveSection} />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':
@@ -62,7 +62,7 @@ function DashboardPageContent() {
       case 'notifications':
         return <NotificationsSection />;
       default:
-        return <DashboardOverview />;
+        return <DashboardOverview onNavigate={setActiveSection} />;
     }
   }, [activeSection, isAdvisor]);
 
