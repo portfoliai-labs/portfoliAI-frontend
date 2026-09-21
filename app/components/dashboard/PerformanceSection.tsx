@@ -15,6 +15,7 @@ import {
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
+import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 import { NewsModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import type {
@@ -22,8 +23,8 @@ import type {
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
 import type {
-  ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, WeightGapEntry, BenchmarkResponse,
-  BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
+  ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
+  BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
 } from "../../models/PortfolioData";
 
 type PageId = "today" | "history";
@@ -546,18 +547,33 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.lifetimeDividends === 0 && data.chart.length === 0;
 
-type TodaySubTabId = "overview" | "composition" | "risk";
+type TodaySubTabId = "overview" | "composition";
 
-const TODAY_SUB_TABS: { id: TodaySubTabId; label: string; icon: typeof Sun }[] = [
+const TODAY_SUB_TABS: SubTab<TodaySubTabId>[] = [
   { id: "overview", label: "Overview", icon: Sun },
   { id: "composition", label: "Composition", icon: LayoutGrid },
-  { id: "risk", label: "Risk Model", icon: Gauge },
 ];
 
-function TodaySubTabSwitcher({ active, onChange }: { active: TodaySubTabId; onChange: (id: TodaySubTabId) => void }) {
+type HistorySubTabId = "overview" | "risk";
+
+const HISTORY_SUB_TABS: SubTab<HistorySubTabId>[] = [
+  { id: "overview", label: "Overview", icon: TrendingUp },
+  { id: "risk", label: "Risk", icon: Gauge },
+];
+
+interface SubTab<T extends string> {
+  id: T;
+  label: string;
+  icon: typeof Sun;
+}
+
+/** SUB-TAB SWITCHER — the small pill switcher under a page's masthead (Today, All Time). */
+function SubTabSwitcher<T extends string>({
+  tabs, active, onChange,
+}: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
   return (
     <div className="flex bg-slate-100/80 p-1 rounded-lg border border-slate-200 w-fit">
-      {TODAY_SUB_TABS.map((t) => (
+      {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
@@ -579,13 +595,12 @@ interface TodayComposition {
 }
 
 /**
- * TODAY PAGE — split into three sub-tabs: Overview (current value against two references —
+ * TODAY PAGE — split into two sub-tabs: Overview (current value against two references —
  * yesterday, and the start of the current month — plus the month-to-date daily snapshots
- * that back those deltas, and today's news), Composition (what's actually held right now, by
- * currency/asset/broker from TodayDashboard.summary, plus sector/region exposure — fetched
- * lazily on first visit, since /today itself doesn't carry it) and Risk Model (the
- * mean-variance model over the held assets, which loads itself when that tab is opened —
- * see RiskModelTab).
+ * that back those deltas, and today's news) and Composition (what's actually held right now,
+ * by currency/asset/broker from TodayDashboard.summary, plus sector/region exposure — fetched
+ * lazily on first visit, since /today itself doesn't carry it). Everything derived from the
+ * portfolio's history (volatility, risk model, benchmark) lives on the All Time page instead.
  */
 function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: string | null }) {
   const isDayGain = data.deltaDayValue >= 0;
@@ -628,7 +643,7 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
 
   return (
     <div className="space-y-6">
-      <TodaySubTabSwitcher active={subTab} onChange={setSubTab} />
+      <SubTabSwitcher tabs={TODAY_SUB_TABS} active={subTab} onChange={setSubTab} />
 
       {subTab === "overview" ? (
         <>
@@ -670,8 +685,6 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
           />
           <NewsModule title="Today's Headlines" desc="Market news published today." />
         </>
-      ) : subTab === "risk" ? (
-        <RiskModelTab forUserUuid={forUserUuid} />
       ) : compositionLoading && !composition ? (
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
@@ -1050,12 +1063,32 @@ const ratioOrDash = (value: number | null) => (value === null ? "—" : value.to
 // in the comparison table and in the legend. The current allocation keeps the portfolio gold.
 const MIX_COLORS = { current: PORTFOLIO_COLOR, maxSharpe: "#0f766e", minVolatility: "#1d4ed8" } as const;
 
+const RISK_UNAVAILABLE_MESSAGES: Record<RiskModelUnavailableReason, string> = {
+  too_few_assets: "The risk model needs at least two holdings that share 30 days or more of price history. Yours don't yet, so it will appear once they do.",
+  no_positive_returns: "Every one of your holdings has an average past return at or below zero, so the model has no best-return mix to compare against.",
+  solver_failed: "The model couldn't work out an allocation from your holdings' data this time. Check back after the next update.",
+};
+
+// Fallback for an unavailable model with no reason: a document stored before the backend sent
+// unavailableReason keeps null there until it is recomputed, so it lists every possible cause.
+const RISK_UNAVAILABLE_GENERIC =
+  "The risk model can't be built for your portfolio right now. That happens when fewer than two holdings share at least 30 days of price history, when every holding's average past return is zero or negative, or when no allocation could be worked out from the data.";
+
+/** The one explanation shown in place of the model's modules when it isn't "ok". */
+function riskModelUnavailableMessage(model: RiskModelResponse): string {
+  if (model.status === "insufficient_history") {
+    return "The risk model needs at least a year of history. It will appear once your portfolio has one.";
+  }
+  return (model.unavailableReason && RISK_UNAVAILABLE_MESSAGES[model.unavailableReason]) || RISK_UNAVAILABLE_GENERIC;
+}
+
 /**
  * RISK MODEL TAB — /risk-model as one page, since it is one model: either it was built for the
  * whole portfolio or none of it was. Loads itself when the tab is opened. The state handling:
  * null → "being prepared"; status other than "ok" → a single explanation (the document then has
- * no per-asset estimates, allocations, frontier or gaps), though a correlation matrix is still
- * drawn if the backend sent one; isStale → an "updating" note over the previous numbers.
+ * no per-asset estimates, allocations, frontier or gaps), worded by unavailableReason, though a
+ * correlation matrix is still drawn if the backend sent one (it does for no_positive_returns and
+ * solver_failed, since correlations need only returns); isStale → an "updating" note over the previous numbers.
  * Everything on the page is built from past returns, so it says so up front and avoids
  * recommendation wording.
  */
@@ -1104,11 +1137,7 @@ function RiskModelTab({ forUserUuid }: { forUserUuid?: string | null }) {
       ) : (
         <Module>
           <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
-          <ModuleMessage>
-            The risk model can&apos;t be built for your portfolio right now. That happens when fewer than two holdings
-            share at least 30 days of price history, when every holding&apos;s average past return is zero or negative,
-            or when no allocation could be worked out from the data.
-          </ModuleMessage>
+          <ModuleMessage>{riskModelUnavailableMessage(data)}</ModuleMessage>
         </Module>
       )}
 
@@ -1120,17 +1149,22 @@ function RiskModelTab({ forUserUuid }: { forUserUuid?: string | null }) {
 /**
  * MIX COMPARISON — the three allocations the model evaluates on the same past returns: what
  * you hold now, the long-only mix with the best past return per unit of risk (max Sharpe) and
- * the one with the lowest volatility. Each row also lists its weights, so the mixes are
- * something you can read rather than three anonymous sets of numbers. An entry can be null.
+ * the one with the lowest volatility. One card each, with its three figures and its weights as
+ * a single segmented bar, so the mixes can be compared at a glance. Every ticker keeps the same
+ * colour across the three bars. An entry can be null.
  */
 function MixComparisonModule({
   current, maxSharpe, minVolatility,
 }: { current: RiskPortfolioEntry | null; maxSharpe: RiskPortfolioEntry | null; minVolatility: RiskPortfolioEntry | null }) {
-  const rows: { label: string; hint: string; color: string; entry: RiskPortfolioEntry | null }[] = [
+  const mixes = [
     { label: "Your allocation", hint: "As you hold it today", color: MIX_COLORS.current, entry: current },
     { label: "Max Sharpe", hint: "Best past return per unit of risk", color: MIX_COLORS.maxSharpe, entry: maxSharpe },
     { label: "Min volatility", hint: "Smallest past swings", color: MIX_COLORS.minVolatility, entry: minVolatility },
   ];
+  // Colours follow first appearance across the cards (your own holdings first), so a ticker is
+  // the same colour in all three bars.
+  const tickers = [...new Set(mixes.flatMap((m) => m.entry?.weights.map((w) => w.ticker) ?? []))];
+  const colorOf = (ticker: string) => CATEGORICAL_PALETTE[tickers.indexOf(ticker) % CATEGORICAL_PALETTE.length];
 
   return (
     <Module>
@@ -1139,40 +1173,72 @@ function MixComparisonModule({
         title="Your Allocation vs. Two Historical Mixes"
         desc="The same holdings, weighted three ways and measured on the same past returns."
       />
-      <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-left border-collapse min-w-150">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Mix</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Avg. annual return (past)</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Volatility</th>
-              <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Sharpe ratio</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <td className="px-5 md:px-6 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: r.color }} />
-                    <span className="text-sm font-bold text-slate-900">{r.label}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{r.hint}</p>
-                  {r.entry && r.entry.weights.length > 0 && (
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {r.entry.weights.map((w) => `${w.ticker} ${w.weightPct.toFixed(0)}%`).join(" · ")}
-                    </p>
-                  )}
-                </td>
-                <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">{formatPctOrDash(r.entry?.expectedReturnPct ?? null)}</td>
-                <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{plainPctOrDash(r.entry?.volatilityPct ?? null)}</td>
-                <td className="px-3 md:px-6 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{ratioOrDash(r.entry?.sharpeRatio ?? null)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+        {mixes.map((m) => (
+          <div key={m.label} className="p-6 md:p-7 flex flex-col gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: m.color }} />
+                <h3 className="text-sm font-black text-slate-900">{m.label}</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">{m.hint}</p>
+            </div>
+            {m.entry === null ? (
+              <p className="text-sm text-slate-500">Not available.</p>
+            ) : (
+              <>
+                <dl className="space-y-2">
+                  <MixFigure label="Avg. return" value={formatPctOrDash(m.entry.expectedReturnPct)} strong />
+                  <MixFigure label="Volatility" value={plainPctOrDash(m.entry.volatilityPct)} />
+                  <MixFigure label="Sharpe ratio" value={ratioOrDash(m.entry.sharpeRatio)} />
+                </dl>
+                <MixWeights weights={m.entry.weights} colorOf={colorOf} />
+              </>
+            )}
+          </div>
+        ))}
       </div>
     </Module>
+  );
+}
+
+function MixFigure({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-xs font-bold text-slate-500">{label}</dt>
+      <dd className={`tabular-nums ${strong ? "text-lg font-black text-slate-900" : "text-sm font-bold text-slate-700"}`}>{value}</dd>
+    </div>
+  );
+}
+
+/** One segmented bar for a mix's weights, with a legend of ticker and weight under it. */
+function MixWeights({
+  weights, colorOf,
+}: { weights: RiskPortfolioEntry["weights"]; colorOf: (ticker: string) => string }) {
+  const shown = weights.filter((w) => w.weightPct >= 0.05);
+  if (shown.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
+        {shown.map((w) => (
+          <div
+            key={w.ticker}
+            title={`${w.ticker}: ${w.weightPct.toFixed(1)}%`}
+            className="h-full"
+            style={{ width: `${w.weightPct}%`, background: colorOf(w.ticker) }}
+          />
+        ))}
+      </div>
+      <ul className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1">
+        {shown.map((w) => (
+          <li key={w.ticker} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: colorOf(w.ticker) }} />
+            {w.ticker} <span className="tabular-nums text-slate-500">{w.weightPct.toFixed(0)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -1271,68 +1337,75 @@ function FrontierModule({
   );
 }
 
-// The gap direction is worded against the max-Sharpe mix as a description of the distance, not
-// as advice — "above / below" rather than "reduce / add".
-const GAP_DIRECTION: Record<WeightGapEntry["direction"], { label: string; className: string }> = {
-  overweight: { label: "Above the max-Sharpe mix", className: "bg-amber-50 text-amber-700" },
-  underweight: { label: "Below the max-Sharpe mix", className: "bg-blue-50 text-blue-700" },
-  in_line: { label: "In line", className: "bg-slate-100 text-slate-600" },
+// The gap is worded against the max-Sharpe mix as a description of the distance, not as advice
+// — "above / below" rather than "reduce / add" — and coloured neutrally (amber / blue), not
+// red / green, so neither side reads as the good one.
+const GAP_COLORS: Record<WeightGapEntry["direction"], string> = {
+  overweight: "#d97706",
+  underweight: "#2563eb",
+  in_line: BENCHMARK_COLOR,
 };
 
+const GAP_GRID = "grid grid-cols-[6.5rem_minmax(0,1fr)_4rem] sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem] items-center gap-3";
+
 /**
- * WEIGHT GAPS — for each holding, its weight today next to its weight in the max-Sharpe mix,
- * with the distance between them (delta = current − target, in percentage points; the backend
- * has already resolved the direction, so nothing is subtracted here). Shown to see how far the
- * portfolio sits from that historical mix, not as a suggestion to move towards it.
+ * WEIGHT GAPS — for each holding, how far its weight sits from its weight in the max-Sharpe
+ * mix, as one bar growing from a centre line: to the right when held above that mix, to the
+ * left when below (delta = current − target, in percentage points; the backend has already
+ * resolved the direction, so nothing is subtracted here). Bars share one scale. Under each
+ * ticker, its weight now → in that mix. Shown to see how far the portfolio sits from that
+ * historical mix, not as a suggestion to move towards it.
  */
 function WeightGapsModule({ gaps }: { gaps: WeightGapEntry[] }) {
   if (gaps.length === 0) return null;
 
-  const max = Math.max(...gaps.flatMap((g) => [g.currentWeightPct, g.targetWeightPct]), 1);
+  const maxAbs = Math.max(...gaps.map((g) => Math.abs(g.deltaPct)), 1);
 
   return (
     <Module>
       <ModuleHead
         eyebrow="Risk Model"
         title="Weights vs. the Max-Sharpe Mix"
-        desc="How far each holding's weight sits from the mix that had the best past return per unit of risk."
+        desc="How far each holding's weight sits from the mix that had the best past return per unit of risk. Under each ticker: its weight now → in that mix."
       />
-      <div className="p-6 md:p-7 space-y-5">
+      <div className="p-6 md:p-7 space-y-3.5">
+        <div className={GAP_GRID}>
+          <span />
+          <div className="flex justify-between text-[11px] font-bold text-slate-500">
+            <span>◀ Below the mix</span>
+            <span>Above the mix ▶</span>
+          </div>
+          <span />
+        </div>
         {gaps.map((g) => {
-          const dir = GAP_DIRECTION[g.direction] ?? GAP_DIRECTION.in_line;
+          const above = g.deltaPct >= 0;
           return (
-            <div key={g.ticker}>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2">
-                <span className="min-w-0 truncate">
-                  <span className="text-[13px] font-bold text-slate-900">{g.ticker}</span>
-                  <span className="text-xs text-slate-500 ml-2">{g.name}</span>
-                </span>
-                <span className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${dir.className}`}>{dir.label}</span>
-                  <span className="text-[13px] font-bold text-slate-500 tabular-nums">
-                    {g.deltaPct > 0 ? "+" : ""}{g.deltaPct.toFixed(1)} pp
-                  </span>
-                </span>
+            <div key={g.ticker} className={GAP_GRID} title={g.name}>
+              <div className="min-w-0">
+                <p className="text-[13px] font-bold text-slate-900 truncate">{g.ticker}</p>
+                <p className="text-[11px] text-slate-500 tabular-nums truncate">
+                  {g.currentWeightPct.toFixed(1)}% → {g.targetWeightPct.toFixed(1)}%
+                </p>
               </div>
-              <WeightBar label="Now" pct={g.currentWeightPct} max={max} color={MIX_COLORS.current} />
-              <WeightBar label="Max Sharpe" pct={g.targetWeightPct} max={max} color={MIX_COLORS.maxSharpe} />
+              <div className="relative h-5 rounded bg-slate-50">
+                <span className="absolute inset-y-0 left-1/2 w-px bg-slate-300" />
+                <span
+                  className="absolute inset-y-1 rounded-sm"
+                  style={{
+                    [above ? "left" : "right"]: "50%",
+                    width: `${(Math.abs(g.deltaPct) / maxAbs) * 50}%`,
+                    background: GAP_COLORS[g.direction] ?? GAP_COLORS.in_line,
+                  }}
+                />
+              </div>
+              <span className="text-right text-[13px] font-bold tabular-nums text-slate-600">
+                {above ? "+" : ""}{g.deltaPct.toFixed(1)} pp
+              </span>
             </div>
           );
         })}
       </div>
     </Module>
-  );
-}
-
-function WeightBar({ label, pct, max, color }: { label: string; pct: number; max: number; color: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-1">
-      <span className="w-20 shrink-0 text-[11px] font-bold text-slate-500">{label}</span>
-      <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className="h-full rounded-full" style={{ width: `${(pct / max) * 100}%`, background: color }} />
-      </div>
-      <span className="w-12 shrink-0 text-right text-xs font-bold text-slate-600 tabular-nums">{pct.toFixed(1)}%</span>
-    </div>
   );
 }
 
@@ -1351,30 +1424,25 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
         title="Holdings Behind the Model"
         desc="Each holding's average annual return and volatility over the history they share."
       />
-      <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-left border-collapse min-w-100">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Asset</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Avg. annual return (past)</th>
-              <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Volatility</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {assets.map((a) => (
-              <tr key={a.ticker}>
-                <td className="px-5 md:px-6 py-3.5">
-                  <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="text-sm font-bold text-slate-900 shrink-0">{a.ticker}</span>
-                    <span className="text-xs text-slate-500 truncate">{a.name}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">{formatPctOrDash(a.expectedReturnPct)}</td>
-                <td className="px-3 md:px-6 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{plainPctOrDash(a.volatilityPct)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-6 md:p-7">
+        {assets.map((a) => (
+          <div key={a.ticker} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-slate-900 truncate">{a.ticker}</p>
+              <p className="text-xs text-slate-500 truncate">{a.name}</p>
+            </div>
+            <div className="flex gap-5 shrink-0 text-right">
+              <div>
+                <p className="text-sm font-black text-slate-900 tabular-nums">{formatPctOrDash(a.expectedReturnPct)}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Avg. return</p>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700 tabular-nums">{plainPctOrDash(a.volatilityPct)}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Volatility</p>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </Module>
   );
@@ -2184,6 +2252,7 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
   const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
+  const [subTab, setSubTab] = useState<HistorySubTabId>("overview");
 
   const handleSelectMonth = async (year: number, month: number) => {
     setSelected({ year, month });
@@ -2240,46 +2309,56 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
 
   return (
     <div className="space-y-6">
-      <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
-        <StatContent
-          title="Invested Capital"
-          value={formatCurrency(data.totalInvestedCapital, data.currency, 0)}
-          icon={<Receipt className="h-4 w-4 text-blue-600" />}
-          description="Capital deployed to date"
-          color="blue"
-        />
-        <StatContent
-          title="Unrealized P&L"
-          value={`${unrealizedIsGain ? "+" : ""}${formatCurrency(data.totalUnrealizedPnl, data.currency, 0)}`}
-          icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          description="Open positions vs. invested capital"
-          color={unrealizedIsGain ? "emerald" : "red"}
-        />
-        <StatContent
-          title="Lifetime Dividends"
-          value={formatCurrency(data.lifetimeDividends, data.currency, 0)}
-          icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-          description="All dividend cash flows recorded"
-          color="blue"
-        />
-      </StatCardGroup>
-      <ChartCard
-        chart={data.chart}
-        currency={data.currency}
-        title="Value Since Inception"
-        desc="Daily portfolio market value across your full history."
-      />
-      <VolatilityModule forUserUuid={forUserUuid} />
-      <BenchmarkModule forUserUuid={forUserUuid} />
-      <Module>
-        <ModuleHead
-          eyebrow={data.currency}
-          title="Monthly Returns"
-          desc="Market effect by month, since inception. Click a month for its full detail."
-        />
-        <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={handleSelectMonth} />
-      </Module>
-      <RealizedPnLCard trades={data.realizedTradesByAsset} />
+      <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />
+
+      {subTab === "risk" ? (
+        <>
+          <VolatilityModule forUserUuid={forUserUuid} />
+          <RiskModelTab forUserUuid={forUserUuid} />
+        </>
+      ) : (
+        <>
+          <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+            <StatContent
+              title="Invested Capital"
+              value={formatCurrency(data.totalInvestedCapital, data.currency, 0)}
+              icon={<Receipt className="h-4 w-4 text-blue-600" />}
+              description="Capital deployed to date"
+              color="blue"
+            />
+            <StatContent
+              title="Unrealized P&L"
+              value={`${unrealizedIsGain ? "+" : ""}${formatCurrency(data.totalUnrealizedPnl, data.currency, 0)}`}
+              icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+              description="Open positions vs. invested capital"
+              color={unrealizedIsGain ? "emerald" : "red"}
+            />
+            <StatContent
+              title="Lifetime Dividends"
+              value={formatCurrency(data.lifetimeDividends, data.currency, 0)}
+              icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
+              description="All dividend cash flows recorded"
+              color="blue"
+            />
+          </StatCardGroup>
+          <ChartCard
+            chart={data.chart}
+            currency={data.currency}
+            title="Value Since Inception"
+            desc="Daily portfolio market value across your full history."
+          />
+          <BenchmarkModule forUserUuid={forUserUuid} />
+          <Module>
+            <ModuleHead
+              eyebrow={data.currency}
+              title="Monthly Returns"
+              desc="Market effect by month, since inception. Click a month for its full detail."
+            />
+            <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={handleSelectMonth} />
+          </Module>
+          <RealizedPnLCard trades={data.realizedTradesByAsset} />
+        </>
+      )}
     </div>
   );
 }

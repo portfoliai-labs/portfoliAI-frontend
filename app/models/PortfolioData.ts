@@ -20,6 +20,13 @@ type AnalyticsStatus = "ok" | "insufficient_history" | "unavailable";
 
 type WeightGapDirection = "overweight" | "underweight" | "in_line";
 
+// Why /risk-model is "unavailable" (set only with that status, null otherwise):
+// - too_few_assets: fewer than two held assets share at least 30 days of history;
+// - no_positive_returns: every asset's trailing mean return is at or below the risk-free
+//   rate (0), so no max-Sharpe allocation exists;
+// - solver_failed: the optimiser did not converge.
+type RiskModelUnavailableReason = "too_few_assets" | "no_positive_returns" | "solver_failed";
+
 // Two parallel arrays, ascending by date. `values` are in the unit stated where the series
 // is used (percent for the return / drawdown / volatility curves, money for cumulativeCosts).
 interface TimeSeries {
@@ -329,8 +336,13 @@ interface CorrelationMatrix {
   matrix: (number | null)[][];
 }
 
+// `correlation` needs only returns, not the optimiser, so it is also present with status
+// "unavailable" for no_positive_returns / solver_failed (null for too_few_assets). Documents
+// stored before unavailableReason existed carry null there until they are recomputed, so a
+// null reason on an unavailable model still needs a generic fallback.
 interface RiskModelResponse {
   status: AnalyticsStatus;
+  unavailableReason: RiskModelUnavailableReason | null;
   riskFreeRatePct: number | null;
   appliedViewsCount: number;
   assets: RiskAssetEntry[];
@@ -345,7 +357,7 @@ interface RiskModelResponse {
 }
 
 export type {
-  AnalyticsStatus, WeightGapDirection, TimeSeries,
+  AnalyticsStatus, RiskModelUnavailableReason, WeightGapDirection, TimeSeries,
   PortfolioHoldingResponse, HoldingsResponse,
   ExposureEntryResponse, ExposureResponse,
   HorizonEntry, MonthlyReturnEntry, AnnualReturnEntry, MonthReturn, PerformanceResponse,
