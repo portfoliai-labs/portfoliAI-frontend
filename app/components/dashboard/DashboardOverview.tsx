@@ -19,7 +19,7 @@ import { NewsCarouselModule, DailyArticleModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { AlertGaugeCard } from "./AlertGauge";
 import { useAlertRules } from "../../hooks/useAlertRules";
-import { alertState, type AlertState } from "../../lib/alerts";
+import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
 
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
@@ -216,17 +216,36 @@ const ALERT_ORDER: Record<AlertState["kind"], number> = {
   triggered: 0, reached: 1, approaching: 2, ok: 3, pending: 4, unavailable: 5, off: 6,
 };
 
+// A user can have up to 20 alerts, far too many dials to show at once. The most urgent (the list
+// is sorted by urgency) get a dial each; the rest sit behind "Show all".
+const ALERTS_SHOWN_COLLAPSED = 6;
+
+// How the states roll up into the one-line summary above the dials.
+const SUMMARY_GROUPS: { tone: AlertTone; label: string; dot: string }[] = [
+  { tone: "danger", label: "triggered", dot: "bg-red-500" },
+  { tone: "warn", label: "approaching", dot: "bg-amber-500" },
+  { tone: "ok", label: "within range", dot: "bg-emerald-500" },
+  { tone: "muted", label: "not active", dot: "bg-slate-400" },
+];
+
 /**
  * ALERTS MODULE — Block 1.2. The user's alert rules as dials, refreshed every minute (the
  * backend re-checks every rule about every 5 minutes, so a reading changes while the page is
- * open). With no rules it invites the user to create one instead of rendering an empty card.
+ * open). A one-line summary counts them by state; only the ALERTS_SHOWN_COLLAPSED most urgent get
+ * a dial until the user asks for all of them. With no rules it invites the user to create one
+ * instead of rendering an empty card.
  */
 function AlertsModule({ onManage }: { onManage: () => void }) {
   const { rules, loading, error } = useAlertRules(60_000);
+  const [showAll, setShowAll] = useState(false);
 
   const sorted = rules === null
     ? []
     : [...rules].sort((a, b) => ALERT_ORDER[alertState(a).kind] - ALERT_ORDER[alertState(b).kind]);
+  const visible = showAll ? sorted : sorted.slice(0, ALERTS_SHOWN_COLLAPSED);
+  const counts = SUMMARY_GROUPS
+    .map((g) => ({ ...g, count: sorted.filter((r) => alertState(r).tone === g.tone).length }))
+    .filter((g) => g.count > 0);
 
   return (
     <Module>
@@ -266,8 +285,28 @@ function AlertsModule({ onManage }: { onManage: () => void }) {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-6 md:p-7">
-          {sorted.map((rule) => <AlertGaugeCard key={rule.ruleId} rule={rule} />)}
+        <div className="p-6 md:p-7 space-y-5">
+          <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-bold text-slate-600">
+            {counts.map((g) => (
+              <li key={g.tone} className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${g.dot}`} />
+                {g.count} {g.label}
+              </li>
+            ))}
+          </ul>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {visible.map((rule) => <AlertGaugeCard key={rule.ruleId} rule={rule} />)}
+          </div>
+          {sorted.length > ALERTS_SHOWN_COLLAPSED && (
+            <div className="flex justify-center">
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
+              >
+                {showAll ? "Show fewer" : `Show all ${sorted.length}`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </Module>
