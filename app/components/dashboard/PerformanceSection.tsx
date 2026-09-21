@@ -2,14 +2,15 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Sun, History,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
-  Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale,
+  Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
   Search, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, LineChart, Line, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
@@ -21,7 +22,8 @@ import type {
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
 import type {
-  ExposureEntryResponse, RiskModelResponse, BenchmarkResponse, VolatilityResponse, TimeSeries,
+  ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, WeightGapEntry, BenchmarkResponse,
+  BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
 } from "../../models/PortfolioData";
 
 type PageId = "today" | "history";
@@ -34,6 +36,24 @@ const PAGES: { id: PageId; label: string; icon: typeof Sun }[] = [
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const fullDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 const monthYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+// Portfolio-vs-benchmark colours, shared by the chart lines, the Total Return card's markers
+// and the composition bars so one colour always means the same series. The benchmark grey is
+// deliberately dark enough (slate-500) to stay visible on the white card and against the
+// slate-100 bar tracks.
+const PORTFOLIO_COLOR = "#C49A3C";
+const BENCHMARK_COLOR = "#64748b";
+
+// Axis tick labels (months, dates, values) on every chart in this file — slate-500, since the
+// lighter slate-400 they used to have washed out against the white card.
+const AXIS_TICK_COLOR = "#64748b";
+
+// Shared recharts tooltip box. The text colour is set explicitly: recharts leaves the date
+// label uncoloured, so it inherits the page's text colour — near-white in dark mode (see
+// globals.css) — on the tooltip's white background, making it unreadable.
+const TOOLTIP_STYLE: React.CSSProperties = {
+  borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12, color: "#334155",
+};
 
 /**
  * INSIGHTS SECTION — two time horizons, each backed by its own backend dashboard endpoint
@@ -200,10 +220,15 @@ function PageHeader({ eyebrow, title, desc, right }: { eyebrow: string; title: s
 
 interface StatProps {
   title: string;
-  value: string;
+  // A string for a single figure, or richer content (see SeriesValue) for a figure that
+  // needs more than one line.
+  value: React.ReactNode;
   icon: React.ReactNode;
   description: string;
   color: "blue" | "emerald" | "red" | "gold" | "slate";
+  // Plain-language explanation of what the figure means, shown in a tooltip when the user
+  // hovers (or focuses) the icon.
+  info?: string;
 }
 
 const STAT_COLOR_MAP: Record<StatProps["color"], string> = {
@@ -214,19 +239,84 @@ const STAT_COLOR_MAP: Record<StatProps["color"], string> = {
   slate: "bg-slate-50 text-slate-600 border-slate-100",
 };
 
+const INFO_TIP_WIDTH = 256;
+
+/**
+ * INFO TIP — wraps an element (a stat's icon) and shows a short explanation while it's hovered
+ * or focused. Rendered in a portal with fixed positioning rather than as an absolutely
+ * positioned child: the stat strips sit inside cards that clip their overflow, which would cut
+ * the tip off. It opens below the anchor, flips above when the viewport has no room below, and
+ * is clamped horizontally so it never runs off-screen.
+ */
+function InfoTip({ text, children }: { text: string; children: React.ReactNode }) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [tip, setTip] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+
+  const show = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const margin = 8;
+    const left = Math.min(
+      Math.max(margin, rect.left + rect.width / 2 - INFO_TIP_WIDTH / 2),
+      window.innerWidth - INFO_TIP_WIDTH - margin,
+    );
+    const roomBelow = window.innerHeight - rect.bottom > 160;
+    setTip(roomBelow ? { left, top: rect.bottom + margin } : { left, bottom: window.innerHeight - rect.top + margin });
+  };
+
+  // A fixed-position tip doesn't follow its anchor, so drop it if anything scrolls under it.
+  useEffect(() => {
+    if (!tip) return;
+    const hide = () => setTip(null);
+    window.addEventListener("scroll", hide, true);
+    return () => window.removeEventListener("scroll", hide, true);
+  }, [tip]);
+
+  return (
+    <span
+      ref={anchorRef}
+      tabIndex={0}
+      aria-label={text}
+      onMouseEnter={show}
+      onMouseLeave={() => setTip(null)}
+      onFocus={show}
+      onBlur={() => setTip(null)}
+      className="self-start inline-flex rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+    >
+      {children}
+      {tip && createPortal(
+        <div
+          role="tooltip"
+          style={{ position: "fixed", left: tip.left, top: tip.top, bottom: tip.bottom, width: INFO_TIP_WIDTH }}
+          className="z-50 pointer-events-none rounded-xl bg-slate-900 px-3.5 py-3 text-xs font-medium leading-relaxed text-white shadow-xl"
+        >
+          {text}
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
 /**
  * STAT CONTENT — the icon/title/value/description block, with no card shell of its own,
  * meant to share a card with siblings via StatCardGroup, divided by internal borders
  * instead of gaps — reads better than each figure getting its own separate card.
  */
-function StatContent({ title, value, icon, description, color }: StatProps) {
+function StatContent({ title, value, icon, description, color, info }: StatProps) {
+  const iconBox = (
+    <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${STAT_COLOR_MAP[color]} ${info ? "cursor-help" : ""}`}>
+      {icon}
+    </div>
+  );
+
   return (
     <div className="p-5 md:p-6 flex flex-col gap-2.5">
-      <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${STAT_COLOR_MAP[color]}`}>{icon}</div>
+      {info ? <InfoTip text={info}>{iconBox}</InfoTip> : iconBox}
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
-      <p className="font-black text-slate-900 text-xl md:text-2xl" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+      <div className="font-black text-slate-900 text-xl md:text-2xl" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
         {value}
-      </p>
+      </div>
       <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>
     </div>
   );
@@ -281,14 +371,14 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
           <XAxis
             dataKey="date"
             tickFormatter={chartDateLabel}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             minTickGap={30}
           />
           <YAxis
             tickFormatter={(v) => formatCurrency(v, currency, 0)}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             width={80}
@@ -296,7 +386,7 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
           <Tooltip
             labelFormatter={(label) => fullDateLabel(label as string)}
             formatter={(value) => [formatCurrency(Number(value), currency, 0), "Market value"]}
-            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+            contentStyle={TOOLTIP_STYLE}
           />
           <Area type="monotone" dataKey="value" stroke="#C49A3C" strokeWidth={2} fill="url(#performanceFill)" />
         </AreaChart>
@@ -341,14 +431,14 @@ function DayChangeChart({ chart, currency }: { chart: DailyValueChange[]; curren
           <XAxis
             dataKey="date"
             tickFormatter={chartDateLabel}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             minTickGap={30}
           />
           <YAxis
             tickFormatter={(v) => formatCurrency(v, currency, 0)}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             width={80}
@@ -359,7 +449,7 @@ function DayChangeChart({ chart, currency }: { chart: DailyValueChange[]; curren
               `${formatCurrency(Number(value), currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
               "Day change",
             ]}
-            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+            contentStyle={TOOLTIP_STYLE}
           />
           <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
             {data.map((d) => (
@@ -456,11 +546,12 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.lifetimeDividends === 0 && data.chart.length === 0;
 
-type TodaySubTabId = "overview" | "composition";
+type TodaySubTabId = "overview" | "composition" | "risk";
 
 const TODAY_SUB_TABS: { id: TodaySubTabId; label: string; icon: typeof Sun }[] = [
   { id: "overview", label: "Overview", icon: Sun },
   { id: "composition", label: "Composition", icon: LayoutGrid },
+  { id: "risk", label: "Risk Model", icon: Gauge },
 ];
 
 function TodaySubTabSwitcher({ active, onChange }: { active: TodaySubTabId; onChange: (id: TodaySubTabId) => void }) {
@@ -485,16 +576,16 @@ function TodaySubTabSwitcher({ active, onChange }: { active: TodaySubTabId; onCh
 interface TodayComposition {
   sector: ExposureEntryResponse[] | null;
   region: ExposureEntryResponse[] | null;
-  riskModel: RiskModelResponse | null;
 }
 
 /**
- * TODAY PAGE — split into two sub-tabs: Overview (current value against two references —
+ * TODAY PAGE — split into three sub-tabs: Overview (current value against two references —
  * yesterday, and the start of the current month — plus the month-to-date daily snapshots
- * that back those deltas, and today's news) and Composition (what's actually held right
- * now, by currency/asset/broker from TodayDashboard.summary, plus sector/region exposure
- * and the holdings correlation matrix — the latter three fetched lazily on first visit to
- * this sub-tab, since /today itself doesn't carry them).
+ * that back those deltas, and today's news), Composition (what's actually held right now, by
+ * currency/asset/broker from TodayDashboard.summary, plus sector/region exposure — fetched
+ * lazily on first visit, since /today itself doesn't carry it) and Risk Model (the
+ * mean-variance model over the held assets, which loads itself when that tab is opened —
+ * see RiskModelTab).
  */
 function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: string | null }) {
   const isDayGain = data.deltaDayValue >= 0;
@@ -511,13 +602,12 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
       setCompositionLoading(true);
       setCompositionError(null);
       try {
-        const [sector, region, riskModel] = await Promise.all([
+        const [sector, region] = await Promise.all([
           portfolioService.getSectorExposure(forUserUuid),
           portfolioService.getRegionExposure(forUserUuid),
-          portfolioService.getRiskModel(forUserUuid),
         ]);
         if (cancelled) return;
-        setComposition({ sector: sector?.entries ?? null, region: region?.entries ?? null, riskModel });
+        setComposition({ sector: sector?.entries ?? null, region: region?.entries ?? null });
       } catch (err) {
         if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
       } finally {
@@ -580,6 +670,8 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
           />
           <NewsModule title="Today's Headlines" desc="Market news published today." />
         </>
+      ) : subTab === "risk" ? (
+        <RiskModelTab forUserUuid={forUserUuid} />
       ) : compositionLoading && !composition ? (
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
@@ -599,7 +691,6 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
             renderBody={CompositionBody}
           />
           <SectorRegionModule sector={composition?.sector ?? null} region={composition?.region ?? null} />
-          <CorrelationMatrixModule riskModel={composition?.riskModel ?? null} />
           <HoldingsExplorer holdings={data.summary.holdings} />
         </>
       )}
@@ -785,7 +876,7 @@ function CompositionDonut({ items, currency }: { items: { label: string; value: 
               const pct = total > 0 ? ((num / total) * 100).toFixed(1) : "0";
               return [`${formatCurrency(num, currency, 0)} (${pct}%)`, name];
             }}
-            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+            contentStyle={TOOLTIP_STYLE}
           />
         </PieChart>
       </div>
@@ -894,13 +985,13 @@ function correlationCellStyle(value: number): React.CSSProperties {
 
 /**
  * CORRELATION MATRIX MODULE — how the held assets' returns moved together over the history
- * they share (from /risk-model). Needs at least two assets with shared history: below that the
- * model is "unavailable" (or the matrix is missing) and a message stands in for the table.
- * Individual cells can be null and render as a dash.
+ * they share (from /risk-model, shown in RiskModelTab). Drawn whenever the document carries a
+ * matrix of at least two assets, whatever its status; without one, a message stands in for the
+ * table. Individual cells can be null and render as a dash.
  */
-function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse | null }) {
-  const correlation = riskModel?.correlation ?? null;
-  const usable = riskModel?.status === "ok" && correlation !== null && correlation.tickers.length >= 2;
+function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse }) {
+  const correlation = riskModel.correlation;
+  const usable = correlation !== null && correlation.tickers.length >= 2;
 
   return (
     <Module>
@@ -909,10 +1000,7 @@ function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse |
         title="Correlation Matrix"
         desc="How your holdings moved together, based on past returns."
       />
-      {riskModel?.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-      {riskModel === null ? (
-        <ModuleMessage>Being prepared — this shows up after the overnight analysis of your portfolio has run.</ModuleMessage>
-      ) : !usable ? (
+      {!usable ? (
         <ModuleMessage>Needs at least two assets with a shared price history to compare.</ModuleMessage>
       ) : (
         <div className="p-6 md:p-7 overflow-x-auto custom-scrollbar">
@@ -951,6 +1039,343 @@ function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse |
           </table>
         </div>
       )}
+    </Module>
+  );
+}
+
+const plainPctOrDash = (pct: number | null) => (pct === null ? "—" : `${pct.toFixed(2)}%`);
+const ratioOrDash = (value: number | null) => (value === null ? "—" : value.toFixed(2));
+
+// One colour per mix in the risk-model views, so a mix reads the same on the frontier chart,
+// in the comparison table and in the legend. The current allocation keeps the portfolio gold.
+const MIX_COLORS = { current: PORTFOLIO_COLOR, maxSharpe: "#0f766e", minVolatility: "#1d4ed8" } as const;
+
+/**
+ * RISK MODEL TAB — /risk-model as one page, since it is one model: either it was built for the
+ * whole portfolio or none of it was. Loads itself when the tab is opened. The state handling:
+ * null → "being prepared"; status other than "ok" → a single explanation (the document then has
+ * no per-asset estimates, allocations, frontier or gaps), though a correlation matrix is still
+ * drawn if the backend sent one; isStale → an "updating" note over the previous numbers.
+ * Everything on the page is built from past returns, so it says so up front and avoids
+ * recommendation wording.
+ */
+function RiskModelTab({ forUserUuid }: { forUserUuid?: string | null }) {
+  const { data, loading, failed } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, forUserUuid);
+
+  if (loading || failed || data === null) {
+    return (
+      <Module>
+        <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
+        <AnalyticsPlaceholder
+          loading={loading}
+          failed={failed}
+          hasData={false}
+          preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+        />
+      </Module>
+    );
+  }
+
+  const built = data.status === "ok";
+
+  return (
+    <div className="space-y-6">
+      {data.isStale && <UpdatingNote />}
+      <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-slate-600">
+        <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <p className="text-xs font-medium leading-relaxed">
+          Everything on this page is based on the past returns of your holdings, over the history they share. It
+          describes what happened, not what will happen, and it isn&apos;t a recommendation.
+        </p>
+      </div>
+
+      {built ? (
+        <>
+          <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />
+          <FrontierModule
+            frontier={data.frontier}
+            current={data.current}
+            maxSharpe={data.maxSharpe}
+            minVolatility={data.minVolatility}
+          />
+          <WeightGapsModule gaps={data.weightGaps} />
+          <RiskAssetsModule assets={data.assets} />
+        </>
+      ) : (
+        <Module>
+          <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
+          <ModuleMessage>
+            The risk model can&apos;t be built for your portfolio right now. That happens when fewer than two holdings
+            share at least 30 days of price history, when every holding&apos;s average past return is zero or negative,
+            or when no allocation could be worked out from the data.
+          </ModuleMessage>
+        </Module>
+      )}
+
+      {(built || data.correlation !== null) && <CorrelationMatrixModule riskModel={data} />}
+    </div>
+  );
+}
+
+/**
+ * MIX COMPARISON — the three allocations the model evaluates on the same past returns: what
+ * you hold now, the long-only mix with the best past return per unit of risk (max Sharpe) and
+ * the one with the lowest volatility. Each row also lists its weights, so the mixes are
+ * something you can read rather than three anonymous sets of numbers. An entry can be null.
+ */
+function MixComparisonModule({
+  current, maxSharpe, minVolatility,
+}: { current: RiskPortfolioEntry | null; maxSharpe: RiskPortfolioEntry | null; minVolatility: RiskPortfolioEntry | null }) {
+  const rows: { label: string; hint: string; color: string; entry: RiskPortfolioEntry | null }[] = [
+    { label: "Your allocation", hint: "As you hold it today", color: MIX_COLORS.current, entry: current },
+    { label: "Max Sharpe", hint: "Best past return per unit of risk", color: MIX_COLORS.maxSharpe, entry: maxSharpe },
+    { label: "Min volatility", hint: "Smallest past swings", color: MIX_COLORS.minVolatility, entry: minVolatility },
+  ];
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk Model"
+        title="Your Allocation vs. Two Historical Mixes"
+        desc="The same holdings, weighted three ways and measured on the same past returns."
+      />
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-left border-collapse min-w-150">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Mix</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Avg. annual return (past)</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Volatility</th>
+              <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Sharpe ratio</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => (
+              <tr key={r.label}>
+                <td className="px-5 md:px-6 py-3.5">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: r.color }} />
+                    <span className="text-sm font-bold text-slate-900">{r.label}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{r.hint}</p>
+                  {r.entry && r.entry.weights.length > 0 && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {r.entry.weights.map((w) => `${w.ticker} ${w.weightPct.toFixed(0)}%`).join(" · ")}
+                    </p>
+                  )}
+                </td>
+                <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">{formatPctOrDash(r.entry?.expectedReturnPct ?? null)}</td>
+                <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{plainPctOrDash(r.entry?.volatilityPct ?? null)}</td>
+                <td className="px-3 md:px-6 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{ratioOrDash(r.entry?.sharpeRatio ?? null)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Module>
+  );
+}
+
+/**
+ * FRONTIER MODULE — the efficient frontier: for each level of volatility, the highest past
+ * return any long-only mix of your holdings would have had. The three mixes from
+ * MixComparisonModule are marked on it (the current allocation normally sits below the curve).
+ * Points with a null coordinate are skipped; the dots extend the axes if they fall outside the
+ * curve's own range.
+ */
+function FrontierModule({
+  frontier, current, maxSharpe, minVolatility,
+}: {
+  frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[];
+  current: RiskPortfolioEntry | null;
+  maxSharpe: RiskPortfolioEntry | null;
+  minVolatility: RiskPortfolioEntry | null;
+}) {
+  const curve = useMemo(
+    () => frontier
+      .filter((f): f is { volatilityPct: number; expectedReturnPct: number } => f.volatilityPct !== null && f.expectedReturnPct !== null)
+      .sort((a, b) => a.volatilityPct - b.volatilityPct),
+    [frontier],
+  );
+  const dots = [
+    { label: "Your allocation", color: MIX_COLORS.current, entry: current },
+    { label: "Max Sharpe", color: MIX_COLORS.maxSharpe, entry: maxSharpe },
+    { label: "Min volatility", color: MIX_COLORS.minVolatility, entry: minVolatility },
+  ].filter((d): d is typeof d & { entry: RiskPortfolioEntry & { volatilityPct: number; expectedReturnPct: number } } =>
+    d.entry?.volatilityPct != null && d.entry?.expectedReturnPct != null);
+
+  if (curve.length < 2) return null;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk Model"
+        title="Efficient Frontier"
+        desc="The highest past return available at each level of volatility, using your current holdings."
+      />
+      <div className="p-6 md:p-7 pb-3 h-80">
+        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 320 }}>
+          <LineChart data={curve} margin={{ top: 16, right: 16, left: 0, bottom: 20 }}>
+            <XAxis
+              type="number"
+              dataKey="volatilityPct"
+              domain={["auto", "auto"]}
+              tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+              tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+              axisLine={false}
+              tickLine={false}
+              label={{ value: "Volatility", position: "insideBottom", offset: -12, fontSize: 11, fill: AXIS_TICK_COLOR }}
+            />
+            <YAxis
+              type="number"
+              domain={["auto", "auto"]}
+              tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+              tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+              axisLine={false}
+              tickLine={false}
+              width={64}
+              label={{ value: "Avg. annual return (past)", angle: -90, position: "insideLeft", offset: 4, fontSize: 11, fill: AXIS_TICK_COLOR }}
+            />
+            <Tooltip
+              labelFormatter={(label) => `Volatility ${Number(label).toFixed(2)}%`}
+              formatter={(value) => [`${Number(value).toFixed(2)}%`, "Avg. annual return (past)"]}
+              contentStyle={TOOLTIP_STYLE}
+            />
+            <Line type="monotone" dataKey="expectedReturnPct" stroke={BENCHMARK_COLOR} strokeWidth={2} dot={false} isAnimationActive={false} />
+            {dots.map((d) => (
+              <ReferenceDot
+                key={d.label}
+                x={d.entry.volatilityPct}
+                y={d.entry.expectedReturnPct}
+                r={6}
+                fill={d.color}
+                stroke="#ffffff"
+                strokeWidth={2}
+                ifOverflow="extendDomain"
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-6 md:px-7 pb-6 md:pb-7 text-xs font-bold text-slate-600">
+        <span className="flex items-center gap-2">
+          <span className="w-4 border-t-2" style={{ borderColor: BENCHMARK_COLOR }} /> Efficient frontier
+        </span>
+        {dots.map((d) => (
+          <span key={d.label} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} /> {d.label}
+          </span>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
+// The gap direction is worded against the max-Sharpe mix as a description of the distance, not
+// as advice — "above / below" rather than "reduce / add".
+const GAP_DIRECTION: Record<WeightGapEntry["direction"], { label: string; className: string }> = {
+  overweight: { label: "Above the max-Sharpe mix", className: "bg-amber-50 text-amber-700" },
+  underweight: { label: "Below the max-Sharpe mix", className: "bg-blue-50 text-blue-700" },
+  in_line: { label: "In line", className: "bg-slate-100 text-slate-600" },
+};
+
+/**
+ * WEIGHT GAPS — for each holding, its weight today next to its weight in the max-Sharpe mix,
+ * with the distance between them (delta = current − target, in percentage points; the backend
+ * has already resolved the direction, so nothing is subtracted here). Shown to see how far the
+ * portfolio sits from that historical mix, not as a suggestion to move towards it.
+ */
+function WeightGapsModule({ gaps }: { gaps: WeightGapEntry[] }) {
+  if (gaps.length === 0) return null;
+
+  const max = Math.max(...gaps.flatMap((g) => [g.currentWeightPct, g.targetWeightPct]), 1);
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk Model"
+        title="Weights vs. the Max-Sharpe Mix"
+        desc="How far each holding's weight sits from the mix that had the best past return per unit of risk."
+      />
+      <div className="p-6 md:p-7 space-y-5">
+        {gaps.map((g) => {
+          const dir = GAP_DIRECTION[g.direction] ?? GAP_DIRECTION.in_line;
+          return (
+            <div key={g.ticker}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2">
+                <span className="min-w-0 truncate">
+                  <span className="text-[13px] font-bold text-slate-900">{g.ticker}</span>
+                  <span className="text-xs text-slate-500 ml-2">{g.name}</span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${dir.className}`}>{dir.label}</span>
+                  <span className="text-[13px] font-bold text-slate-500 tabular-nums">
+                    {g.deltaPct > 0 ? "+" : ""}{g.deltaPct.toFixed(1)} pp
+                  </span>
+                </span>
+              </div>
+              <WeightBar label="Now" pct={g.currentWeightPct} max={max} color={MIX_COLORS.current} />
+              <WeightBar label="Max Sharpe" pct={g.targetWeightPct} max={max} color={MIX_COLORS.maxSharpe} />
+            </div>
+          );
+        })}
+      </div>
+    </Module>
+  );
+}
+
+function WeightBar({ label, pct, max, color }: { label: string; pct: number; max: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-1">
+      <span className="w-20 shrink-0 text-[11px] font-bold text-slate-500">{label}</span>
+      <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${(pct / max) * 100}%`, background: color }} />
+      </div>
+      <span className="w-12 shrink-0 text-right text-xs font-bold text-slate-600 tabular-nums">{pct.toFixed(1)}%</span>
+    </div>
+  );
+}
+
+/**
+ * RISK ASSETS — the per-asset inputs the model works from: each holding's average annual return
+ * over the history the holdings share (a historical mean, not a forecast) and its volatility.
+ * Only holdings with enough history to be estimated appear.
+ */
+function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
+  if (assets.length === 0) return null;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk Model"
+        title="Holdings Behind the Model"
+        desc="Each holding's average annual return and volatility over the history they share."
+      />
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-left border-collapse min-w-100">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Asset</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Avg. annual return (past)</th>
+              <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Volatility</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {assets.map((a) => (
+              <tr key={a.ticker}>
+                <td className="px-5 md:px-6 py-3.5">
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="text-sm font-bold text-slate-900 shrink-0">{a.ticker}</span>
+                    <span className="text-xs text-slate-500 truncate">{a.name}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">{formatPctOrDash(a.expectedReturnPct)}</td>
+                <td className="px-3 md:px-6 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{plainPctOrDash(a.volatilityPct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Module>
   );
 }
@@ -1473,14 +1898,14 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
           <XAxis
             dataKey="date"
             tickFormatter={monthShortYearLabel}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             minTickGap={40}
           />
           <YAxis
             tickFormatter={(v) => `${v}%`}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             width={48}
@@ -1488,7 +1913,7 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
           <Tooltip
             labelFormatter={(label) => fullDateLabel(label as string)}
             formatter={(value) => [`${Number(value).toFixed(2)}%`, "Volatility"]}
-            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+            contentStyle={TOOLTIP_STYLE}
           />
           <Line type="monotone" dataKey="value" name="Volatility" stroke="#C49A3C" strokeWidth={2} dot={false} />
         </LineChart>
@@ -1531,6 +1956,7 @@ function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
                 icon={<Activity className="h-4 w-4 text-[#C49A3C]" />}
                 description="Standard deviation of daily returns, annualized"
                 color="gold"
+                info="How widely your portfolio's daily returns swing, scaled to a year. A higher figure means bigger ups and downs along the way."
               />
               {data.rollingVolatilityPct && <RollingVolatilityChart series={data.rollingVolatilityPct} />}
             </>
@@ -1564,14 +1990,14 @@ function CumulativeReturnChart({ portfolio, benchmark }: { portfolio: TimeSeries
           <XAxis
             dataKey="date"
             tickFormatter={monthShortYearLabel}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             minTickGap={40}
           />
           <YAxis
             tickFormatter={(v) => `${v}%`}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
             width={56}
@@ -1579,10 +2005,10 @@ function CumulativeReturnChart({ portfolio, benchmark }: { portfolio: TimeSeries
           <Tooltip
             labelFormatter={(label) => fullDateLabel(label as string)}
             formatter={(value, name) => [`${Number(value).toFixed(2)}%`, name]}
-            contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+            contentStyle={TOOLTIP_STYLE}
           />
-          <Line type="monotone" dataKey="portfolio" name="Portfolio" stroke="#C49A3C" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="benchmark" name="Benchmark" stroke="#94a3b8" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+          <Line type="monotone" dataKey="portfolio" name="Portfolio" stroke={PORTFOLIO_COLOR} strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="benchmark" name="Benchmark" stroke={BENCHMARK_COLOR} strokeWidth={2} dot={false} strokeDasharray="4 3" />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -1590,19 +2016,79 @@ function CumulativeReturnChart({ portfolio, benchmark }: { portfolio: TimeSeries
 }
 
 /**
+ * SERIES VALUE — one labelled figure for a StatContent that compares two series: a marker
+ * matching that series' line on the chart (solid gold for the portfolio, dashed grey for the
+ * benchmark), its name, and its value. Reads as its own legend, so the two figures can't be
+ * mistaken for one another the way a "56% vs 59%" string could.
+ */
+function SeriesValue({
+  label, value, color, dashed = false,
+}: { label: string; value: string; color: string; dashed?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="flex items-center gap-2 font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <span className="w-4 border-t-2" style={{ borderColor: color, borderStyle: dashed ? "dashed" : "solid" }} />
+        {label}
+      </span>
+      <span className="text-lg tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * BENCHMARK COMPOSITION — what the dashed benchmark line on the chart is made of: the proxy
+ * ETFs the benchmark holds, largest first, with their weights. Sits right under the chart so
+ * it reads as the explanation of that line. The backend also lists proxies of closed
+ * positions at weight 0; those are dropped so only today's basket is shown.
+ */
+function BenchmarkComposition({ components }: { components: BenchmarkComponentEntry[] }) {
+  const basket = components
+    .filter((c): c is BenchmarkComponentEntry & { weightPct: number } => (c.weightPct ?? 0) > 0)
+    .sort((a, b) => b.weightPct - a.weightPct);
+
+  if (basket.length === 0) return null;
+
+  const max = Math.max(...basket.map((c) => c.weightPct), 0.01);
+
+  return (
+    <div className="px-6 md:px-7 pb-6 md:pb-7">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-5 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLOR }} />
+        <h3 className="text-sm font-black text-slate-900">What the benchmark is made of</h3>
+      </div>
+      <p className="text-xs text-slate-500 mb-4 max-w-xl leading-relaxed">
+        Each of your holdings is matched to a proxy ETF. The benchmark holds them at today&apos;s weights and
+        receives the same deposits and withdrawals as your portfolio.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+        {basket.map((c, i) => (
+          <div key={`${c.ticker ?? c.name}-${i}`}>
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <span className="min-w-0 truncate">
+                <span className="text-[13px] font-bold text-slate-900">{c.ticker ?? c.name}</span>
+                {c.ticker && <span className="text-xs text-slate-400 ml-2">{c.name}</span>}
+              </span>
+              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{c.weightPct.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${(c.weightPct / max) * 100}%`, background: BENCHMARK_COLOR }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * BENCHMARK MODULE — /benchmark: the portfolio against a synthetic benchmark of proxy ETFs
  * that receives the same cash flows. All figures are already percentages (or plain ratios),
- * over the days the portfolio and benchmark share, and any of them can be null. The basket
- * also lists proxies of closed positions at weight 0, filtered out here so the label names
- * only what's held today.
+ * over the days the portfolio and benchmark share, and any of them can be null. Its
+ * composition is shown under the chart (see BenchmarkComposition).
  */
 function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
   const { data, loading, failed } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, forUserUuid);
 
-  const basket = data?.components
-    .filter((c) => (c.weightPct ?? 0) > 0)
-    .map((c) => c.ticker ?? c.name)
-    .join(", ");
   const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
   const outperformed = data?.outperformed ?? null;
 
@@ -1611,7 +2097,7 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
       <ModuleHead
         eyebrow="All Time"
         title="Benchmark Comparison"
-        desc={data ? `${coverage}${basket ? `, vs. ${basket}` : ""}.` : "How your portfolio compares to the market."}
+        desc={data ? `${coverage}.` : "How your portfolio compares to the market."}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -1632,13 +2118,20 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   benchmark={data.benchmarkCumulativeReturnPct}
                 />
               )}
+              <BenchmarkComposition components={data.components} />
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x border-t border-slate-100">
                 <StatContent
                   title="Total Return"
-                  value={`${formatPctOrDash(data.portfolioTotalReturnPct)} vs ${formatPctOrDash(data.benchmarkTotalReturnPct)}`}
+                  value={
+                    <div className="space-y-1.5">
+                      <SeriesValue label="Portfolio" value={formatPctOrDash(data.portfolioTotalReturnPct)} color={PORTFOLIO_COLOR} />
+                      <SeriesValue label="Benchmark" value={formatPctOrDash(data.benchmarkTotalReturnPct)} color={BENCHMARK_COLOR} dashed />
+                    </div>
+                  }
                   icon={outperformed === false ? <TrendingDown className="h-4 w-4 text-rose-600" /> : <TrendingUp className="h-4 w-4 text-emerald-600" />}
-                  description="Portfolio vs. benchmark, over the shared period"
+                  description="Over the period shared with the benchmark"
                   color={outperformed === null ? "slate" : outperformed ? "emerald" : "red"}
+                  info="How much each grew over the shared period, counting only market moves: deposits and withdrawals are stripped out, so it isn't the gain on your open positions. The benchmark is fed the same cash flows as your portfolio."
                 />
                 <StatContent
                   title="Excess Return"
@@ -1646,6 +2139,7 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   icon={<Scale className="h-4 w-4 text-slate-500" />}
                   description="Annualized, portfolio minus benchmark (percentage points)"
                   color="slate"
+                  info="The gap between your portfolio's annualized return and the benchmark's, in percentage points. Positive means your portfolio grew faster than the benchmark, negative means slower."
                 />
                 <StatContent
                   title="Alpha"
@@ -1653,6 +2147,7 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   icon={<Activity className="h-4 w-4 text-slate-500" />}
                   description="Annualized return not explained by market exposure"
                   color="slate"
+                  info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain, calculated with a risk-free rate of 0. Positive means the portfolio earned more than its market exposure alone would suggest."
                 />
                 <StatContent
                   title="Beta"
@@ -1660,6 +2155,7 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   icon={<Activity className="h-4 w-4 text-slate-500" />}
                   description="Sensitivity to benchmark moves"
                   color="slate"
+                  info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves."
                 />
               </div>
             </>
