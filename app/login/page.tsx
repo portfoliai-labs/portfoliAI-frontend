@@ -1,8 +1,8 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useState } from "react";
 import { motion } from "framer-motion";
-import { BarChart3, ShieldCheck, Zap, Loader2, AlertCircle } from "lucide-react";
+import { BarChart3, ShieldCheck, Zap, Loader2, AlertCircle, Mail, Lock, MailCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 
@@ -24,8 +24,46 @@ function LoginContent() {
   const isAddon = searchParams.get("source") === "addon";
   const next = searchParams.get("next");
 
-  const { login, status, isError } = useAuthFlow(isAddon ? "addon" : "default", next);
-  const isLoading: boolean = status === "Redirecting to Google...";
+  const {
+    login,
+    loginWithPassword,
+    signUpWithPassword,
+    resendConfirmation,
+    status,
+    isError,
+    needsEmailConfirmation,
+  } = useAuthFlow(isAddon ? "addon" : "default", next);
+
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGoogle = async () => {
+    setIsSubmitting(true);
+    await login();
+    setIsSubmitting(false);
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    if (authMode === "signin") {
+      await loginWithPassword(email, password);
+    } else {
+      await signUpWithPassword(email, password);
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleResend = async () => {
+    if (!needsEmailConfirmation) return;
+    setIsSubmitting(true);
+    await resendConfirmation(needsEmailConfirmation);
+    setIsSubmitting(false);
+  };
+
+  const isLoading = isSubmitting;
 
   return (
     <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 lg:p-20" style={{ background: "#F7F5EF" }}>
@@ -49,18 +87,20 @@ function LoginContent() {
             <div className="flex items-center gap-2 mb-4">
               <span className="w-5 h-px" style={{ background: "#C49A3C" }} />
               <span className="text-[10px] font-medium tracking-[0.14em] uppercase" style={{ color: "#8A6A28" }}>
-                {isAddon ? "Extension sign in" : "Sign in"}
+                {isAddon ? "Extension sign in" : authMode === "signup" ? "Create account" : "Sign in"}
               </span>
             </div>
             <h2
               className="text-[clamp(28px,3vw,40px)] font-black leading-tight tracking-tight mb-3"
               style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
             >
-              {isAddon ? "Authenticate extension." : "Welcome back."}
+              {isAddon ? "Authenticate extension." : authMode === "signup" ? "Create your account." : "Welcome back."}
             </h2>
             <p className="text-[14px] font-light" style={{ color: "#78716c" }}>
               {isAddon
-                ? "Sign in with Google to generate your authentication token."
+                ? "Sign in to generate your authentication token."
+                : authMode === "signup"
+                ? "Sign up to start analysing your portfolio."
                 : "Sign in to access your portfolio reports."}
             </p>
           </div>
@@ -75,34 +115,118 @@ function LoginContent() {
             </div>
           )}
 
-          <button
-            onClick={() => login()}
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-[3px] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ background: "#1c1917", color: "#fafaf9", border: "1px solid #1c1917" }}
-            onMouseEnter={(e) => { if (!isLoading) (e.currentTarget.style.background = "#2a2820"); }}
-            onMouseLeave={(e) => { if (!isLoading) (e.currentTarget.style.background = "#1c1917"); }}
-          >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#C49A3C" }} />
-            ) : (
-              <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                <path d="M1 1h22v22H1z" fill="none" />
-              </svg>
-            )}
-            <span className="text-[13px] font-semibold tracking-[0.04em] uppercase">
-              {isLoading ? "Signing in…" : "Continue with Google"}
-            </span>
-          </button>
+          {needsEmailConfirmation ? (
+            <div className="text-center">
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-5"
+                style={{ background: "rgba(196,154,60,0.1)" }}
+              >
+                <MailCheck className="w-6 h-6" style={{ color: "#C49A3C" }} />
+              </div>
+              <p className="text-[14px] font-medium mb-1" style={{ color: "#1c1917" }}>
+                Check your inbox
+              </p>
+              <p className="text-[13px] font-light leading-relaxed mb-6" style={{ color: "#78716c" }}>
+                We sent a confirmation link to <strong>{needsEmailConfirmation}</strong>. Click it to finish
+                creating your account.
+              </p>
+              <button
+                onClick={handleResend}
+                disabled={isLoading}
+                className="text-[12px] font-semibold underline disabled:opacity-60"
+                style={{ color: "#78716c" }}
+              >
+                {isLoading ? "Resending…" : "Resend confirmation email"}
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={handleGoogle}
+                disabled={isLoading}
+                className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-[3px] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: "#1c1917", color: "#fafaf9", border: "1px solid #1c1917" }}
+                onMouseEnter={(e) => { if (!isLoading) (e.currentTarget.style.background = "#2a2820"); }}
+                onMouseLeave={(e) => { if (!isLoading) (e.currentTarget.style.background = "#1c1917"); }}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#C49A3C" }} />
+                ) : (
+                  <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                    <path d="M1 1h22v22H1z" fill="none" />
+                  </svg>
+                )}
+                <span className="text-[13px] font-semibold tracking-[0.04em] uppercase">
+                  Continue with Google
+                </span>
+              </button>
 
-          {!isError && isLoading && (
-            <p className="text-center text-[11px] font-medium mt-4 animate-pulse tracking-wider uppercase" style={{ color: "#C49A3C" }}>
-              {status}
-            </p>
+              <div className="flex items-center gap-4 my-6">
+                <div className="flex-1 h-px" style={{ background: "#E0DACC" }} />
+                <span className="text-[10px] uppercase tracking-[0.1em]" style={{ color: "#c4bdb5" }}>or</span>
+                <div className="flex-1 h-px" style={{ background: "#E0DACC" }} />
+              </div>
+
+              <form onSubmit={handlePasswordSubmit} className="space-y-3">
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#a8a29e" }} />
+                  <input
+                    type="email"
+                    required
+                    autoComplete="email"
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-[3px] text-[14px] outline-none"
+                    style={{ background: "#fff", border: "1px solid #E0DACC", color: "#1c1917" }}
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#a8a29e" }} />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-[3px] text-[14px] outline-none"
+                    style={{ background: "#fff", border: "1px solid #E0DACC", color: "#1c1917" }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3.5 px-6 rounded-[3px] text-[13px] font-semibold tracking-[0.04em] uppercase transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ background: "#fff", color: "#1c1917", border: "1px solid #1c1917" }}
+                >
+                  {isLoading ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}
+                </button>
+              </form>
+
+              {!isError && isLoading && (
+                <p className="text-center text-[11px] font-medium mt-4 animate-pulse tracking-wider uppercase" style={{ color: "#C49A3C" }}>
+                  {status}
+                </p>
+              )}
+
+              <p className="text-center text-[12px] font-medium mt-6" style={{ color: "#78716c" }}>
+                {authMode === "signup" ? "Already have an account?" : "Don't have an account?"}{" "}
+                <button
+                  type="button"
+                  onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}
+                  className="underline font-semibold"
+                  style={{ color: "#1c1917" }}
+                >
+                  {authMode === "signup" ? "Sign in" : "Sign up"}
+                </button>
+              </p>
+            </>
           )}
 
           <div className="flex items-center gap-4 my-8">

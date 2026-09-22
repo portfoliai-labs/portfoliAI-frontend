@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   BarChart3, ArrowRight,
@@ -8,7 +9,6 @@ import {
   TrendingUp, DollarSign, Activity, Shield, Scale,
   LayoutDashboard, Mail,
 } from "lucide-react";
-import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 import FeatureCard from "../components/homepage/FeatureCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
@@ -215,7 +215,10 @@ function ForWhomSection() {
 // ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const { login } = useAuthFlow();
+  const router = useRouter();
+  // Routes into /login instead of triggering Google directly — the login page
+  // is where the actual auth method (Google or email/password) gets chosen.
+  const goToLogin = () => router.push("/login");
   const [demoOpen, setDemoOpen] = useState(false);
 
   return (
@@ -245,7 +248,7 @@ export default function HomePage() {
           ))}
         </nav>
 
-        <motion.button onClick={() => login()}
+        <motion.button onClick={goToLogin}
           className="text-[12px] font-semibold px-5 py-2.5 rounded-[3px] uppercase tracking-[0.05em] transition-colors duration-200"
           style={{ background: "#1c1917", color: "#fafaf9" }}
           initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
@@ -256,7 +259,7 @@ export default function HomePage() {
         </motion.button>
       </header>
 
-      <HeroSection onLogin={login} onViewSample={() => setDemoOpen(true)} />
+      <HeroSection onLogin={goToLogin} onViewSample={() => setDemoOpen(true)} />
       <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
 
       <HowItWorksSection />
@@ -278,7 +281,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <SubscriptionSection onCta={login} />
+      <SubscriptionSection onCta={goToLogin} />
       <FaqSection />
 
       {/* FOOTER */}

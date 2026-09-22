@@ -5,15 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, AlertCircle, ShieldCheck, Copy, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/app/lib/supabaseClient";
-import { userService } from "@/app/services/userService";
-
-/**
- * Interface for API errors to satisfy the linter without using 'any'
- */
-interface ApiErrorResponse {
-  status: number;
-  message?: string;
-}
+import { completeAuth } from "@/app/lib/completeAuth";
 
 function TokenDisplay({ token }: { token: string }) {
   const [copied, setCopied] = useState(false);
@@ -121,34 +113,14 @@ function AuthCallbackContent() {
       if (handledRef.current) return;
       handledRef.current = true;
 
-      localStorage.setItem("auth_token", token);
-
-      if (isAddon) {
-        setAddonToken(token);
-        return;
-      }
-
-      try {
-        const userProfile = await userService.getUserProfile();
-        localStorage.setItem("user_profile", JSON.stringify(userProfile));
-        router.replace(destination);
-      } catch (error: unknown) {
-        const apiError = error as ApiErrorResponse;
-
-        if (apiError && apiError.status === 404) {
-          // No account yet — go create one.
-          router.replace("/onboarding");
-        } else if (apiError && apiError.status === 403) {
-          // Account exists but the backend won't return it until the currently-required
-          // legal documents are accepted. Route into the app anyway — the (reserved)
-          // layout's UserProvider + LegalGate will hit this same 403 and show the
-          // acceptance screen before anything else renders.
-          router.replace(destination);
-        } else {
-          console.error("Auth Flow Error:", error);
-          setIsError(true);
-          setStatus("Authentication failed.");
-        }
+      const outcome = await completeAuth(token, isAddon ? "addon" : "default", destination);
+      if (outcome.kind === "addon-token") {
+        setAddonToken(outcome.token);
+      } else if (outcome.kind === "redirect") {
+        router.replace(outcome.to);
+      } else {
+        setIsError(true);
+        setStatus(outcome.message);
       }
     };
 
