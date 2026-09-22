@@ -251,17 +251,6 @@ function LoginContent() {
             <div className="flex-1 h-px" style={{ background: "#E0DACC" }} />
           </div>
 
-          <div
-            className="rounded-[3px] px-4 py-3 flex items-start gap-3"
-            style={{ background: "rgba(196,154,60,0.06)", border: "1px solid rgba(196,154,60,0.15)" }}
-          >
-            <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#8A6A28" }} strokeWidth={1.5} />
-            <p className="text-[11px] leading-relaxed" style={{ color: "#8A6A28" }}>
-              Your files are processed in-memory and immediately destroyed.
-              We never store your financial data.
-            </p>
-          </div>
-
           <p className="text-center text-[11px] mt-8 leading-relaxed" style={{ color: "#a8a29e" }}>
             By continuing, you agree to our{" "}
             <a href="#" className="underline transition-colors" style={{ color: "#78716c" }}
