@@ -21,11 +21,10 @@ import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { Loader2 } from "lucide-react";
 
-// 'reports' and 'profile' are omitted here on purpose: investors no longer have a sidebar
-// entry for them (Reports and Profile are hidden for now, Profile's language/currency moved
-// into Settings), so a stale deep link should fall back to overview rather than open them.
-// Advisors still reach both from their own sidebar via direct setActiveSection calls, which
-// don't go through this list.
+// 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
+// sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
+// language/currency moved into Settings), so a stale deep link should fall back to overview
+// rather than open them.
 const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'settings', 'notifications'];
 
 /**
