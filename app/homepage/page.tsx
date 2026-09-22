@@ -1,21 +1,17 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   BarChart3, ArrowRight,
-  User, Building2,
   TrendingUp, DollarSign, Activity, Shield, Scale,
   LayoutDashboard, Sparkles, Bell,
 } from "lucide-react";
 import FeatureCard from "../components/homepage/FeatureCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
-import PortfolioSnapshot from "../components/homepage/PortfolioSnapshot";
-import DemoTourModal from "../components/homepage/DemoTourModal";
+import HeroProductCard from "../components/homepage/HeroProductCard";
 import HowItWorksSection from "../components/homepage/HowItWorksSection";
-import DashboardSection from "../components/homepage/DashboardSection";
 import { BetaBadge } from "../components/common/BetaBadge";
 
 const featuresData = [
@@ -32,13 +28,13 @@ const featuresData = [
 
 const audienceData = [
   {
-    number: "01", icon: User, title: "Private Investors", role: "Self-directed",
+    number: "01", title: "Private Investors", role: "Self-directed",
     description: "Finally understand exactly what's happening inside your portfolio, day after day — with AI doing the reading so you don't have to.",
     features: ["Daily-updated dashboard", "AI-powered risk & performance insights", "Custom portfolio alerts", "Cost transparency by broker"],
     highlight: false,
   },
   {
-    number: "02", icon: Building2, title: "Financial Advisors", role: "Consultants & Wealth Managers",
+    number: "02", title: "Financial Advisors", role: "Consultants & Wealth Managers",
     description: "Every client's portfolio tracked in one place, with AI surfacing what needs your attention before they have to ask.",
     features: ["Unified view of your whole book", "AI insights & risk profiling per client", "AUM tracking across clients", "Alerts across every portfolio"],
     highlight: true,
@@ -66,99 +62,94 @@ function SectionHeading({ children, light = false }: { children: React.ReactNode
 }
 
 function CapabilityBadges() {
-  const badges = [
-    { icon: LayoutDashboard, label: "Daily Dashboard" },
-    { icon: Sparkles, label: "AI-Powered Insights" },
-    { icon: Bell, label: "Portfolio Alerts" },
-  ];
+  const badges = ["Daily Dashboard", "AI-Powered Insights", "Portfolio Alerts"];
   return (
-    <div className="flex gap-2 flex-wrap">
-      {badges.map(({ icon: Icon, label }) => (
-        <span key={label}
-          className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide px-3.5 py-1.5 rounded-sm border uppercase"
-          style={{ background: "transparent", color: "#78716c", borderColor: "#e7e5e0" }}
-        >
-          <Icon className="w-3 h-3" style={{ color: "#8A6A28" }} strokeWidth={1.5} />
-          {label}
+    <div className="flex items-center gap-3 flex-wrap">
+      {badges.map((label, i) => (
+        <span key={label} className="flex items-center gap-3">
+          {i > 0 && <span className="w-1 h-1 rounded-full" style={{ background: "#C49A3C" }} />}
+          <span className="text-[11px] font-medium tracking-[0.08em] uppercase" style={{ color: "#78716c" }}>
+            {label}
+          </span>
         </span>
       ))}
     </div>
   );
 }
 
-// ─── HERO — full light background, report floats ────────────────────────────────
+// ─── HERO — centered copy, wide dashboard panel beneath ─────────────────────────
 
-function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSample: () => void }) {
+function HeroSection({ onLogin }: { onLogin: () => void }) {
   return (
     <section
-      className="grid grid-cols-1 lg:grid-cols-2 items-center border-b"
-      style={{ background: "#F7F5EF", borderColor: "#E0DACC", minHeight: "90vh" }}
+      className="border-b relative overflow-hidden flex-1 flex flex-col justify-center"
+      style={{ background: "#F7F5EF", borderColor: "#E0DACC" }}
     >
-      {/* LEFT — copy */}
-      <motion.div
-        className="flex flex-col justify-center px-8 md:px-14 py-20"
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65, ease: "easeOut" }}
-      >
-        <SectionEyebrow>AI-Powered Portfolio Management</SectionEyebrow>
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: "-100px", right: "-100px", width: "600px", height: "600px",
+          background: "radial-gradient(circle, rgba(196,154,60,0.16) 0%, transparent 70%)",
+          filter: "blur(20px)",
+        }}
+      />
 
-        <h1
-          className="text-[clamp(38px,5vw,64px)] font-black leading-[1.04] tracking-tight mb-6"
-          style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
+      <div className="relative w-full max-w-7xl mx-auto px-6 md:px-10 py-16 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+        {/* Copy — left */}
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.65, ease: "easeOut" }}
         >
-          Your investments,<br />
-          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>finally</em> under<br />
-          control.
-        </h1>
+          <SectionEyebrow>AI-Powered Portfolio Management</SectionEyebrow>
 
-        <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
-          Upload your history once and PortfoliAI takes it from there: a dashboard updated
-          every day, AI that reads your risk, performance and costs for you, and alerts the
-          moment something needs your attention.
-        </p>
-
-        <div className="mb-8"><CapabilityBadges /></div>
-
-        <div className="flex items-center gap-5">
-          <button onClick={onLogin}
-            className="flex items-center gap-2 text-[13px] font-semibold px-6 py-3.5 rounded-[3px] transition-colors duration-200"
-            style={{ background: "#1c1917", color: "#fafaf9" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2820")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
+          <h1
+            className="text-[clamp(36px,4.8vw,60px)] font-black leading-[1.05] tracking-tight mb-6"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
           >
-            Start Tracking Free <ArrowRight className="w-4 h-4" />
-          </button>
-          <button onClick={onViewSample}
-            className="text-[12px] tracking-wide transition-colors duration-200"
-            style={{ color: "#a8a29e" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#a8a29e")}
-          >
-            View sample →
-          </button>
-        </div>
+            Command every<br />
+            <em style={{ fontStyle: "italic", color: "#8A6A28" }}>angle</em> of your<br />
+            portfolio.
+          </h1>
 
-        <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "Daily", label: "portfolio updates" }, { num: "AI", label: "risk & performance analysis" }, { num: "100%", label: "of costs shown, explicit + implicit" }].map((s, i) => (
-            <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
-              <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
-              <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </motion.div>
+          <p className="text-[15px] font-light leading-[1.8] max-w-md mb-8" style={{ color: "#78716c" }}>
+            One upload, and PortfoliAI turns your broker statements into a living command
+            deck — performance, risk, costs and alerts, read and explained by AI, updated
+            every single day.
+          </p>
 
-      {/* RIGHT — same light bg, dashboard snapshot floats with soft shadow */}
-      <motion.div
-        className="flex items-center justify-center px-8 py-16 lg:py-0"
-        style={{ background: "#F7F5EF" }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.25 }}
-      >
-        <PortfolioSnapshot />
-      </motion.div>
+          <div className="mb-9"><CapabilityBadges /></div>
+
+          <div className="flex items-center gap-5 mb-12">
+            <button onClick={onLogin}
+              className="flex items-center gap-2 text-[13px] font-semibold px-6 py-3.5 rounded-[3px] transition-colors duration-200"
+              style={{ background: "#1c1917", color: "#fafaf9" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2820")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
+            >
+              Start Tracking Free <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex gap-0 pt-7 border-t max-w-md" style={{ borderColor: "#E0DACC" }}>
+            {[{ num: "Daily", label: "updates" }, { num: "AI", label: "analysis" }, { num: "100%", label: "cost transparency" }].map((s, i) => (
+              <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""}`} style={{ borderColor: "#E0DACC" }}>
+                <div className="text-[22px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
+                <div className="text-[9px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Product card — right */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <HeroProductCard />
+        </motion.div>
+      </div>
     </section>
   );
 }
@@ -177,7 +168,6 @@ function ForWhomSection() {
         <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x border rounded-sm overflow-hidden"
           style={{ borderColor: "rgba(255,255,255,0.07)", "--tw-divide-opacity": 1 } as React.CSSProperties}>
           {audienceData.map((card, i) => {
-            const Icon = card.icon;
             return (
               <motion.div key={card.number}
                 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
@@ -189,11 +179,7 @@ function ForWhomSection() {
               >
                 <span className="absolute top-5 right-6 text-[64px] font-black leading-none select-none pointer-events-none"
                   style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "rgba(255,255,255,0.04)" }}>{card.number}</span>
-                <div className="w-11 h-11 flex items-center justify-center rounded-sm border mb-5 shrink-0"
-                  style={{ borderColor: card.highlight ? "rgba(196,154,60,0.45)" : "rgba(196,154,60,0.2)" }}>
-                  <Icon className="w-5 h-5" style={{ color: "#E8C97A" }} strokeWidth={1.5} />
-                </div>
-                <div className="text-[20px] font-bold mb-1 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fff" }}>{card.title}</div>
+                <div className="text-[20px] font-bold mb-1 tracking-tight mt-6" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#fff" }}>{card.title}</div>
                 <div className="text-[10px] uppercase tracking-widest mb-4" style={{ color: "rgba(196,154,60,0.55)" }}>{card.role}</div>
                 <p className="text-[13px] leading-[1.7] mb-6 flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>{card.description}</p>
                 <ul className="flex flex-col gap-2">
@@ -219,51 +205,50 @@ export default function HomePage() {
   // Routes into /login instead of triggering Google directly — the login page
   // is where the actual auth method (Google or email/password) gets chosen.
   const goToLogin = () => router.push("/login");
-  const [demoOpen, setDemoOpen] = useState(false);
 
   return (
     <div className="min-h-screen font-sans overflow-hidden scroll-smooth" style={{ background: "#F7F5EF", color: "#1c1917" }}>
 
-      {/* HEADER — light */}
-      <header className="px-6 md:px-10 py-4 flex justify-between items-center sticky top-0 z-50 border-b backdrop-blur-md"
-        style={{ background: "rgba(250,248,242,0.94)", borderColor: "#e7e5e0" }}>
-        <motion.div className="flex items-center gap-2.5" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
-          <div className="w-7 h-7 flex items-center justify-center rounded-sm" style={{ background: "#1c1917" }}>
-            <BarChart3 className="w-3.5 h-3.5" style={{ stroke: "#C49A3C" }} strokeWidth={2} />
-          </div>
-          <span className="text-[20px] font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
-            PortfoliAI
-          </span>
-          <BetaBadge />
-        </motion.div>
+      {/* HEADER + HERO — sized to fill the viewport on any device */}
+      <div className="flex flex-col" style={{ minHeight: "100dvh" }}>
+        <header className="px-6 md:px-10 py-4 flex justify-between items-center sticky top-0 z-50 border-b backdrop-blur-md shrink-0"
+          style={{ background: "rgba(250,248,242,0.94)", borderColor: "#e7e5e0" }}>
+          <motion.div className="flex items-center gap-2.5" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
+            <div className="w-7 h-7 flex items-center justify-center rounded-sm" style={{ background: "#1c1917" }}>
+              <BarChart3 className="w-3.5 h-3.5" style={{ stroke: "#C49A3C" }} strokeWidth={2} />
+            </div>
+            <span className="text-[20px] font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>
+              PortfoliAI
+            </span>
+            <BetaBadge />
+          </motion.div>
 
-        <nav className="hidden md:flex gap-7 text-[12px] font-normal uppercase tracking-[0.06em]">
-          {[{ label: "For Advisors", href: "#audience" },
-            { label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }, { label: "FAQ", href: "#faq" }
-          ].map((item) => (
-            <a key={item.label} href={item.href} className="transition-colors duration-200" style={{ color: "#78716c" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#78716c")}
-            >{item.label}</a>
-          ))}
-        </nav>
+          <nav className="hidden md:flex gap-7 text-[12px] font-normal uppercase tracking-[0.06em]">
+            {[{ label: "Who it's for", href: "#audience" },
+              { label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }, { label: "FAQ", href: "#faq" }
+            ].map((item) => (
+              <a key={item.label} href={item.href} className="transition-colors duration-200" style={{ color: "#78716c" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#1c1917")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#78716c")}
+              >{item.label}</a>
+            ))}
+          </nav>
 
-        <motion.button onClick={goToLogin}
-          className="text-[12px] font-semibold px-5 py-2.5 rounded-[3px] uppercase tracking-[0.05em] transition-colors duration-200"
-          style={{ background: "#1c1917", color: "#fafaf9" }}
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#292524")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
-        >
-          Sign In / Sign Up
-        </motion.button>
-      </header>
+          <motion.button onClick={goToLogin}
+            className="text-[12px] font-semibold px-5 py-2.5 rounded-[3px] uppercase tracking-[0.05em] transition-colors duration-200"
+            style={{ background: "#1c1917", color: "#fafaf9" }}
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#292524")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#1c1917")}
+          >
+            Sign In / Sign Up
+          </motion.button>
+        </header>
 
-      <HeroSection onLogin={goToLogin} onViewSample={() => setDemoOpen(true)} />
-      <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
+        <HeroSection onLogin={goToLogin} />
+      </div>
 
       <HowItWorksSection />
-      <DashboardSection />
       <ForWhomSection />
 
       {/* FEATURES — light */}

@@ -1,8 +1,6 @@
 import { motion } from "framer-motion";
-import { UploadCloud, Sparkles, LayoutDashboard, Bell, LucideIcon } from "lucide-react";
 
 interface Step {
-  icon: LucideIcon;
   title: string;
   description: string;
   highlight?: boolean;
@@ -10,22 +8,18 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    icon: UploadCloud,
     title: "Upload your history",
     description: "Once, ever. Export the CSV or Excel file from your broker and upload it.",
   },
   {
-    icon: Sparkles,
     title: "Let AI read it for you",
     description: "Performance, risk, costs and allocation, explained in plain language — right away, no spreadsheets.",
   },
   {
-    icon: LayoutDashboard,
     title: "Follow the dashboard",
     description: "Value, P/L, composition and costs, updated every day after markets close.",
   },
   {
-    icon: Bell,
     title: "Get alerted when it matters",
     description: "Set thresholds on value, drawdown or allocation, and PortfoliAI tells you the moment one is crossed.",
     highlight: true,
@@ -54,7 +48,6 @@ export default function HowItWorksSection() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-px" style={{ background: "#e7e5e0" }}>
           {STEPS.map((step, i) => {
-            const Icon = step.icon;
             return (
               <motion.div
                 key={step.title}
@@ -66,17 +59,11 @@ export default function HowItWorksSection() {
                 style={{ background: step.highlight ? "#1c1917" : "#FDFCF8" }}
               >
                 <span
-                  className="text-[10px] font-mono mb-4"
-                  style={{ color: step.highlight ? "rgba(196,154,60,0.6)" : "#c4bdb5" }}
+                  className="text-[34px] font-bold leading-none mb-5"
+                  style={{ fontFamily: "'Playfair Display', Georgia, serif", color: step.highlight ? "#C49A3C" : "#E0DACC" }}
                 >
                   0{i + 1}
                 </span>
-                <div
-                  className="w-10 h-10 flex items-center justify-center rounded-sm border mb-5"
-                  style={{ borderColor: step.highlight ? "rgba(196,154,60,0.4)" : "rgba(196,154,60,0.25)" }}
-                >
-                  <Icon className="w-4.5 h-4.5" style={{ color: step.highlight ? "#E8C97A" : "#8A6A28" }} strokeWidth={1.5} />
-                </div>
                 {step.highlight && (
                   <span
                     className="absolute top-6 right-6 text-[9px] font-semibold tracking-[0.1em] uppercase px-2 py-0.5 rounded-sm"
