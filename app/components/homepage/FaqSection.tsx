@@ -19,8 +19,12 @@ const faqData: FaqData[] = [
     answer: "No. You upload your full history once. After that, you only add new transactions as they happen — buys, sells, deposits — and the dashboard and reports update from there.",
   },
   {
-    question: "What's the difference between the full analysis and a periodic report?",
-    answer: "The full analysis covers your entire history in depth — performance, risk, costs, allocation, efficient frontier, benchmark comparison. Periodic reports are short and automatic: what changed this month, quarter, or year, without you asking.",
+    question: "What does the Insights section show me?",
+    answer: "Everything about your portfolio in one place: performance and ROI, cash flow and dividends, risk and volatility, sector and region exposure, benchmark comparison, and a full risk model with efficient frontier — updated continuously, not generated on request.",
+  },
+  {
+    question: "How do portfolio alerts work?",
+    answer: "Set thresholds on value, drawdown, or allocation drift for your portfolio, and PortfoliAI notifies you the moment one is crossed — no need to check the dashboard every day.",
   },
   {
     question: "How do you calculate implicit costs?",
@@ -28,15 +32,15 @@ const faqData: FaqData[] = [
   },
   {
     question: "How does the AI analysis work?",
-    answer: "Our engine parses your CSV and Excel broker statements, identifying every transaction, commission, and implicit spread, then builds the full report from that data.",
+    answer: "Our engine parses your CSV and Excel broker statements, identifying every transaction, commission, and implicit spread, then powers your dashboard, Insights, and alerts from that data.",
   },
   {
     question: "Is my financial data secure?",
     answer: "We use industry-standard measures — encryption in transit, access controls, and short-lived signed URLs for document downloads — to protect your data. Your data is retained only for as long as your account is active, and you can request deletion at any time from your account settings.",
   },
   {
-    question: "Can I brand the reports with my firm's logo?",
-    answer: "Yes. The Advisors plan includes white-label reports with your firm's logo, colours, and contact details on every page — ready to send directly to clients.",
+    question: "How does PortfoliAI work for advisors?",
+    answer: "You manage every client's portfolio from one dashboard: import their transactions, track AUM across your whole book, and get AI-powered insights and alerts for each client individually.",
   },
   {
     question: "Can I cancel my subscription at any time?",

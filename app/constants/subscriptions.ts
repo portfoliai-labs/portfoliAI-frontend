@@ -10,8 +10,8 @@ export const SUBSCRIPTIONS = [
       ctaText: "Get Started",
       features: [
         "Daily portfolio dashboard",
-        "Unlimited automatic periodic reports",
-        "One full historical analysis",
+        "AI-powered portfolio insights",
+        "Portfolio alerts",
         "Explicit + implicit cost tracking",
         "Guaranteed privacy"
       ]
@@ -26,7 +26,7 @@ export const SUBSCRIPTIONS = [
       popular: true,
       ctaText: "Get Notified",
       features: [
-        "Unlimited full analyses",
+        "Advanced AI analysis models",
         "Higher-precision implicit costs (intraday data)",
         "News digest for your holdings",
         "Annual tax summary",
@@ -42,9 +42,9 @@ export const SUBSCRIPTIONS = [
       popular: false,
       ctaText: "Get Notified",
       features: [
-        "White-label reports",
-        "Bulk report generation",
-        "Automatic periodic reports for every client",
+        "Manage unlimited clients",
+        "AI insights & risk profiling per client",
+        "AUM tracking across your book",
         "Everything in Pro"
       ]
     }

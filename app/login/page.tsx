@@ -14,8 +14,8 @@ const loginFeatures: Array<{ icon: React.ElementType; title: string; description
   },
   {
     icon: ShieldCheck,
-    title: "Zero-Retention Privacy",
-    description: "Your data is processed in-memory and destroyed immediately after the report is generated.",
+    title: "Secure & Private",
+    description: "Your data is encrypted and access-controlled — retained only while your account is active, deletable anytime.",
   },
 ];
 
@@ -107,7 +107,7 @@ function LoginContent() {
                 ? "Sign in to generate your authentication token."
                 : authMode === "signup"
                 ? "Sign up to start analysing your portfolio."
-                : "Sign in to access your portfolio reports."}
+                : "Sign in to access your portfolio dashboard."}
             </p>
           </div>
 

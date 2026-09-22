@@ -7,22 +7,22 @@ import {
   BarChart3, ArrowRight,
   User, Building2,
   TrendingUp, DollarSign, Activity, Shield, Scale,
-  LayoutDashboard, Mail,
+  LayoutDashboard, Sparkles, Bell,
 } from "lucide-react";
 import FeatureCard from "../components/homepage/FeatureCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
 import FaqSection from "../components/homepage/FaqSection";
-import ReportScrollPreview from "../components/homepage/ReportScrollPreview";
+import PortfolioSnapshot from "../components/homepage/PortfolioSnapshot";
 import DemoTourModal from "../components/homepage/DemoTourModal";
 import HowItWorksSection from "../components/homepage/HowItWorksSection";
-import ReportTypesSection from "../components/homepage/ReportTypesSection";
 import DashboardSection from "../components/homepage/DashboardSection";
 import { BetaBadge } from "../components/common/BetaBadge";
 
 const featuresData = [
-  { icon: DollarSign,     title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
+  { icon: Sparkles,       title: "AI-Powered Insights",   description: "Plain-language answers about what's driving your performance, risk and costs — generated automatically as your portfolio changes." },
   { icon: LayoutDashboard, title: "Daily Dashboard",       description: "Current value, unrealized P/L, composition and costs — refreshed once a day after markets close." },
-  { icon: Mail,           title: "Automatic Periodic Reports", description: "Monthly, quarterly and annual reports arrive in your inbox on their own. Nothing to request, nothing to remember." },
+  { icon: Bell,           title: "Portfolio Alerts",      description: "Set thresholds on value, drawdown or allocation drift and get notified the moment one is crossed." },
+  { icon: DollarSign,     title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
   { icon: BarChart3,      title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
   { icon: TrendingUp,     title: "Cash Flow & Dividends", description: "Historical deposits, withdrawals, buy/sell activity, and dividend income broken down by asset — yield, yield on cost, and YoY growth." },
   { icon: Activity,       title: "Performance & ROI",     description: "Monthly heatmaps, annual returns, trailing period performance, and comparison against a market benchmark — alpha, tracking error, and more." },
@@ -33,14 +33,14 @@ const featuresData = [
 const audienceData = [
   {
     number: "01", icon: User, title: "Private Investors", role: "Self-directed",
-    description: "Finally understand exactly what's happening inside your portfolio, day after day — with institutional-grade metrics, not simplified dashboards.",
-    features: ["Daily-updated dashboard", "Automatic periodic reports", "Cost transparency by broker", "Risk & drawdown analysis"],
+    description: "Finally understand exactly what's happening inside your portfolio, day after day — with AI doing the reading so you don't have to.",
+    features: ["Daily-updated dashboard", "AI-powered risk & performance insights", "Custom portfolio alerts", "Cost transparency by broker"],
     highlight: false,
   },
   {
     number: "02", icon: Building2, title: "Financial Advisors", role: "Consultants & Wealth Managers",
-    description: "Every client tracked continuously. Periodic reports go out to your whole book automatically — no manual generation, no chasing.",
-    features: ["Automatic reports for every client", "White-label formatting", "Bulk report generation", "Branded with your firm's identity"],
+    description: "Every client's portfolio tracked in one place, with AI surfacing what needs your attention before they have to ask.",
+    features: ["Unified view of your whole book", "AI insights & risk profiling per client", "AUM tracking across clients", "Alerts across every portfolio"],
     highlight: true,
   },
 ];
@@ -68,8 +68,8 @@ function SectionHeading({ children, light = false }: { children: React.ReactNode
 function CapabilityBadges() {
   const badges = [
     { icon: LayoutDashboard, label: "Daily Dashboard" },
-    { icon: Mail, label: "Automatic Reports" },
-    { icon: DollarSign, label: "Real Cost Transparency" },
+    { icon: Sparkles, label: "AI-Powered Insights" },
+    { icon: Bell, label: "Portfolio Alerts" },
   ];
   return (
     <div className="flex gap-2 flex-wrap">
@@ -101,21 +101,21 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.65, ease: "easeOut" }}
       >
-        <SectionEyebrow>Continuous Portfolio Monitoring</SectionEyebrow>
+        <SectionEyebrow>AI-Powered Portfolio Management</SectionEyebrow>
 
         <h1
           className="text-[clamp(38px,5vw,64px)] font-black leading-[1.04] tracking-tight mb-6"
           style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
         >
-          See what your<br />
-          investments are<br />
-          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>really</em> doing.
+          Your investments,<br />
+          <em style={{ fontStyle: "italic", color: "#8A6A28" }}>finally</em> under<br />
+          control.
         </h1>
 
         <p className="text-[15px] font-light leading-[1.78] max-w-105 mb-8" style={{ color: "#78716c" }}>
           Upload your history once and PortfoliAI takes it from there: a dashboard updated
-          every day, and monthly, quarterly and annual reports that land in your inbox —
-          including the real cost of every trade, spread included.
+          every day, AI that reads your risk, performance and costs for you, and alerts the
+          moment something needs your attention.
         </p>
 
         <div className="mb-8"><CapabilityBadges /></div>
@@ -140,7 +140,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
 
         <div className="flex mt-12 pt-8 border-t gap-0" style={{ borderColor: "#E0DACC" }}>
-          {[{ num: "Daily", label: "portfolio updates" }, { num: "3", label: "automatic report cadences" }, { num: "100%", label: "of costs shown, explicit + implicit" }].map((s, i) => (
+          {[{ num: "Daily", label: "portfolio updates" }, { num: "AI", label: "risk & performance analysis" }, { num: "100%", label: "of costs shown, explicit + implicit" }].map((s, i) => (
             <div key={i} className={`flex-1 ${i > 0 ? "pl-5 border-l" : ""} ${i < 2 ? "pr-5" : ""}`} style={{ borderColor: "#E0DACC" }}>
               <div className="text-[26px] font-bold leading-none mb-1" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}>{s.num}</div>
               <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#a8a29e" }}>{s.label}</div>
@@ -149,7 +149,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         </div>
       </motion.div>
 
-      {/* RIGHT — same light bg, PDF floats with 3D shadow */}
+      {/* RIGHT — same light bg, dashboard snapshot floats with soft shadow */}
       <motion.div
         className="flex items-center justify-center px-8 py-16 lg:py-0"
         style={{ background: "#F7F5EF" }}
@@ -157,7 +157,7 @@ function HeroSection({ onLogin, onViewSample }: { onLogin: () => void; onViewSam
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.25 }}
       >
-        <ReportScrollPreview />
+        <PortfolioSnapshot />
       </motion.div>
     </section>
   );
@@ -263,7 +263,6 @@ export default function HomePage() {
       <DemoTourModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
 
       <HowItWorksSection />
-      <ReportTypesSection />
       <DashboardSection />
       <ForWhomSection />
 
@@ -273,7 +272,7 @@ export default function HomePage() {
           <SectionEyebrow>What&apos;s inside PortfoliAI</SectionEyebrow>
           <SectionHeading>Every angle,<br />covered.</SectionHeading>
           <p className="mt-3 mb-14 text-[14px] text-stone-400 max-w-sm">
-            From the daily dashboard to the deepest report chapter — the same rigorous structure throughout.
+            From the daily dashboard to the deepest risk analysis — AI keeps every angle within reach.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {featuresData.map((f, i) => <FeatureCard key={i} index={i} {...f} />)}
@@ -304,8 +303,8 @@ export default function HomePage() {
         </div>
         <div className="max-w-6xl mx-auto px-6 mt-8 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
           <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
-            PortfoliAI reports are generated automatically, including narrative analysis produced by
-            an AI model, and are provided for informational and educational purposes only. Nothing on
+            PortfoliAI&apos;s dashboard, insights and alerts include narrative analysis produced by an AI
+            model, and are provided for informational and educational purposes only. Nothing on
             this site constitutes investment, tax, or legal advice, or a personalized recommendation
             under MiFID II. Past performance and simulated projections are not indicative of future
             results. Always verify figures independently and consult a licensed financial advisor

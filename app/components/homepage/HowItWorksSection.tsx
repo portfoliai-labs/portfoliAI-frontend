@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { UploadCloud, Sparkles, LayoutDashboard, Mail, LucideIcon } from "lucide-react";
+import { UploadCloud, Sparkles, LayoutDashboard, Bell, LucideIcon } from "lucide-react";
 
 interface Step {
   icon: LucideIcon;
@@ -16,8 +16,8 @@ const STEPS: Step[] = [
   },
   {
     icon: Sparkles,
-    title: "Get the full analysis",
-    description: "The complete report on your entire history — performance, risk, costs, allocation — right away.",
+    title: "Let AI read it for you",
+    description: "Performance, risk, costs and allocation, explained in plain language — right away, no spreadsheets.",
   },
   {
     icon: LayoutDashboard,
@@ -25,9 +25,9 @@ const STEPS: Step[] = [
     description: "Value, P/L, composition and costs, updated every day after markets close.",
   },
   {
-    icon: Mail,
-    title: "Receive the reports",
-    description: "Monthly, quarterly and annual reports land in your inbox automatically — no request needed.",
+    icon: Bell,
+    title: "Get alerted when it matters",
+    description: "Set thresholds on value, drawdown or allocation, and PortfoliAI tells you the moment one is crossed.",
     highlight: true,
   },
 ];
@@ -46,10 +46,10 @@ export default function HowItWorksSection() {
           className="text-[clamp(26px,3.5vw,46px)] font-bold leading-[1.1] tracking-tight mb-3"
           style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
         >
-          Upload once.<br />Hear from us on our own.
+          Set it up once.<br />Let AI take it from there.
         </h2>
         <p className="mb-14 text-[14px] font-light max-w-lg" style={{ color: "#78716c" }}>
-          There is no upload-and-download loop anymore. You set up your portfolio once, and the reporting comes to you from then on.
+          No spreadsheets to maintain, no analysis to run by hand. You set up your portfolio once, and PortfoliAI keeps reading it for you.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-px" style={{ background: "#e7e5e0" }}>
