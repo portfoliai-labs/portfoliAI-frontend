@@ -746,9 +746,17 @@ function CurrencyCarouselModule({
 
   const scrollToIndex = (i: number) => {
     const clamped = Math.max(0, Math.min(byCurrency.length - 1, i));
-    setActiveIndex(clamped);
     const track = trackRef.current;
-    if (track) track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
+    if (track) {
+      // Don't flip the head (eyebrow/title/dots) the instant this is called — the body
+      // takes ~300ms to actually scroll there, and jumping the head ahead of it made the
+      // label read as the new currency while the body still visibly showed the outgoing
+      // one's tail end. handleScroll below keeps activeIndex in sync with what's actually
+      // on screen as the smooth scroll progresses, so the two never disagree.
+      track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
+    } else {
+      setActiveIndex(clamped);
+    }
   };
 
   const handleScroll = () => {
@@ -867,24 +875,29 @@ const DONUT_MAX_SLICES = 5;
  * percentages from mixed currencies would silently treat e.g. 1 EUR and 1 USD as equal weight.
  */
 function CompositionDonut({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
+  // Recomputed only when the underlying items actually change, not on every re-render
+  // this component's parent (the currency carousel) triggers while scrolling/snapping.
+  const { total, grouped } = useMemo(() => {
+    const total = items.reduce((sum, i) => sum + i.value, 0);
+    const sorted = [...items].sort((a, b) => b.value - a.value);
+    const grouped = sorted.length <= DONUT_MAX_SLICES
+      ? sorted
+      : [
+          ...sorted.slice(0, DONUT_MAX_SLICES),
+          { label: "Other", value: sorted.slice(DONUT_MAX_SLICES).reduce((sum, i) => sum + i.value, 0) },
+        ];
+    return { total, grouped };
+  }, [items]);
+
   if (items.length === 0) {
     return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
   }
-
-  const total = items.reduce((sum, i) => sum + i.value, 0);
-  const sorted = [...items].sort((a, b) => b.value - a.value);
-  const grouped = sorted.length <= DONUT_MAX_SLICES
-    ? sorted
-    : [
-        ...sorted.slice(0, DONUT_MAX_SLICES),
-        { label: "Other", value: sorted.slice(DONUT_MAX_SLICES).reduce((sum, i) => sum + i.value, 0) },
-      ];
 
   return (
     <div className="flex items-center gap-5">
       <div className="w-24 h-24 shrink-0">
         <PieChart width={96} height={96}>
-          <Pie data={grouped} dataKey="value" nameKey="label" innerRadius={30} outerRadius={48} paddingAngle={2} stroke="none">
+          <Pie data={grouped} dataKey="value" nameKey="label" innerRadius={30} outerRadius={48} paddingAngle={2} stroke="none" isAnimationActive={false}>
             {grouped.map((entry, i) => (
               <Cell key={entry.label} fill={entry.label === "Other" ? DONUT_OTHER_COLOR : DONUT_COLORS[i % DONUT_COLORS.length]} />
             ))}
