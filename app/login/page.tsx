@@ -63,6 +63,12 @@ function LoginContent() {
     setIsSubmitting(false);
   };
 
+  const handleDemoLogin = async () => {
+    setIsSubmitting(true);
+    await loginWithPassword("demo@portfoliai.app", "demoportfoliai");
+    setIsSubmitting(false);
+  };
+
   const isLoading = isSubmitting;
 
   return (
@@ -226,6 +232,16 @@ function LoginContent() {
                   {authMode === "signup" ? "Sign in" : "Sign up"}
                 </button>
               </p>
+
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                disabled={isLoading}
+                className="w-full mt-4 py-3 px-6 rounded-[3px] text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: "transparent", color: "#8A6A28", border: "1px dashed rgba(196,154,60,0.4)" }}
+              >
+                Try the demo account
+              </button>
             </>
           )}
 
