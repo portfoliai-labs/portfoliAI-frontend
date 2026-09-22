@@ -7,7 +7,7 @@ import {
   Sun, History,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
-  Search, ChevronDown, ChevronLeft, ChevronRight,
+  Search, ChevronDown,
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -18,6 +18,7 @@ import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 import { NewsModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
+import { GeographyMap } from "./GeographyMap";
 import type {
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, DailyValueChange,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
@@ -702,127 +703,15 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
         </div>
       ) : (
         <>
-          <CurrencyCarouselModule
-            byCurrency={data.summary.byCurrency}
-            holdings={data.summary.holdings}
-            title="By Currency"
-            renderDesc={compositionDesc}
-            renderBody={CompositionBody}
-          />
-          <SectorRegionModule sector={composition?.sector ?? null} region={composition?.region ?? null} />
-          <HoldingsExplorer holdings={data.summary.holdings} />
+          <HoldingsExplorer holdings={data.summary.holdings} byCurrency={data.summary.byCurrency} />
+          <SectorModule sector={composition?.sector ?? null} />
+          <GeographyModule region={composition?.region ?? null} />
         </>
       )}
     </div>
   );
 }
 
-/**
- * CURRENCY CAROUSEL MODULE — one Module/card whose head (currency label, description) and
- * body independently page through every native currency present, currently used only by
- * Composition below. A single currency renders with no nav chrome at all (nothing to switch
- * between); with more than one, arrows/dots in the head page through them and the body scroll-
- * snaps in sync. No "land on the user's preferred currency" logic (unlike the near-identical
- * component this was ported from, in DashboardOverview) — Today doesn't otherwise load the
- * user's profile, and defaulting to the first currency is a reasonable simplification.
- */
-function CurrencyCarouselModule({
-  byCurrency, holdings, title, renderDesc, renderBody,
-}: {
-  byCurrency: CurrencyBreakdown[];
-  holdings: Holding[];
-  title: string;
-  renderDesc?: (data: CurrencyBreakdown) => string | undefined;
-  renderBody: (data: CurrencyBreakdown, holdings: Holding[]) => React.ReactNode;
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  if (byCurrency.length === 0) return null;
-
-  const multi = byCurrency.length > 1;
-  const active = byCurrency[activeIndex] ?? byCurrency[0];
-  const activeHoldings = holdings.filter(h => h.currency === active.currency);
-
-  const scrollToIndex = (i: number) => {
-    const clamped = Math.max(0, Math.min(byCurrency.length - 1, i));
-    const track = trackRef.current;
-    if (track) {
-      // Don't flip the head (eyebrow/title/dots) the instant this is called — the body
-      // takes ~300ms to actually scroll there, and jumping the head ahead of it made the
-      // label read as the new currency while the body still visibly showed the outgoing
-      // one's tail end. handleScroll below keeps activeIndex in sync with what's actually
-      // on screen as the smooth scroll progresses, so the two never disagree.
-      track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
-    } else {
-      setActiveIndex(clamped);
-    }
-  };
-
-  const handleScroll = () => {
-    const track = trackRef.current;
-    if (!track || track.clientWidth === 0) return;
-    setActiveIndex(Math.round(track.scrollLeft / track.clientWidth));
-  };
-
-  return (
-    <Module>
-      <ModuleHead
-        eyebrow={active.currency}
-        title={title}
-        desc={renderDesc?.(active)}
-        right={
-          multi && (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => scrollToIndex(activeIndex - 1)}
-                disabled={activeIndex === 0}
-                aria-label="Previous currency"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronLeft className="h-3 w-3" />
-              </button>
-              <div className="flex items-center gap-1">
-                {byCurrency.map((cb, i) => (
-                  <button
-                    key={cb.currency}
-                    onClick={() => scrollToIndex(i)}
-                    aria-label={`Go to ${cb.currency}`}
-                    className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => scrollToIndex(activeIndex + 1)}
-                disabled={activeIndex === byCurrency.length - 1}
-                aria-label="Next currency"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-          )
-        }
-      />
-      {multi ? (
-        <div
-          ref={trackRef}
-          onScroll={handleScroll}
-          className="flex overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {byCurrency.map((cb) => (
-            <div key={cb.currency} className="w-full shrink-0 snap-center">
-              {renderBody(cb, holdings.filter(h => h.currency === cb.currency))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        renderBody(active, activeHoldings)
-      )}
-    </Module>
-  );
-}
 
 const compositionDesc = (data: CurrencyBreakdown) =>
   `${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}, weighted by invested capital.`;
@@ -972,32 +861,51 @@ function ExposureBreakdown({ entries }: { entries: ExposureEntryResponse[] }) {
 }
 
 /**
- * SECTOR & REGION MODULE — look-through exposure of the held positions as of the last
- * snapshot tick (into funds, at today's fund composition — not at any past date). Both
- * endpoints answer null until the first snapshot tick has run for this user, and carry
- * neither status nor isStale.
+ * SECTOR MODULE — look-through sector exposure of the held positions as of the last snapshot
+ * tick (into funds, at today's fund composition — not at any past date). The endpoint answers
+ * null until the first snapshot tick has run for this user, and carries neither status nor
+ * isStale. Region exposure used to share this card as a second column (see GeographyModule
+ * below); the map needs its own full card width to render without being cropped, so the two
+ * are now separate full-width modules stacked one after the other.
  */
-function SectorRegionModule({
-  sector, region,
-}: { sector: ExposureEntryResponse[] | null; region: ExposureEntryResponse[] | null }) {
+function SectorModule({ sector }: { sector: ExposureEntryResponse[] | null }) {
   return (
     <Module>
       <ModuleHead
         eyebrow="Composition"
-        title="Sector & Region"
+        title="Sector"
         desc="Exposure of your current holdings, weighted by market value."
       />
-      {sector === null && region === null ? (
+      {sector === null ? (
         <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-          <AllocPanel title="By sector" subtitle="Where your holdings' companies operate">
-            <ExposureBreakdown entries={sector ?? []} />
-          </AllocPanel>
-          <AllocPanel title="By region" subtitle="Geographic exposure">
-            <ExposureBreakdown entries={region ?? []} />
-          </AllocPanel>
-        </div>
+        <AllocPanel title="By sector" subtitle="Where your holdings' companies operate">
+          <ExposureBreakdown entries={sector ?? []} />
+        </AllocPanel>
+      )}
+    </Module>
+  );
+}
+
+/**
+ * GEOGRAPHY MODULE — region exposure of the held positions, same data source and staleness
+ * rules as SectorModule above, rendered as its own full-width card so the world map has room
+ * to breathe (it was cropped when squeezed into a 50%-width column next to the sector list).
+ */
+function GeographyModule({ region }: { region: ExposureEntryResponse[] | null }) {
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Composition"
+        title="Region"
+        desc="Geographic exposure of your current holdings, weighted by market value."
+      />
+      {region === null ? (
+        <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
+      ) : (
+        <AllocPanel title="By region" subtitle="Geographic exposure">
+          <GeographyMap entries={region ?? []} />
+        </AllocPanel>
       )}
     </Module>
   );
@@ -1473,7 +1381,17 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
  * USD bar next to a EUR bar of the same length would visually claim they're equal, which
  * isn't true without a live FX rate. A table just lists the numbers with their own currency.
  */
-function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
+/**
+ * HOLDINGS EXPLORER — the searchable/filterable holdings table, with the currency-composition
+ * breakdown (by asset / by category / by broker) folded in as what the Currency filter reveals
+ * rather than a separate carousel module above it: pick a currency here and its composition
+ * appears below the table, using the exact same holdings the table would show for that
+ * currency with no other filter applied. "All currencies" has no single breakdown to show —
+ * percentages from mixed currencies would silently treat e.g. 1 EUR and 1 USD as equal weight
+ * (the same reason CompositionDonut below requires one currency per call) — so that state
+ * prompts picking a currency instead of rendering something misleading.
+ */
+function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCurrency: CurrencyBreakdown[] }) {
   const [search, setSearch] = useState("");
   const [assetClass, setAssetClass] = useState("all");
   const [currency, setCurrency] = useState("all");
@@ -1490,6 +1408,11 @@ function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
       // Grouped by currency first so ordering never implies a cross-currency size comparison.
       .sort((a, b) => a.currency.localeCompare(b.currency) || b.investedValue - a.investedValue);
   }, [holdings, search, assetClass, currency]);
+
+  // Composition tracks only the Currency filter, not asset class or search — narrowing to one
+  // asset class would make "By category" a single 100% slice, and it answers "what does this
+  // currency look like overall", not "what does my current search match".
+  const activeBreakdown = currency !== "all" ? byCurrency.find(b => b.currency === currency) : undefined;
 
   return (
     <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1553,6 +1476,24 @@ function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {byCurrency.length > 0 && (
+        <div className="border-t border-slate-200">
+          {activeBreakdown ? (
+            <>
+              <div className="px-5 md:px-6 pt-5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#C49A3C]">Composition · {activeBreakdown.currency}</p>
+                <p className="text-xs text-slate-500 mt-1">{compositionDesc(activeBreakdown)}</p>
+              </div>
+              {CompositionBody(activeBreakdown, holdings.filter(h => h.currency === activeBreakdown.currency))}
+            </>
+          ) : (
+            <p className="px-5 md:px-6 py-5 text-xs text-slate-400">
+              Select a currency above to see its composition — holdings in different currencies can&apos;t be combined into one percentage breakdown.
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -233,9 +233,8 @@ function FeaturedNewsCard({ item }: { item: NewsItem }) {
 
 /**
  * NEWS CAROUSEL MODULE — Dashboard variant: today's stories, one at a time, with
- * arrows/dots in the module head to page through the rest (same nav pattern as
- * PerformanceSection's CurrencyCarouselModule). Renders nothing at all — not an empty card —
- * when there's no news today or the fetch fails, so a non-critical, supplementary module
+ * arrows/dots in the module head to page through the rest. Renders nothing at all — not an
+ * empty card — when there's no news today or the fetch fails, so a non-critical, supplementary module
  * doesn't clutter the main dashboard when it has nothing to show. Auto-advances every
  * AUTOPLAY_INTERVAL_MS while there's more than one story, pausing while the pointer is over
  * the card so a story someone's actually reading doesn't get swapped out from under them;
