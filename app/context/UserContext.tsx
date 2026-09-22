@@ -12,6 +12,7 @@ import React, {
 import { useRouter, usePathname } from 'next/navigation';
 import { userService } from '../services/userService';
 import { ApiError } from '../services/apiClient';
+import { supabase } from '../lib/supabaseClient';
 import type { UserProfile } from '../models/User';
 
 /**
@@ -54,7 +55,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("user_profile");
     setUser(null);
     setLoading(false);
-    
+    // Ends the Supabase session (revokes the refresh token) — fire-and-forget so
+    // logout isn't blocked on it.
+    supabase.auth.signOut().catch((error) => console.error("Supabase sign-out failed:", error));
+
     // Redirect to login with a reason parameter for UX
     router.replace('/homepage');
   }, [router]);

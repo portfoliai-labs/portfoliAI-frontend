@@ -2,83 +2,47 @@
 "use client";
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useGoogleLogin, TokenResponse } from '@react-oauth/google';
-import { userService } from '../services/userService';
+import { supabase } from '../lib/supabaseClient';
 
-/**
- * Interface for API Errors to satisfy the linter without using 'any'
- */
-interface ApiErrorResponse {
-  status: number;
-  message?: string;
-}
-
+// Triggers Supabase's Google OAuth redirect. Unlike the previous popup-based flow,
+// this navigates the whole tab away to Google and back — there's no onSuccess
+// callback here, completion (profile fetch, routing, addon token display) happens
+// on /auth/callback once Supabase hands back a session.
 export function useAuthFlow(mode: 'default' | 'addon' = 'default', next?: string | null) {
-  const router = useRouter();
   const [status, setStatus] = useState<string>('Ready to authenticate');
   const [isError, setIsError] = useState<boolean>(false);
-  const [addonToken, setAddonToken] = useState<string | null>(null);
 
   // Where to send the user once they're actually let into the app. Falls
   // back to the dashboard when there's no specific page they were trying
   // to reach (e.g. a deep link to a report shared from an email).
   const destination = next || '/dashboard';
 
-  const login = useGoogleLogin({
-    onSuccess: async (tokenResponse: TokenResponse) => {
-      setStatus('Authenticating...');
-      setIsError(false);
+  const login = async () => {
+    setStatus('Redirecting to Google...');
+    setIsError(false);
 
-      try {
-        const token: string = tokenResponse.access_token;
-        localStorage.setItem("auth_token", token);
+    const callbackUrl = new URL('/auth/callback', window.location.origin);
+    callbackUrl.searchParams.set('next', destination);
+    if (mode === 'addon') callbackUrl.searchParams.set('source', 'addon');
 
-        if (mode === 'addon') {
-          setAddonToken(token);
-          return;
-        }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: callbackUrl.toString() },
+    });
 
-        try {
-          // Attempt to fetch the profile to decide the routing
-          const userProfile = await userService.getUserProfile();
-          localStorage.setItem("user_profile", JSON.stringify(userProfile));
-          router.push(destination);
-
-        } catch (error: unknown) {
-          const apiError = error as ApiErrorResponse;
-
-          if (apiError && apiError.status === 404) {
-            // No account yet — go create one.
-            router.push('/onboarding');
-          } else if (apiError && apiError.status === 403) {
-            // Account exists but the backend won't return it until the
-            // currently-required legal documents are accepted. Don't treat
-            // this as a failed login — route into the app anyway; the
-            // (reserved) layout's UserProvider + LegalGate will hit this
-            // same 403, flag it, and show the acceptance screen before
-            // anything else renders.
-            router.push(destination);
-          } else {
-            throw error;
-          }
-        }
-      } catch (error: unknown) {
-        console.error("Auth Flow Error:", error);
-        setIsError(true);
-        setStatus('Authentication failed.');
-      }
-    },
-    onError: () => {
+    // Only reached if Supabase refuses to even start the redirect (e.g. the
+    // Google provider isn't configured) — once the redirect happens, this
+    // component is torn down.
+    if (error) {
+      console.error("Auth Flow Error:", error);
       setIsError(true);
       setStatus('Google Login failed.');
-    },
-  });
+    }
+  };
 
   return {
     login,
     status,
     isError,
-    addonToken,
   };
 }

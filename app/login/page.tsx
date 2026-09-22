@@ -1,8 +1,8 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import React, { Suspense } from "react";
 import { motion } from "framer-motion";
-import { BarChart3, ShieldCheck, Zap, Loader2, AlertCircle, Copy, Check } from "lucide-react";
+import { BarChart3, ShieldCheck, Zap, Loader2, AlertCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useAuthFlow } from "@/app/hooks/useAuthFlow";
 
@@ -19,94 +19,13 @@ const loginFeatures: Array<{ icon: React.ElementType; title: string; description
   },
 ];
 
-function TokenDisplay({ token }: { token: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(token);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45 }}
-      className="w-full max-w-sm"
-    >
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="w-5 h-px" style={{ background: "#C49A3C" }} />
-          <span className="text-[10px] font-medium tracking-[0.14em] uppercase" style={{ color: "#8A6A28" }}>
-            Authentication token
-          </span>
-        </div>
-        <h2
-          className="text-[clamp(26px,3vw,36px)] font-black leading-tight tracking-tight mb-3"
-          style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#1c1917" }}
-        >
-          Token generated.
-        </h2>
-        <p className="text-[14px] font-light" style={{ color: "#78716c" }}>
-          Copy this token and paste it into the extension to authenticate.
-        </p>
-      </div>
-
-      <div
-        className="rounded-[3px] p-4 mb-4 font-mono text-[11px] break-all leading-relaxed select-all"
-        style={{
-          background: "#1c1917",
-          color: "#E8C97A",
-          border: "1px solid rgba(196,154,60,0.25)",
-          wordBreak: "break-all",
-        }}
-      >
-        {token}
-      </div>
-
-      <button
-        onClick={handleCopy}
-        className="w-full flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-[3px] transition-all duration-200 text-[13px] font-semibold tracking-[0.04em] uppercase"
-        style={{
-          background: copied ? "rgba(34,197,94,0.12)" : "#1c1917",
-          color: copied ? "#16a34a" : "#fafaf9",
-          border: copied ? "1px solid rgba(34,197,94,0.35)" : "1px solid #1c1917",
-        }}
-      >
-        {copied ? (
-          <>
-            <Check className="w-4 h-4" />
-            Copied!
-          </>
-        ) : (
-          <>
-            <Copy className="w-4 h-4" />
-            Copy token
-          </>
-        )}
-      </button>
-
-      <div
-        className="rounded-[3px] px-4 py-3 flex items-start gap-3 mt-6"
-        style={{ background: "rgba(196,154,60,0.06)", border: "1px solid rgba(196,154,60,0.15)" }}
-      >
-        <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#8A6A28" }} strokeWidth={1.5} />
-        <p className="text-[11px] leading-relaxed" style={{ color: "#8A6A28" }}>
-          This token grants access to your PortfoliAI account. Keep it private and do not share it.
-        </p>
-      </div>
-    </motion.div>
-  );
-}
-
 function LoginContent() {
   const searchParams = useSearchParams();
   const isAddon = searchParams.get("source") === "addon";
   const next = searchParams.get("next");
 
-  const { login, status, isError, addonToken } = useAuthFlow(isAddon ? "addon" : "default", next);
-  const isLoading: boolean = status === "Authenticating...";
+  const { login, status, isError } = useAuthFlow(isAddon ? "addon" : "default", next);
+  const isLoading: boolean = status === "Redirecting to Google...";
 
   return (
     <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 lg:p-20" style={{ background: "#F7F5EF" }}>
@@ -120,15 +39,12 @@ function LoginContent() {
         </span>
       </div>
 
-      {addonToken ? (
-        <TokenDisplay token={addonToken} />
-      ) : (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55 }}
-          className="w-full max-w-sm"
-        >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55 }}
+        className="w-full max-w-sm"
+      >
           <div className="mb-10">
             <div className="flex items-center gap-2 mb-4">
               <span className="w-5 h-px" style={{ background: "#C49A3C" }} />
@@ -223,7 +139,6 @@ function LoginContent() {
             </a>.
           </p>
         </motion.div>
-      )}
     </div>
   );
 }
