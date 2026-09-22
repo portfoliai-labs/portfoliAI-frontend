@@ -40,8 +40,11 @@ interface ProfileCreatePayload {
   role: UserRole;
 }
 
-// Matches ProfileUpdatePayload DTO (PATCH /users/profile) — investor financial data
+// Matches ProfileUpdatePayload DTO (PATCH /users/profile) — investor financial data,
+// plus basic identity fields (first_name/last_name)
 interface ProfileUpdatePayload {
+  first_name?: string | null;
+  last_name?: string | null;
   estimated_wealth?: number | null;
   annual_income?: number | null;
   savings_rate?: number | null;

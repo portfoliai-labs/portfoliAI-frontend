@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote } from "lucide-react";
+import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote, Mail, Lock } from "lucide-react";
 import { userService } from "../../services/userService";
+import { supabase } from "../../lib/supabaseClient";
 import type { SubscriptionResponse, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
@@ -98,6 +99,16 @@ export function SettingsSection() {
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
 
+  const [nameForm, setNameForm] = useState({ first_name: "", last_name: "" });
+  const [savingName, setSavingName] = useState(false);
+
+  const [newEmail, setNewEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
   useEffect(() => {
     userService.getSubscription()
       .then(setSubscription)
@@ -110,7 +121,10 @@ export function SettingsSection() {
       .finally(() => setPreferencesLoading(false));
 
     userService.getUserProfile()
-      .then((profile) => setLocaleForm({ language: profile.language || "en", currency: profile.currency || "USD" }))
+      .then((profile) => {
+        setLocaleForm({ language: profile.language || "en", currency: profile.currency || "USD" });
+        setNameForm({ first_name: profile.first_name ?? "", last_name: profile.last_name ?? "" });
+      })
       .catch((error) => console.error("Failed to load locale preferences:", error))
       .finally(() => setLocaleLoading(false));
   }, []);
@@ -172,6 +186,76 @@ export function SettingsSection() {
       setMessage({ type: "error", text: "Error saving preferences" });
     } finally {
       setLocaleSaving(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleSaveName = async () => {
+    // Backend rejects blank/whitespace-only names outright (422) — checked up front so
+    // clearing a field shows a clear error instead of a round-trip failure.
+    const firstName = nameForm.first_name.trim();
+    const lastName = nameForm.last_name.trim();
+    if (!firstName || !lastName) {
+      setMessage({ type: "error", text: "First and last name can't be empty" });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      await userService.updateUserProfile({ first_name: firstName, last_name: lastName });
+      localStorage.removeItem("user_profile");
+      await refreshUser();
+      setMessage({ type: "success", text: "Account information updated" });
+    } catch (error) {
+      console.error("Failed to update account information:", error);
+      setMessage({ type: "error", text: "Error updating account information" });
+    } finally {
+      setSavingName(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!newEmail.trim()) return;
+    setSavingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) throw error;
+      setMessage({ type: "success", text: "Check your new email inbox to confirm the change" });
+      setNewEmail("");
+    } catch (error) {
+      console.error("Failed to update email:", error);
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Error updating email" });
+    } finally {
+      setSavingEmail(false);
+      setTimeout(() => setMessage(null), 4000);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (newPassword.length < 6) {
+      setMessage({ type: "error", text: "Password must be at least 6 characters" });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: "error", text: "Passwords don't match" });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setMessage({ type: "success", text: "Password updated" });
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      console.error("Failed to update password:", error);
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Error updating password" });
+    } finally {
+      setSavingPassword(false);
       setTimeout(() => setMessage(null), 3000);
     }
   };
@@ -422,18 +506,131 @@ export function SettingsSection() {
 
       {activeTab === "account" && (
         <div className="space-y-8">
-          {/* Account information — read-only for now, editing is not supported yet */}
+          {/* Account information */}
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-5">
+            <div className="flex items-center justify-between gap-4 border-b border-[rgba(196,154,60,0.15)] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">
+                  <UserIcon className="w-5 h-5" />
+                </div>
+                <span className="font-bold text-sm text-[#1c1917]">Account Information</span>
+              </div>
+              <button
+                onClick={handleSaveName}
+                disabled={savingName}
+                className="flex items-center gap-2 px-4 py-2 bg-[#1c1917] text-white rounded-xl font-bold text-xs hover:bg-[#C49A3C] transition-colors disabled:opacity-50"
+              >
+                {savingName ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {savingName ? "Saving..." : "Save"}
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+                  First name
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={nameForm.first_name}
+                  onChange={(e) => setNameForm({ ...nameForm, first_name: e.target.value })}
+                  className="w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.25)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+                  Last name
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={nameForm.last_name}
+                  onChange={(e) => setNameForm({ ...nameForm, last_name: e.target.value })}
+                  className="w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.25)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Email */}
           <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-5">
             <div className="flex items-center gap-3 border-b border-[rgba(196,154,60,0.15)] pb-4">
               <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">
-                <UserIcon className="w-5 h-5" />
+                <Mail className="w-5 h-5" />
               </div>
-              <span className="font-bold text-sm text-[#1c1917]">Account Information</span>
+              <span className="font-bold text-sm text-[#1c1917]">Email Address</span>
+            </div>
+            <ReadOnlyField label="Current email" value={user?.email ?? "—"} />
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+                  New email
+                </label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.25)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all"
+                />
+              </div>
+              <button
+                onClick={handleUpdateEmail}
+                disabled={savingEmail || !newEmail.trim()}
+                className="h-11 shrink-0 flex items-center justify-center gap-2 px-5 bg-[#1c1917] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#C49A3C] transition-colors disabled:opacity-50"
+              >
+                {savingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Update email"}
+              </button>
+            </div>
+            <p className="text-xs text-[#78716c]">
+              We&apos;ll send a confirmation link to the new address before the change takes effect.
+            </p>
+          </div>
+
+          {/* Password */}
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-5">
+            <div className="flex items-center gap-3 border-b border-[rgba(196,154,60,0.15)] pb-4">
+              <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">
+                <Lock className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-sm text-[#1c1917]">Password</span>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
-              <ReadOnlyField label="First name" value={user?.first_name ?? "—"} />
-              <ReadOnlyField label="Last name" value={user?.last_name ?? "—"} />
-              <ReadOnlyField label="Email" value={user?.email ?? "—"} className="sm:col-span-2" />
+              <div>
+                <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+                  New password
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  placeholder="••••••••"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.25)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5">
+                  Confirm password
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.25)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] focus:ring-4 focus:ring-[#C49A3C]/10 transition-all"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={handleUpdatePassword}
+                disabled={savingPassword || !newPassword || !confirmPassword}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#C49A3C] transition-colors disabled:opacity-50"
+              >
+                {savingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Update password"}
+              </button>
             </div>
           </div>
 
