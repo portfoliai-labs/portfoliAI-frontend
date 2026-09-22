@@ -57,7 +57,7 @@ export default function ReportViewerPage() {
 
       <div className="flex items-center justify-between px-4 md:px-8 py-4 border-b border-[rgba(196,154,60,0.2)] bg-white/60">
         <button
-          onClick={() => router.push("/dashboard?section=reports")}
+          onClick={() => router.push("/dashboard")}
           className="flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-white border border-transparent hover:border-[rgba(196,154,60,0.2)] text-[#78716c] hover:text-[#1c1917] font-bold text-sm transition-all"
         >
           <ArrowLeft className="w-4 h-4" />

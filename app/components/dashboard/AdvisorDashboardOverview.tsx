@@ -3,14 +3,12 @@
 import { useState, useEffect } from "react";
 import {
   Users, TrendingUp, Sparkles,
-  CheckCircle2, Clock, AlertCircle, ArrowRight,
+  ArrowRight,
   Loader2, Crown,
 } from "lucide-react";
 import { useUser } from "../../context/UserContext";
 import { advisorService } from "../../services/advisorService";
-import { userService } from "../../services/userService";
 import type { Client, AdvisorProfile } from "../../models/Advisor";
-import type { UserMetrics } from "../../models/User";
 
 function formatCurrency(value: number, currency = "EUR") {
   if (value >= 1_000_000) {
@@ -104,20 +102,17 @@ export default function AdvisorDashboardOverview({
   const { user } = useUser();
   const [clients, setClients] = useState<Client[]>([]);
   const [advisorProfile, setAdvisorProfile] = useState<AdvisorProfile | null>(null);
-  const [metrics, setMetrics] = useState<UserMetrics | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [cls, profile, m] = await Promise.all([
+        const [cls, profile] = await Promise.all([
           advisorService.getClients(),
           advisorService.getAdvisorProfile(),
-          userService.getUserMetrics(),
         ]);
         setClients(cls);
         setAdvisorProfile(profile);
-        setMetrics(m);
       } catch (err) {
         console.error("Failed to load advisor dashboard:", err);
       } finally {
@@ -191,7 +186,7 @@ export default function AdvisorDashboardOverview({
               </span>
             </span>
           }
-          sub="Upgrade for unlimited reports"
+          sub="Upgrade for advanced AI models"
           icon={<Crown className="w-5 h-5 text-[#C49A3C]" />}
           iconBg="bg-[#C49A3C]/10"
           accent
@@ -245,39 +240,6 @@ export default function AdvisorDashboardOverview({
 
         {/* Activity summary + quick actions */}
         <div className="flex flex-col gap-4">
-          {/* Report status */}
-          <div className="bg-white rounded-[1.75rem] border border-[rgba(196,154,60,0.2)] p-6 flex-1">
-            <h2
-              className="text-base font-bold text-[#1c1917] mb-4"
-              style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-            >
-              Report status
-            </h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-[#78716c]">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  Completed
-                </div>
-                <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_generated ?? 0}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-[#78716c]">
-                  <Clock className="w-4 h-4 text-amber-500" />
-                  In progress
-                </div>
-                <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_in_progress ?? 0}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-[#78716c]">
-                  <AlertCircle className="w-4 h-4 text-rose-400" />
-                  Errors
-                </div>
-                <span className="text-sm font-bold text-[#1c1917]">{metrics?.report_in_error ?? 0}</span>
-              </div>
-            </div>
-          </div>
-
           {/* Upgrade CTA */}
           <div className="bg-[#1c1917] rounded-[1.75rem] p-6 relative overflow-hidden">
             <div className="absolute -top-8 -right-8 w-24 h-24 bg-[#C49A3C]/15 blur-2xl rounded-full" />
@@ -287,7 +249,7 @@ export default function AdvisorDashboardOverview({
                 <p className="text-[9px] font-black uppercase tracking-widest text-[#C49A3C]">Pro Version</p>
               </div>
               <p className="text-sm font-medium text-[#a8a29e] leading-tight mb-4">
-                Unlimited reports and advanced AI models for your clients.
+                Advanced AI models for your clients.
               </p>
               {onNavigate && (
                 <button

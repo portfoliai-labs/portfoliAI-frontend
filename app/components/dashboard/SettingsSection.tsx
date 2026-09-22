@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, Infinity as InfinityIcon, FileText, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2 } from "lucide-react";
+import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote } from "lucide-react";
 import { userService } from "../../services/userService";
-import type { SubscriptionResponse, UserMetrics, NotificationPreferences } from "../../models/User";
+import type { SubscriptionResponse, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
 import { AlertsSettings } from "./AlertsSettings";
@@ -57,13 +57,27 @@ const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "alerts", label: "Alerts", icon: BellRing },
+  { id: "preferences", label: "Preferences", icon: Globe },
   { id: "account", label: "Account", icon: UserIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
+const LANGUAGES = [
+  { code: "en", label: "English", flag: "🇬🇧" },
+  { code: "it", label: "Italian", flag: "🇮🇹" },
+  { code: "es", label: "Spanish", flag: "🇪🇸" },
+  { code: "fr", label: "French", flag: "🇫🇷" },
+];
+
+const CURRENCIES = [
+  { code: "USD", label: "Dollar ($)" },
+  { code: "EUR", label: "Euro (€)" },
+  { code: "GBP", label: "Pound (£)" },
+];
+
 export function SettingsSection() {
-  const { user, logout } = useUser();
+  const { user, logout, refreshUser } = useUser();
   // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
   const [activeTab, setActiveTab] = useState<TabId>(() =>
     typeof window !== "undefined" && window.location.hash === "#alerts" ? "alerts" : "subscription",
@@ -71,7 +85,6 @@ export function SettingsSection() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
-  const [metrics, setMetrics] = useState<UserMetrics | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
@@ -79,12 +92,15 @@ export function SettingsSection() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const [localeForm, setLocaleForm] = useState({ language: "en", currency: "USD" });
+  const [localeLoading, setLocaleLoading] = useState(true);
+  const [localeSaving, setLocaleSaving] = useState(false);
+  const [isLangOpen, setIsLangOpen] = useState(false);
+  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+
   useEffect(() => {
-    Promise.all([userService.getSubscription(), userService.getUserMetrics()])
-      .then(([sub, m]) => {
-        setSubscription(sub);
-        setMetrics(m);
-      })
+    userService.getSubscription()
+      .then(setSubscription)
       .catch((error) => console.error("Failed to load subscription:", error))
       .finally(() => setLoading(false));
 
@@ -92,6 +108,11 @@ export function SettingsSection() {
       .then(setPreferences)
       .catch((error) => console.error("Failed to load notification preferences:", error))
       .finally(() => setPreferencesLoading(false));
+
+    userService.getUserProfile()
+      .then((profile) => setLocaleForm({ language: profile.language || "en", currency: profile.currency || "USD" }))
+      .catch((error) => console.error("Failed to load locale preferences:", error))
+      .finally(() => setLocaleLoading(false));
   }, []);
 
   // The hash only carries the request to open a tab; clear it so opening Settings later, from the
@@ -114,11 +135,6 @@ export function SettingsSection() {
     });
   }, [loading, subscription]);
 
-  const remaining = metrics?.reports_remaining ?? null;
-  const used = metrics?.report_generated_this_month ?? 0;
-  const unlimited = subscription?.has_unlimited_reports ?? false;
-  const exhausted = !unlimited && remaining !== null && remaining <= 0;
-
   const setPreference = (field: keyof Omit<NotificationPreferences, "updated_at">) => (value: boolean) => {
     setPreferences((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
@@ -140,6 +156,22 @@ export function SettingsSection() {
       setMessage({ type: "error", text: "Error saving notification preferences" });
     } finally {
       setSaving(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleSaveLocale = async () => {
+    setLocaleSaving(true);
+    try {
+      await userService.updateUserProfile({ language: localeForm.language, currency: localeForm.currency });
+      localStorage.removeItem("user_profile");
+      await refreshUser();
+      setMessage({ type: "success", text: "Preferences updated" });
+    } catch (error) {
+      console.error("Failed to update locale preferences:", error);
+      setMessage({ type: "error", text: "Error saving preferences" });
+    } finally {
+      setLocaleSaving(false);
       setTimeout(() => setMessage(null), 3000);
     }
   };
@@ -203,38 +235,11 @@ export function SettingsSection() {
             ) : !subscription ? (
               <p className="text-sm text-[#78716c]">Unable to load subscription.</p>
             ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-10">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] mb-1">Plan</p>
-                  <p className="text-xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                    {subscription.plan_name}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                    exhausted ? "bg-rose-50" : "bg-[#C49A3C]/10"
-                  }`}>
-                    {unlimited ? (
-                      <InfinityIcon className="w-5 h-5 text-[#C49A3C]" />
-                    ) : exhausted ? (
-                      <AlertCircle className="w-5 h-5 text-rose-500" />
-                    ) : (
-                      <FileText className="w-5 h-5 text-[#C49A3C]" />
-                    )}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-bold ${exhausted ? "text-rose-600" : "text-[#1c1917]"}`}>
-                      {unlimited ? "Unlimited reports" : `${used} of ${subscription.monthly_reports_limit ?? 0} reports generated`}
-                    </p>
-                    <p className={`text-xs ${exhausted ? "text-rose-500 font-semibold" : "text-[#78716c]"}`}>
-                      {unlimited
-                        ? "No monthly limit"
-                        : exhausted
-                        ? "Monthly limit reached"
-                        : `${remaining} remaining this month`}
-                    </p>
-                  </div>
-                </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] mb-1">Plan</p>
+                <p className="text-xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                  {subscription.plan_name}
+                </p>
               </div>
             )}
           </div>
@@ -328,6 +333,92 @@ export function SettingsSection() {
       )}
 
       {activeTab === "alerts" && <AlertsSettings />}
+
+      {activeTab === "preferences" && (
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
+          <div className="flex items-center justify-between gap-4 border-b border-[rgba(196,154,60,0.15)] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-[#F7F5EF] text-[#C49A3C] rounded-xl">
+                <Globe className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-sm text-[#1c1917]">Preferences</span>
+            </div>
+            <button
+              onClick={handleSaveLocale}
+              disabled={localeSaving || localeLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-[#1c1917] text-white rounded-xl font-bold text-xs hover:bg-[#C49A3C] transition-colors disabled:opacity-50"
+            >
+              {localeSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {localeSaving ? "Saving..." : "Save"}
+            </button>
+          </div>
+
+          {localeLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Language</label>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsLangOpen(!isLangOpen)}
+                    className="w-full flex items-center justify-between p-3.5 bg-white border border-[rgba(196,154,60,0.25)] rounded-xl font-medium text-[#1c1917] hover:border-[#C49A3C] transition-all focus:ring-4 focus:ring-[#C49A3C]/10"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-lg leading-none">{LANGUAGES.find(l => l.code === localeForm.language)?.flag}</span>
+                      {LANGUAGES.find(l => l.code === localeForm.language)?.label}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-[#a8a29e] transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isLangOpen && (
+                    <div className="absolute z-10 w-full mt-2 bg-white border border-[rgba(196,154,60,0.2)] rounded-xl shadow-xl overflow-hidden">
+                      {LANGUAGES.map(l => (
+                        <button
+                          key={l.code}
+                          onClick={() => { setLocaleForm({ ...localeForm, language: l.code }); setIsLangOpen(false); }}
+                          className="w-full p-3.5 text-left font-medium hover:bg-[#F7F5EF] text-[#1c1917] flex items-center gap-2"
+                        >
+                          <span className="text-lg leading-none">{l.flag}</span> {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#78716c] ml-1">Currency</label>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsCurrencyOpen(!isCurrencyOpen)}
+                    className="w-full flex items-center justify-between p-3.5 bg-white border border-[rgba(196,154,60,0.25)] rounded-xl font-medium text-[#1c1917] hover:border-[#C49A3C] transition-all focus:ring-4 focus:ring-[#C49A3C]/10"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Banknote className="w-4 h-4 text-[#a8a29e]" /> {localeForm.currency}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-[#a8a29e] transition-transform ${isCurrencyOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isCurrencyOpen && (
+                    <div className="absolute z-10 w-full mt-2 bg-white border border-[rgba(196,154,60,0.2)] rounded-xl shadow-xl overflow-hidden">
+                      {CURRENCIES.map(c => (
+                        <button
+                          key={c.code}
+                          onClick={() => { setLocaleForm({ ...localeForm, currency: c.code }); setIsCurrencyOpen(false); }}
+                          className="w-full p-3.5 text-left font-medium hover:bg-[#F7F5EF] text-[#1c1917]"
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {activeTab === "account" && (
         <div className="space-y-8">

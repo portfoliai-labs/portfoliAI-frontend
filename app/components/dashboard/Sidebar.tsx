@@ -17,8 +17,6 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
-    { id: 'reports', label: 'Reports', icon: FileText },
-    { id: 'profile', label: 'Profile', icon: User2Icon },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useMemo, useEffect } from "react";
 import {
   FileText, Download, Search, Tag as TagIcon,
   Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid,
-  Sparkles, ArrowRight, CalendarRange, PlusCircle,
 } from "lucide-react";
 import { reportService } from "../../services/reportService";
-import { userService } from "../../services/userService";
-import { transactionService } from "../../services/transactionService";
-import { useNotificationsContext } from "../../context/NotificationsContext";
-import { buildReportName } from "../../lib/format";
-import type { Document, ReportType } from "../../models/Report";
-import type { UserMetrics, SubscriptionResponse } from "../../models/User";
+import type { Document } from "../../models/Report";
 
 // What the archive shows instead of a raw filename/timestamp: the period a report
 // actually covers, plus a coarse type badge inferred from that period's length (the
@@ -54,49 +47,6 @@ function describeReportPeriod(report: Document): { title: string; badge: string 
   return null;
 }
 
-type Preset = "LAST_MONTH" | "LAST_QUARTER" | "CURRENT_YEAR" | "FULL" | "CUSTOM";
-
-const toISODate = (d: Date) => d.toISOString().slice(0, 10);
-
-// Turns a generation preset into the actual request shape processReport() expects.
-// Month/quarter math relies on the Date constructor normalizing out-of-range values
-// (e.g. month -1 rolls back into the previous year), so no special-casing is needed
-// at year boundaries.
-function presetToPeriod(
-  preset: Preset,
-  custom: { start: string; end: string },
-): { reportType: ReportType; periodStart?: string; periodEnd?: string } {
-  const today = new Date();
-
-  if (preset === "FULL") return { reportType: "FULL" };
-  if (preset === "CUSTOM") return { reportType: "PERIODIC", periodStart: custom.start, periodEnd: custom.end };
-
-  if (preset === "LAST_MONTH") {
-    const end = new Date(today.getFullYear(), today.getMonth(), 0);
-    const start = new Date(end.getFullYear(), end.getMonth(), 1);
-    return { reportType: "PERIODIC", periodStart: toISODate(start), periodEnd: toISODate(end) };
-  }
-
-  if (preset === "LAST_QUARTER") {
-    const currentQuarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
-    const start = new Date(today.getFullYear(), currentQuarterStartMonth - 3, 1);
-    const end = new Date(today.getFullYear(), currentQuarterStartMonth, 0);
-    return { reportType: "PERIODIC", periodStart: toISODate(start), periodEnd: toISODate(end) };
-  }
-
-  // CURRENT_YEAR
-  const start = new Date(today.getFullYear(), 0, 1);
-  return { reportType: "PERIODIC", periodStart: toISODate(start), periodEnd: toISODate(today) };
-}
-
-const PRESET_OPTIONS: { value: Preset; label: string }[] = [
-  { value: "LAST_MONTH", label: "Last month" },
-  { value: "LAST_QUARTER", label: "Last quarter" },
-  { value: "CURRENT_YEAR", label: "Current year" },
-  { value: "FULL", label: "Full history" },
-  { value: "CUSTOM", label: "Custom range" },
-];
-
 // --- INTERFACES ---
 
 /**
@@ -116,10 +66,8 @@ interface DocumentCardProps {
 
 export function ReportsList({
   forUserUuid,
-  onNavigate,
 }: {
   forUserUuid?: string | null;
-  onNavigate?: (section: string) => void;
 } = {}) {
   const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -133,36 +81,6 @@ export function ReportsList({
   // Tagging Logic States
   const [taggingDocId, setTaggingDocId] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState<string>("");
-
-  // Report-generation state — only relevant for a user's own archive (forUserUuid
-  // unset), never when an advisor is browsing a client's reports.
-  const [metrics, setMetrics] = useState<UserMetrics | null>(null);
-  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
-  const [hasTransactions, setHasTransactions] = useState<boolean | null>(null);
-  // Optimistic client-side flag: flips true the instant a SUCCESS notification arrives, so
-  // regular users see the trigger disappear immediately without waiting on a metrics
-  // refetch (which may lag the notification by a beat). Ignored for testers, who keep it.
-  const [firstReportGenerated, setFirstReportGenerated] = useState(false);
-  const [isReportPending, setIsReportPending] = useState(false);
-  const [pendingKind, setPendingKind] = useState<"FULL" | "PERIODIC" | null>(null);
-  const [reportError, setReportError] = useState<string | null>(null);
-  // "+ New report" opens a modal instead of a permanently docked panel — the trigger
-  // itself is used rarely (a handful of times a year at most once auto-generation is
-  // in place), so it shouldn't cost a full card's worth of vertical space at all times.
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
-  const [preset, setPreset] = useState<Preset>("LAST_MONTH");
-  // Custom time range, only used when preset === "CUSTOM" — defaults to the last 30 days
-  // so the fields aren't empty, but either end can be adjusted before generating.
-  const [rangeStart, setRangeStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [rangeEnd, setRangeEnd] = useState(() => new Date().toISOString().slice(0, 10));
-  // Only notifications created at/after this instant count as "ours" — avoids reacting to
-  // a stale, already-read notification from a previous job.
-  const watchSinceRef = useRef<number>(0);
-  const { notifications } = useNotificationsContext();
 
   /**
    * Fetches all documents from the backend on component mount
@@ -184,91 +102,6 @@ export function ReportsList({
   useEffect(() => {
     loadDocuments();
   }, []);
-
-  useEffect(() => {
-    if (forUserUuid) return;
-    const fetchPanelData = async () => {
-      try {
-        const [userMetrics, userSubscription, transactions] = await Promise.all([
-          userService.getUserMetrics(),
-          userService.getSubscription(),
-          transactionService.getUserTransactions(undefined, 1, 0),
-        ]);
-        setMetrics(userMetrics);
-        setSubscription(userSubscription);
-        setHasTransactions(transactions.total > 0);
-        // A report was already kicked off before this component mounted (e.g. page reload
-        // mid-generation) — start watching for its completion notification too.
-        if (userMetrics.report_in_progress > 0) {
-          watchSinceRef.current = Date.now();
-          setIsReportPending(true);
-        }
-      } catch (err) {
-        console.error("Failed to fetch report generation panel data:", err);
-      }
-    };
-    fetchPanelData();
-  }, [forUserUuid]);
-
-  // Unlocks as soon as a job-status notification (success or failure) shows up for the
-  // report we're watching — no reliance on re-fetching /users/metrics. On success, also
-  // refreshes the archive so the freshly generated report shows up right away.
-  useEffect(() => {
-    if (!isReportPending) return;
-    const completed = notifications.find(n => {
-      const jobStatus = (n.payload as Record<string, unknown> | undefined)?.status;
-      if (jobStatus !== "SUCCESS" && jobStatus !== "FAILED") return false;
-      return new Date(n.created_at).getTime() >= watchSinceRef.current;
-    });
-    if (!completed) return;
-    setIsReportPending(false);
-    setPendingKind(null);
-    const jobStatus = (completed.payload as Record<string, unknown> | undefined)?.status;
-    if (jobStatus === "SUCCESS") {
-      setFirstReportGenerated(true);
-      loadDocuments();
-    } else {
-      const cause = (completed.payload as Record<string, unknown> | undefined)?.error_message as string | undefined;
-      setReportError(cause ?? "Report generation failed. Please try again.");
-    }
-  }, [notifications, isReportPending]);
-
-  const handleGenerateReport = async (selectedPreset: Preset) => {
-    if (isReportPending) return;
-    const period = presetToPeriod(selectedPreset, { start: rangeStart, end: rangeEnd });
-    if (period.reportType === "PERIODIC" && (!period.periodStart || !period.periodEnd || period.periodStart > period.periodEnd)) return;
-    watchSinceRef.current = Date.now();
-    setIsReportPending(true);
-    setPendingKind(period.reportType);
-    setReportError(null);
-    try {
-      if (period.reportType === "FULL") {
-        await reportService.processReport(buildReportName(), forUserUuid);
-      } else {
-        await reportService.processReport(buildReportName(), forUserUuid, {
-          reportType: "PERIODIC",
-          periodStart: period.periodStart,
-          periodEnd: period.periodEnd,
-        });
-      }
-      setShowGenerateModal(false);
-    } catch (err) {
-      setIsReportPending(false);
-      setPendingKind(null);
-      setReportError(err instanceof Error ? err.message : "Failed to start report generation.");
-    }
-  };
-
-  const isTester = subscription?.tier === "TESTER";
-  const hasEverGeneratedReport = firstReportGenerated || (metrics?.report_generated ?? 0) > 0;
-  // `metrics === null` (fetch still in flight, failed, or this is an advisor viewing a
-  // client's archive) deliberately keeps the trigger hidden rather than flashing it.
-  const showGenerateTrigger = !forUserUuid && metrics !== null && (isTester || !hasEverGeneratedReport);
-  // Testers (and any other unlimited-report plan) never hit the monthly cap, regardless of
-  // what reports_remaining happens to read — matches the exhausted check already used in
-  // SettingsSection/SubscriptionPopover.
-  const unlimitedReports = subscription?.has_unlimited_reports ?? false;
-  const reportsExhausted = !unlimitedReports && metrics?.reports_remaining !== null && metrics?.reports_remaining !== undefined && metrics.reports_remaining <= 0;
 
   // --- ACTIONS ---
 
@@ -443,22 +276,6 @@ export function ReportsList({
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-
-            {/* "+ New report" — a rarely-used action (a handful of times a year once
-                auto-generation is in place) gets a compact trigger, not a docked panel.
-                The modal closes as soon as generation starts (it can take minutes), so
-                this button is the only persistent indicator left — it has to carry the
-                pending state itself rather than just sitting there looking clickable. */}
-            {showGenerateTrigger && (
-              <button
-                onClick={() => setShowGenerateModal(true)}
-                disabled={isReportPending}
-                className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-blue-600 transition-colors shadow-sm shrink-0 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
-              >
-                {isReportPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-                {isReportPending ? "Generating…" : "New report"}
-              </button>
-            )}
           </div>
         </div>
 
@@ -482,26 +299,6 @@ export function ReportsList({
           </button>
         </div>
       </div>
-
-      {showGenerateModal && (
-        <ReportGenerationModal
-          isTester={isTester}
-          hasTransactions={hasTransactions}
-          isPending={isReportPending}
-          pendingKind={pendingKind}
-          isExhausted={reportsExhausted}
-          error={reportError}
-          preset={preset}
-          onPresetChange={setPreset}
-          rangeStart={rangeStart}
-          rangeEnd={rangeEnd}
-          onRangeStartChange={setRangeStart}
-          onRangeEndChange={setRangeEnd}
-          onGenerate={() => handleGenerateReport(isTester ? preset : "FULL")}
-          onNavigate={onNavigate}
-          onClose={() => setShowGenerateModal(false)}
-        />
-      )}
 
       {/* Main List Rendering */}
       <div className="space-y-8">
@@ -576,171 +373,6 @@ export function ReportsList({
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * REPORT GENERATION MODAL — replaces what used to be a permanently docked panel. The
- * trigger is used rarely (a handful of times a year once auto-generation is in place),
- * so it lives behind a compact "+ New report" button instead of sitting on screen at
- * all times. Regular users get a single one-shot confirmation (their first report is
- * always FULL); testers get the full preset picker plus a custom range, since they need
- * to trigger reports repeatedly to test the flow.
- */
-function ReportGenerationModal({
-  isTester, hasTransactions, isPending, pendingKind, isExhausted, error,
-  preset, onPresetChange, rangeStart, rangeEnd, onRangeStartChange, onRangeEndChange,
-  onGenerate, onNavigate, onClose,
-}: {
-  isTester: boolean;
-  hasTransactions: boolean | null;
-  isPending: boolean;
-  pendingKind: "FULL" | "PERIODIC" | null;
-  isExhausted: boolean;
-  error: string | null;
-  preset: Preset;
-  onPresetChange: (value: Preset) => void;
-  rangeStart: string;
-  rangeEnd: string;
-  onRangeStartChange: (value: string) => void;
-  onRangeEndChange: (value: string) => void;
-  onGenerate: () => void;
-  onNavigate?: (section: string) => void;
-  onClose: () => void;
-}) {
-  const canGenerate = hasTransactions === true;
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const rangeInvalid = preset === "CUSTOM" && (!rangeStart || !rangeEnd || rangeStart > rangeEnd);
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-4xl shadow-2xl border border-slate-200 max-w-md w-full p-6 md:p-8 space-y-5 animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-[#C49A3C]/10 rounded-xl">
-              <Sparkles className="h-5 w-5 text-[#C49A3C]" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900">
-                {!canGenerate ? "Add your transactions first" : isTester ? "New report" : "Generate your first report"}
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {!isTester && canGenerate && "After this one, reports keep coming automatically."}
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
-
-        {!canGenerate ? (
-          <>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Record your transactions first so there&apos;s something to analyze, then come back here to generate a report.
-            </p>
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => { onClose(); onNavigate?.("upload"); }}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
-              >
-                Add transactions <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </>
-        ) : isTester ? (
-          <>
-            <div className="space-y-2">
-              {PRESET_OPTIONS.map(opt => (
-                <label
-                  key={opt.value}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors ${
-                    preset === opt.value ? "border-[#C49A3C] bg-[#C49A3C]/5" : "border-slate-200 hover:border-slate-300"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="report-preset"
-                    checked={preset === opt.value}
-                    onChange={() => onPresetChange(opt.value)}
-                    className="accent-[#C49A3C]"
-                  />
-                  <span className="text-sm font-bold text-slate-900">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-
-            {preset === "CUSTOM" && (
-              <div className="flex gap-3">
-                <div className="flex-1 space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">From</label>
-                  <input
-                    type="date"
-                    value={rangeStart}
-                    max={rangeEnd || today}
-                    onChange={(e) => onRangeStartChange(e.target.value)}
-                    className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
-                  />
-                </div>
-                <div className="flex-1 space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">To</label>
-                  <input
-                    type="date"
-                    value={rangeEnd}
-                    min={rangeStart}
-                    max={today}
-                    onChange={(e) => onRangeEndChange(e.target.value)}
-                    className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button onClick={onClose} className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">
-                Cancel
-              </button>
-              <button
-                onClick={onGenerate}
-                disabled={isPending || isExhausted || rangeInvalid}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarRange className="h-4 w-4" />}
-                {isPending ? (pendingKind === "FULL" ? "Generating…" : "Generating…") : isExhausted ? "Monthly limit reached" : "Generate"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              You&apos;ve recorded your transactions — generate your first report now. After this one, PortfoliAI takes over and keeps your reports up to date automatically, no action needed.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button onClick={onClose} className="px-5 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">
-                Cancel
-              </button>
-              <button
-                onClick={onGenerate}
-                disabled={isPending || isExhausted}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {isPending ? "Generating…" : isExhausted ? "Monthly limit reached" : "Generate first report"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body
   );
 }
 

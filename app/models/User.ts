@@ -52,22 +52,12 @@ interface ProfileUpdatePayload {
   language?: string | null;
 }
 
-// Matches UserMetricsResponse DTO (GET /users/metrics)
-interface UserMetrics {
-  report_generated: number;
-  report_in_error: number;
-  report_in_progress: number;
-  report_generated_this_month: number;
-  // null means the subscription has no monthly cap (unlimited reports)
-  reports_remaining: number | null;
-}
-
-// Matches SubscriptionResponse DTO (GET /users/subscription, POST /users/subscription)
+// Matches SubscriptionResponse DTO (GET /users/subscription, POST /users/subscription) —
+// monthly_reports_limit and has_unlimited_reports are also on the DTO but unused on the
+// frontend now that report quotas are no longer surfaced in the UI.
 interface SubscriptionResponse {
   tier: SubscriptionTier;
   plan_name: string;
-  monthly_reports_limit: number | null;
-  has_unlimited_reports: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -93,7 +83,6 @@ export type {
   UserProfile,
   ProfileCreatePayload,
   ProfileUpdatePayload,
-  UserMetrics,
   UserRole,
   SubscriptionTier,
   FinancialKnowledgeLevel,

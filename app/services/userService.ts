@@ -3,7 +3,6 @@ import type {
   UserProfile,
   ProfileCreatePayload,
   ProfileUpdatePayload,
-  UserMetrics,
   SubscriptionResponse,
   NotificationPreferences,
   NotificationPreferencesUpdatePayload,
@@ -29,10 +28,6 @@ export const userService = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
-  },
-
-  async getUserMetrics(): Promise<UserMetrics> {
-    return apiFetch<UserMetrics>('/users/metrics');
   },
 
   async getSubscription(): Promise<SubscriptionResponse> {

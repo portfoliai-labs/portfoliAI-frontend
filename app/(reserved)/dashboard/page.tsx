@@ -21,7 +21,12 @@ import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { Loader2 } from "lucide-react";
 
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'performance', 'profile', 'settings', 'notifications'];
+// 'reports' and 'profile' are omitted here on purpose: investors no longer have a sidebar
+// entry for them (Reports and Profile are hidden for now, Profile's language/currency moved
+// into Settings), so a stale deep link should fall back to overview rather than open them.
+// Advisors still reach both from their own sidebar via direct setActiveSection calls, which
+// don't go through this list.
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -30,8 +35,8 @@ const VALID_SECTIONS = ['overview', 'clients', 'upload', 'reports', 'performance
 function DashboardPageContent() {
   const { user, loading, logout } = useUser();
   const searchParams = useSearchParams();
-  // Lets links into the dashboard (e.g. the report viewer's "Back" button) land on a
-  // specific tab via `?section=reports` instead of always resetting to overview.
+  // Lets links into the dashboard land on a specific tab via `?section=...` instead of
+  // always resetting to overview.
   const requestedSection = searchParams.get('section');
 
   const [activeSection, setActiveSection] = useState<string>(
@@ -52,7 +57,7 @@ function DashboardPageContent() {
       case 'upload':
         return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList onNavigate={setActiveSection} />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
       case 'performance':
         return isAdvisor ? <AdvisorPerformanceSection /> : <PerformanceSection onNavigate={setActiveSection} />;
       case 'profile':
