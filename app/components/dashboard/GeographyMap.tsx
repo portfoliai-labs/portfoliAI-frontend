@@ -3,7 +3,7 @@
 
 import { useMemo, useRef, useState, type ComponentProps } from "react";
 import { geoEquirectangular } from "d3-geo";
-import { ComposableMap, Geographies, Geography, Sphere } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import worldTopology from "world-atlas/countries-110m.json";
 import type { ExposureEntryResponse } from "../../models/PortfolioData";
 
@@ -12,12 +12,15 @@ import type { ExposureEntryResponse } from "../../models/PortfolioData";
 // `style={{ width: "100%" }}` and keeps the aspect ratio. Equirectangular is the classic flat,
 // edge-to-edge rectangular world map (every pseudo-cylindrical alternative — equal-earth,
 // Robinson, Natural Earth — draws a lens/oval silhouette that tapers at the poles, which read
-// as "a globe" rather than a flat map once the sphere's own outline was stroked). Fitting that
-// projection to the *whole sphere* gives a rectangle spanning almost the entire [MAP_WIDTH,
-// MAP_HEIGHT] box on its own (no hand-picked scale to get wrong), so nothing is clipped and
-// nothing tapers into an oval.
+// as "a globe" rather than a flat map). Antarctica is left out (no holdings there), so the
+// box spans every longitude but only the latitudes between the tip of South America and
+// northern Greenland — its height follows from that band, with no empty strip at the bottom.
 const MAP_WIDTH = 960;
-const MAP_HEIGHT = 500;
+const MAP_LAT_MAX = 84;
+const MAP_LAT_MIN = -57;
+const MAP_SCALE = MAP_WIDTH / (2 * Math.PI);
+const MAP_HEIGHT = Math.round((MAP_SCALE * (MAP_LAT_MAX - MAP_LAT_MIN) * Math.PI) / 180);
+const ANTARCTICA_ID = "010";
 
 // react-simple-maps' `geography` prop is declared as `string | GeoJsonObject |
 // GeoJsonObject[]`, but its runtime also accepts a raw topojson Topology (it checks
@@ -142,7 +145,7 @@ function displayName(name: string): string {
 type HoverInfo = { name: string; region: string | null; pct: number; x: number; y: number };
 
 /**
- * GEOGRAPHY MAP — a flat world map for the "By region" panel: countries are grouped into the
+ * GEOGRAPHY MAP — a flat world map for the Region module: countries are grouped into the
  * same four buckets the region-exposure endpoint reports, tinted by that bucket's weight (a
  * bucket at 0% reads as "no exposure", not as a faint version of its color), with a hover
  * tooltip giving the exact percentage. The legend beneath doubles as the table-view fallback
@@ -162,9 +165,12 @@ export function GeographyMap({ entries }: { entries: ExposureEntryResponse[] }) 
 
   const maxPct = Math.max(...REGION_ORDER.map((r) => pctByRegion[r] ?? 0), 0.01);
 
-  // Fit once — the sphere's fitted scale/translate only depend on the fixed viewBox size
-  // above, never on props, so this never needs to recompute.
-  const projection = useMemo(() => geoEquirectangular().fitSize([MAP_WIDTH, MAP_HEIGHT], { type: "Sphere" }), []);
+  // Built once — scale/translate only depend on the fixed constants above: full longitude
+  // span across MAP_WIDTH, MAP_LAT_MAX on the top edge.
+  const projection = useMemo(
+    () => geoEquirectangular().scale(MAP_SCALE).translate([MAP_WIDTH / 2, (MAP_SCALE * MAP_LAT_MAX * Math.PI) / 180]),
+    [],
+  );
 
   if (entries.length === 0) {
     return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
@@ -194,10 +200,9 @@ export function GeographyMap({ entries }: { entries: ExposureEntryResponse[] }) 
           height={MAP_HEIGHT}
           style={{ width: "100%", height: "auto" }}
         >
-          <Sphere id="rsm-sphere" fill="transparent" stroke="#e2e8f0" strokeWidth={0.5} />
           <Geographies geography={WORLD_TOPOLOGY}>
             {({ geographies }) =>
-              geographies.map((geo) => {
+              geographies.filter((geo) => geo.id !== ANTARCTICA_ID).map((geo) => {
                 const region = regionForCountry(geo.id);
                 const pct = region ? pctByRegion[region] ?? 0 : 0;
                 const name = displayName((geo.properties as { name?: string } | null)?.name ?? "Unknown");

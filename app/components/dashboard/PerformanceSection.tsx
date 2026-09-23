@@ -878,9 +878,9 @@ function SectorModule({ sector }: { sector: ExposureEntryResponse[] | null }) {
       {sector === null ? (
         <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
       ) : (
-        <AllocPanel title="By sector" subtitle="Where your holdings' companies operate">
+        <div className="p-6 md:p-7">
           <ExposureBreakdown entries={sector ?? []} />
-        </AllocPanel>
+        </div>
       )}
     </Module>
   );
@@ -902,9 +902,9 @@ function GeographyModule({ region }: { region: ExposureEntryResponse[] | null })
       {region === null ? (
         <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
       ) : (
-        <AllocPanel title="By region" subtitle="Geographic exposure">
+        <div className="p-6 md:p-7">
           <GeographyMap entries={region ?? []} />
-        </AllocPanel>
+        </div>
       )}
     </Module>
   );
