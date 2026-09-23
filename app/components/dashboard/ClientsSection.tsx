@@ -1,12 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Trash2, Pencil, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle, BellRing } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
+import { useClientAlertRules } from "../../hooks/useAlertRules";
+import { alertState } from "../../lib/alerts";
+import { AlertsSettings } from "./AlertsSettings";
+import { TONE_STYLES } from "./AlertGauge";
 import { UserRole } from "../../models/Advisor";
 import type { Client, ClientCreatePayload, ClientProfileUpdatePayload } from "../../models/Advisor";
+import type { AlertRuleResponse } from "../../models/Alert";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// The Dashboard's client alerts open a client's panel here through the URL hash (#client=<uuid>),
+// read when this section mounts.
+export const CLIENT_HASH_PREFIX = "#client=";
+
+export function clientDisplayName(client: Client) {
+  return client.first_name || client.last_name
+    ? `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim()
+    : client.email;
+}
 
 function initials(client: Client) {
   const f = client.first_name?.[0] ?? "";
@@ -23,7 +38,6 @@ function ClientAvatar({ client, size = "md" }: { client: Client; size?: "sm" | "
   );
 }
 
-const RISK_OPTIONS = ["low", "medium", "high"] as const;
 const CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
 const LANGUAGE_OPTIONS = [
   { value: "it", label: "Italian" },
@@ -37,10 +51,6 @@ interface AddClientForm {
   first_name: string;
   last_name: string;
   language: string;
-  estimated_wealth: string;
-  annual_income: string;
-  financial_goals: string;
-  risk_tolerance: string;
   currency: string;
 }
 
@@ -49,10 +59,6 @@ const emptyForm: AddClientForm = {
   first_name: "",
   last_name: "",
   language: "it",
-  estimated_wealth: "",
-  annual_income: "",
-  financial_goals: "",
-  risk_tolerance: "medium",
   currency: "EUR",
 };
 
@@ -196,10 +202,6 @@ function AddClientDrawer({
         last_name: form.last_name.trim() || "-",
         language: form.language,
         currency: form.currency || undefined,
-        estimated_wealth: form.estimated_wealth ? parseFloat(form.estimated_wealth) : undefined,
-        annual_income: form.annual_income ? parseFloat(form.annual_income) : undefined,
-        financial_goals: form.financial_goals || undefined,
-        risk_tolerance: form.risk_tolerance || undefined,
       };
       const created = await advisorService.createClient(payload);
       onCreated(created);
@@ -261,40 +263,18 @@ function AddClientDrawer({
                 <InputField label="First name" value={form.first_name} onChange={set("first_name")} required />
                 <InputField label="Last name" value={form.last_name} onChange={set("last_name")} required />
               </div>
-              <SelectField
-                label="Language"
-                value={form.language}
-                onChange={set("language")}
-                options={LANGUAGE_OPTIONS}
-              />
-
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C] pt-2">Financial Profile</p>
-              <div className="grid grid-cols-2 gap-3">
-                <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" placeholder="e.g. 500000" />
-                <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" placeholder="e.g. 80000" />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <SelectField
-                  label="Currency"
+                  label="Language"
+                  value={form.language}
+                  onChange={set("language")}
+                  options={LANGUAGE_OPTIONS}
+                />
+                <SelectField
+                  label="Portfolio currency"
                   value={form.currency}
                   onChange={set("currency")}
                   options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
-                />
-                <SelectField
-                  label="Risk tolerance"
-                  value={form.risk_tolerance}
-                  onChange={set("risk_tolerance")}
-                  options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
-                <textarea
-                  value={form.financial_goals}
-                  onChange={(e) => set("financial_goals")(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Early retirement, buying a home..."
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] text-[#1c1917] text-sm font-medium placeholder:text-[#a8a29e] focus:outline-none focus:border-[#C49A3C] focus:ring-2 focus:ring-[#C49A3C]/10 transition-all resize-none"
                 />
               </div>
             </>
@@ -324,7 +304,12 @@ function AddClientDrawer({
   );
 }
 
-function EditClientDrawer({
+/**
+ * CLIENT PANEL — one client: the alerts the advisor set on their portfolio, and below them the
+ * client's language and portfolio currency. Changing the currency makes the backend recompute
+ * the client's whole portfolio history in the new currency.
+ */
+function ClientPanel({
   client,
   onClose,
   onUpdated,
@@ -334,45 +319,36 @@ function EditClientDrawer({
   onUpdated: (client: Client) => void;
 }) {
   const [form, setForm] = useState({
-    estimated_wealth: client.estimated_wealth?.toString() ?? "",
-    annual_income: client.annual_income?.toString() ?? "",
-    financial_goals: client.financial_goals ?? "",
-    risk_tolerance: client.risk_tolerance ?? "medium",
     currency: client.currency ?? "EUR",
     language: client.language ?? "it",
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const name = clientDisplayName(client);
+  const dirty = form.currency !== (client.currency ?? "EUR") || form.language !== (client.language ?? "it");
 
   const set = (field: keyof typeof form) => (v: string) =>
     setForm((prev) => ({ ...prev, [field]: v }));
 
-  const handleSubmit = async () => {
-    setLoading(true);
-    setError("");
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
     try {
       const payload: ClientProfileUpdatePayload = {
         currency: form.currency || null,
-        estimated_wealth: form.estimated_wealth ? parseFloat(form.estimated_wealth) : null,
-        annual_income: form.annual_income ? parseFloat(form.annual_income) : null,
-        financial_goals: form.financial_goals || null,
-        risk_tolerance: form.risk_tolerance || null,
         language: form.language || null,
       };
       await advisorService.updateClientProfile(client.uuid, payload);
       onUpdated({
         ...client,
-        estimated_wealth: payload.estimated_wealth ?? client.estimated_wealth,
-        annual_income: payload.annual_income ?? client.annual_income,
-        financial_goals: payload.financial_goals ?? client.financial_goals,
-        risk_tolerance: payload.risk_tolerance ?? client.risk_tolerance,
         currency: payload.currency ?? client.currency,
         language: payload.language ?? client.language,
       });
+      setMessage({ type: "success", text: "Client settings saved." });
     } catch {
-      setError("Unable to update profile. Please try again.");
+      setMessage({ type: "error", text: "Unable to save the client settings. Please try again." });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -380,75 +356,50 @@ function EditClientDrawer({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl border border-[rgba(196,154,60,0.2)] p-8 max-h-[90vh] overflow-y-auto"
+        className="relative w-full max-w-3xl bg-[#F7F5EF] rounded-[2rem] shadow-2xl border border-[rgba(196,154,60,0.2)] p-5 sm:p-8 max-h-[90vh] overflow-y-auto space-y-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <ClientAvatar client={client} size="sm" />
-            <div>
-              <h2 className="text-lg font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                {client.first_name} {client.last_name}
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-[#1c1917] truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                {name}
               </h2>
-              <p className="text-xs text-[#78716c]">{client.email}</p>
+              <p className="text-xs text-[#78716c] truncate">{client.email}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5EF] text-[#78716c] transition-colors">
+          <button onClick={onClose} aria-label="Close" className="p-2 rounded-xl hover:bg-white text-[#78716c] transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <InputField label="Estimated wealth" value={form.estimated_wealth} onChange={set("estimated_wealth")} type="number" />
-            <InputField label="Annual income" value={form.annual_income} onChange={set("annual_income")} type="number" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <AlertsSettings clientUuid={client.uuid} clientName={name} />
+
+        <div className="bg-white p-6 rounded-[2rem] border border-[rgba(196,154,60,0.2)] space-y-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Client settings</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <SelectField label="Language" value={form.language} onChange={set("language")} options={LANGUAGE_OPTIONS} />
             <SelectField
-              label="Currency"
+              label="Portfolio currency"
               value={form.currency}
               onChange={set("currency")}
               options={CURRENCY_OPTIONS.map((c) => ({ value: c, label: c }))}
             />
-            <SelectField
-              label="Risk tolerance"
-              value={form.risk_tolerance}
-              onChange={set("risk_tolerance")}
-              options={RISK_OPTIONS.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
-            />
           </div>
-          <SelectField
-            label="Language"
-            value={form.language}
-            onChange={set("language")}
-            options={LANGUAGE_OPTIONS}
-          />
-          <div>
-            <label className="block text-xs font-bold text-[#78716c] uppercase tracking-wider mb-1.5">Financial goals</label>
-            <textarea
-              value={form.financial_goals}
-              onChange={(e) => set("financial_goals")(e.target.value)}
-              rows={3}
-              className="w-full px-4 py-2.5 rounded-xl bg-[#F7F5EF] border border-[rgba(196,154,60,0.3)] text-[#1c1917] text-sm font-medium placeholder:text-[#a8a29e] focus:outline-none focus:border-[#C49A3C] focus:ring-2 focus:ring-[#C49A3C]/10 transition-all resize-none"
-            />
-          </div>
-
-          {error && <p className="text-rose-500 text-sm font-medium">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
+          {message && (
+            <p className={`text-sm font-medium ${message.type === "success" ? "text-emerald-600" : "text-rose-500"}`}>
+              {message.text}
+            </p>
+          )}
+          <div className="flex justify-end">
             <button
-              onClick={onClose}
-              className="flex-1 py-3 rounded-xl border border-[rgba(196,154,60,0.3)] text-[#78716c] font-bold text-sm hover:bg-[#F7F5EF] transition-colors"
+              onClick={handleSave}
+              disabled={!dirty || saving}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1c1917] text-white font-bold text-xs hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="flex-1 py-3 rounded-xl bg-[#1c1917] text-white font-bold text-sm hover:bg-[#C49A3C] transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Save Changes
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save settings
             </button>
           </div>
         </div>
@@ -457,19 +408,35 @@ function EditClientDrawer({
   );
 }
 
+/** "3 alerts · 1 triggered", or null with no alerts; the tone follows the most pressing one. */
+function alertsSummary(rules: AlertRuleResponse[]) {
+  if (rules.length === 0) return null;
+  const states = rules.map(alertState);
+  const triggered = states.filter((st) => st.tone === "danger").length;
+  const approaching = states.filter((st) => st.tone === "warn").length;
+  const count = `${rules.length} ${rules.length === 1 ? "alert" : "alerts"}`;
+  if (triggered > 0) return { text: `${count} · ${triggered} triggered`, tone: "danger" as const };
+  if (approaching > 0) return { text: `${count} · ${approaching} approaching`, tone: "warn" as const };
+  return { text: count, tone: "ok" as const };
+}
+
 function ClientCard({
   client,
-  onEdit,
+  rules,
+  onOpen,
   onDelete,
 }: {
   client: Client;
-  onEdit: () => void;
+  rules: AlertRuleResponse[] | null;
+  onOpen: () => void;
   onDelete: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const summary = rules ? alertsSummary(rules) : null;
 
-  const handleDelete = async () => {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
     try {
@@ -481,7 +448,17 @@ function ClientCard({
   };
 
   return (
-    <div className="bg-white rounded-[1.5rem] border border-[rgba(196,154,60,0.2)] p-5 hover:border-[#C49A3C]/40 hover:shadow-sm transition-all group">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        // Only the card itself: Enter on the delete button inside it mustn't open the panel.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
+      }}
+      className="bg-white rounded-[1.5rem] border border-[rgba(196,154,60,0.2)] p-5 hover:border-[#C49A3C]/40 hover:shadow-sm transition-all group cursor-pointer text-left"
+    >
       <div className="flex items-start gap-4">
         <ClientAvatar client={client} />
         <div className="flex-1 min-w-0">
@@ -497,45 +474,36 @@ function ClientCard({
                 {client.currency}
               </span>
             )}
-            {client.risk_tolerance && (
-              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
-                client.risk_tolerance === "high"
-                  ? "bg-rose-50 text-rose-600"
-                  : client.risk_tolerance === "low"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-amber-50 text-amber-600"
-              }`}>
-                {client.risk_tolerance}
-              </span>
-            )}
-            {client.estimated_wealth != null && (
-              <span className="px-2 py-0.5 rounded-lg bg-[#F7F5EF] text-[10px] font-bold text-[#78716c]">
-                {new Intl.NumberFormat("en-US", { style: "currency", currency: client.currency ?? "EUR", maximumFractionDigits: 0 }).format(client.estimated_wealth)}
-              </span>
-            )}
           </div>
         </div>
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={onEdit}
-            className="p-2 rounded-xl hover:bg-[#F7F5EF] text-[#78716c] hover:text-[#C49A3C] transition-colors"
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className={`p-2 rounded-xl transition-colors ${
-              confirmDelete
-                ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
-                : "hover:bg-[#F7F5EF] text-[#78716c] hover:text-rose-400"
-            }`}
-            title={confirmDelete ? "Click again to confirm" : "Delete client"}
-            onBlur={() => setConfirmDelete(false)}
-          >
-            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-          </button>
-        </div>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className={`p-2 rounded-xl transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 ${
+            confirmDelete
+              ? "bg-rose-50 text-rose-500 hover:bg-rose-100 sm:opacity-100"
+              : "hover:bg-[#F7F5EF] text-[#78716c] hover:text-rose-400"
+          }`}
+          title={confirmDelete ? "Click again to confirm" : "Delete client"}
+          aria-label={confirmDelete ? "Click again to confirm" : "Delete client"}
+          onBlur={() => setConfirmDelete(false)}
+        >
+          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+        </button>
+      </div>
+      <div className="mt-4 pt-3 border-t border-[rgba(196,154,60,0.1)] flex items-center justify-between gap-2">
+        {summary ? (
+          <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${TONE_STYLES[summary.tone].chip}`}>
+            <BellRing className="w-3 h-3" /> {summary.text}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#a8a29e]">
+            <BellRing className="w-3 h-3" /> {rules === null ? "Loading alerts…" : "No alerts"}
+          </span>
+        )}
+        <span className="flex items-center gap-0.5 text-[11px] font-bold text-[#C49A3C]">
+          Manage <ChevronRight className="w-3.5 h-3.5" />
+        </span>
       </div>
     </div>
   );
@@ -545,19 +513,31 @@ export function ClientsSection() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [editClient, setEditClient] = useState<Client | null>(null);
+  const [openClient, setOpenClient] = useState<Client | null>(null);
+  const { rules: clientRules, reload: reloadRules } = useClientAlertRules();
 
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
       const data = await advisorService.getClients();
       setClients(data);
+      // Arriving from the Dashboard's client alerts: open that client, then drop the hash so
+      // coming back to this section later doesn't reopen it.
+      if (window.location.hash.startsWith(CLIENT_HASH_PREFIX)) {
+        const uuid = decodeURIComponent(window.location.hash.slice(CLIENT_HASH_PREFIX.length));
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+        setOpenClient(data.find((c) => c.uuid === uuid) ?? null);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { loadClients(); }, [loadClients]);
+
+  const rulesFor = (uuid: string) =>
+    clientRules === null ? null : clientRules.filter((r) => r.clientUuid === uuid);
+  const triggeredCount = (clientRules ?? []).filter((r) => alertState(r).tone === "danger").length;
 
   const handleCreated = (client: Client) => {
     setClients((prev) => [client, ...prev]);
@@ -566,26 +546,34 @@ export function ClientsSection() {
 
   const handleUpdated = (updated: Client) => {
     setClients((prev) => prev.map((c) => (c.uuid === updated.uuid ? updated : c)));
-    setEditClient(null);
+    setOpenClient(updated);
   };
 
   const handleDeleted = (uuid: string) => {
     setClients((prev) => prev.filter((c) => c.uuid !== uuid));
+    reloadRules();
+  };
+
+  // The panel changes that client's rules directly; refresh the cards' summaries once it closes.
+  const handleClosePanel = () => {
+    setOpenClient(null);
+    reloadRules();
   };
 
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Client Management</p>
           <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
             Your Clients
           </h1>
+          <p className="text-sm text-[#78716c] mt-1">Open a client to set alerts on their portfolio.</p>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-sm hover:bg-[#C49A3C] transition-colors shadow-sm"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-sm hover:bg-[#C49A3C] transition-colors shadow-sm shrink-0"
         >
           <Plus className="w-4 h-4" /> Add Client
         </button>
@@ -593,7 +581,7 @@ export function ClientsSection() {
 
       {/* Stats row */}
       {!loading && clients.length > 0 && (
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4">
           <div className="bg-white rounded-2xl border border-[rgba(196,154,60,0.2)] px-5 py-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#C49A3C]/10 flex items-center justify-center">
               <Users className="w-4 h-4 text-[#C49A3C]" />
@@ -601,6 +589,17 @@ export function ClientsSection() {
             <div>
               <p className="text-2xl font-bold text-[#1c1917]">{clients.length}</p>
               <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c]">Total clients</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[rgba(196,154,60,0.2)] px-5 py-4 flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${triggeredCount > 0 ? "bg-rose-50" : "bg-[#C49A3C]/10"}`}>
+              <BellRing className={`w-4 h-4 ${triggeredCount > 0 ? "text-rose-500" : "text-[#C49A3C]"}`} />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-[#1c1917]">{clientRules === null ? "—" : clientRules.length}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#78716c]">
+                Alerts{triggeredCount > 0 ? ` · ${triggeredCount} triggered` : ""}
+              </p>
             </div>
           </div>
         </div>
@@ -633,7 +632,8 @@ export function ClientsSection() {
             <ClientCard
               key={client.uuid}
               client={client}
-              onEdit={() => setEditClient(client)}
+              rules={rulesFor(client.uuid)}
+              onOpen={() => setOpenClient(client)}
               onDelete={() => handleDeleted(client.uuid)}
             />
           ))}
@@ -649,10 +649,11 @@ export function ClientsSection() {
       )}
 
       {showAdd && <AddClientDrawer onClose={() => setShowAdd(false)} onCreated={handleCreated} />}
-      {editClient && (
-        <EditClientDrawer
-          client={editClient}
-          onClose={() => setEditClient(null)}
+      {openClient && (
+        <ClientPanel
+          key={openClient.uuid}
+          client={openClient}
+          onClose={handleClosePanel}
           onUpdated={handleUpdated}
         />
       )}

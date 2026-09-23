@@ -79,9 +79,13 @@ const CURRENCIES = [
 
 export function SettingsSection() {
   const { user, logout, refreshUser } = useUser();
+  // Alerts are rules on the user's own portfolio; advisors don't have one (they manage their
+  // clients' portfolios), so the tab is investor-only.
+  const isAdvisor = user?.role === "ADVISOR";
+  const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts") : TABS;
   // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
   const [activeTab, setActiveTab] = useState<TabId>(() =>
-    typeof window !== "undefined" && window.location.hash === "#alerts" ? "alerts" : "subscription",
+    typeof window !== "undefined" && window.location.hash === "#alerts" && !isAdvisor ? "alerts" : "subscription",
   );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -277,14 +281,16 @@ export function SettingsSection() {
           Settings
         </h2>
         <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
-          Manage your subscription, notification preferences and alerts
+          {isAdvisor
+            ? "Manage your subscription, notification preferences and account"
+            : "Manage your subscription, notification preferences and alerts"}
         </p>
       </div>
 
       {/* Tab bar — a full-width 2-column grid on mobile (so the selector never
           scrolls sideways), the original inline pill row from sm and up. */}
       <div className="grid grid-cols-2 sm:inline-flex gap-1 p-1 bg-white rounded-2xl sm:rounded-full border border-[rgba(196,154,60,0.2)]">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab.id === activeTab;
           return (
             <button
@@ -416,7 +422,7 @@ export function SettingsSection() {
         </div>
       )}
 
-      {activeTab === "alerts" && <AlertsSettings />}
+      {activeTab === "alerts" && !isAdvisor && <AlertsSettings />}
 
       {activeTab === "preferences" && (
         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">

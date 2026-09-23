@@ -3,11 +3,15 @@
 import { useState, useEffect } from "react";
 import {
   Users, TrendingUp, Sparkles,
-  ArrowRight,
+  ArrowRight, BellRing, ChevronRight,
   Loader2, Crown,
 } from "lucide-react";
 import { useUser } from "../../context/UserContext";
 import { advisorService } from "../../services/advisorService";
+import { useClientAlertRules } from "../../hooks/useAlertRules";
+import { alertFigures, alertState, alertUrgency, describeAlert, type AlertTone } from "../../lib/alerts";
+import { TONE_STYLES } from "./AlertGauge";
+import { CLIENT_HASH_PREFIX, clientDisplayName } from "./ClientsSection";
 import type { Client, AdvisorProfile } from "../../models/Advisor";
 
 function formatCurrency(value: number, currency = "EUR") {
@@ -72,24 +76,163 @@ function RecentClientRow({ client }: { client: Client }) {
         <p className="text-sm font-bold text-[#1c1917] truncate">{name}</p>
         <p className="text-xs text-[#78716c] truncate">{client.email}</p>
       </div>
-      <div className="flex flex-col items-end gap-1">
-        {client.estimated_wealth != null && (
-          <span className="text-xs font-bold text-[#1c1917]">
-            {formatCurrency(client.estimated_wealth, client.currency ?? "EUR")}
-          </span>
-        )}
-        {client.risk_tolerance && (
-          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg ${
-            client.risk_tolerance === "high"
-              ? "bg-rose-50 text-rose-500"
-              : client.risk_tolerance === "low"
-              ? "bg-emerald-50 text-emerald-600"
-              : "bg-amber-50 text-amber-600"
-          }`}>
-            {client.risk_tolerance}
-          </span>
+      {client.currency && (
+        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg bg-[#F7F5EF] text-[#78716c]">
+          {client.currency}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// How many alerts the dashboard lists before pointing to the Clients section for the rest.
+const CLIENT_ALERTS_SHOWN = 6;
+
+const BAR_COLOR: Record<AlertTone, string> = {
+  ok: "bg-emerald-500",
+  warn: "bg-amber-500",
+  danger: "bg-red-500",
+  muted: "bg-slate-300",
+};
+
+/**
+ * CLIENT ALERTS — every alert the advisor set on their clients' portfolios, the most pressing
+ * first (triggered, then closest to the threshold), each with how far along it is. A row opens that
+ * client in the Clients section, where the alerts are managed. Refreshed every minute, since the
+ * backend re-checks the rules about every 5 minutes.
+ */
+function ClientAlertsCard({
+  clients,
+  onNavigate,
+}: {
+  clients: Client[];
+  onNavigate?: (section: string) => void;
+}) {
+  const { rules, loading, error } = useClientAlertRules(60_000);
+  const byUuid = new Map(clients.map((c) => [c.uuid, c]));
+  const sorted = [...(rules ?? [])]
+    .filter((r) => byUuid.has(r.clientUuid))
+    .sort((a, b) => alertUrgency(b) - alertUrgency(a));
+  const triggered = sorted.filter((r) => alertState(r).tone === "danger").length;
+  const watchedClients = new Set(sorted.map((r) => r.clientUuid)).size;
+
+  const openClient = (uuid?: string) => {
+    if (!onNavigate) return;
+    if (uuid) {
+      window.history.replaceState(
+        null, "", `${window.location.pathname}${window.location.search}${CLIENT_HASH_PREFIX}${encodeURIComponent(uuid)}`,
+      );
+    }
+    onNavigate("clients");
+  };
+
+  return (
+    <div className="bg-white rounded-[1.75rem] border border-[rgba(196,154,60,0.2)] p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-base font-bold text-[#1c1917] flex items-center gap-2" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+            Client alerts
+            {triggered > 0 && (
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${TONE_STYLES.danger.chip}`} style={{ fontFamily: "inherit" }}>
+                {triggered} triggered
+              </span>
+            )}
+          </h2>
+          {sorted.length > 0 && (
+            <p className="text-xs text-[#78716c] mt-0.5">
+              {sorted.length} {sorted.length === 1 ? "alert" : "alerts"} on {watchedClients} {watchedClients === 1 ? "client" : "clients"} · checked about every 5 minutes
+            </p>
+          )}
+        </div>
+        {onNavigate && sorted.length > 0 && (
+          <button
+            onClick={() => openClient()}
+            className="flex items-center gap-1 text-xs font-bold text-[#C49A3C] hover:text-[#d4aa4c] transition-colors"
+          >
+            Manage in Clients <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
+        </div>
+      ) : error ? (
+        <p className="text-sm text-[#78716c] py-4">Unable to load your clients&apos; alerts.</p>
+      ) : sorted.length === 0 ? (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 py-4">
+          <div className="w-11 h-11 rounded-2xl bg-[#1c1917] flex items-center justify-center shrink-0">
+            <BellRing className="w-5 h-5 text-[#C49A3C]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-[#1c1917]">No alerts on your clients yet</p>
+            <p className="text-xs text-[#78716c] mt-0.5">
+              Open a client to be told when their portfolio moves by a set amount, or when a single holding grows past a share you choose.
+            </p>
+          </div>
+          {onNavigate && clients.length > 0 && (
+            <button
+              onClick={() => openClient()}
+              className="px-4 py-2 bg-[#1c1917] text-white rounded-xl text-xs font-bold hover:bg-[#C49A3C] transition-colors self-start sm:self-auto"
+            >
+              Set up alerts
+            </button>
+          )}
+        </div>
+      ) : (
+        <ul className="divide-y divide-[rgba(196,154,60,0.1)]">
+          {sorted.slice(0, CLIENT_ALERTS_SHOWN).map((rule) => {
+            const client = byUuid.get(rule.clientUuid)!;
+            const name = clientDisplayName(client);
+            const state = alertState(rule);
+            const figures = alertFigures(rule);
+            const { title } = describeAlert(rule, name);
+            return (
+              <li key={rule.ruleId}>
+                <button
+                  onClick={() => openClient(rule.clientUuid)}
+                  className="w-full flex items-center gap-3 py-3 text-left hover:bg-[#F7F5EF]/60 rounded-xl px-2 -mx-2 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-[#1c1917] flex items-center justify-center font-bold text-[#C49A3C] text-xs shrink-0">
+                    {((client.first_name?.[0] ?? "") + (client.last_name?.[0] ?? "")).toUpperCase() || client.email[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-sm font-bold text-[#1c1917] truncate">{name}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TONE_STYLES[state.tone].chip}`}>
+                        {state.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#78716c] truncate">{title}</p>
+                    {state.progressPct !== null && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 max-w-56 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${BAR_COLOR[state.tone]}`}
+                            style={{ width: `${Math.max(2, Math.min(100, state.progressPct))}%` }}
+                          />
+                        </div>
+                        {figures && (
+                          <span className="text-[11px] font-bold text-[#78716c] whitespace-nowrap">
+                            {figures.current} / {figures.limit}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#a8a29e] shrink-0" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {sorted.length > CLIENT_ALERTS_SHOWN && onNavigate && (
+        <p className="text-xs text-[#78716c] pt-3">
+          {sorted.length - CLIENT_ALERTS_SHOWN} more in the Clients section.
+        </p>
+      )}
     </div>
   );
 }
@@ -192,6 +335,8 @@ export default function AdvisorDashboardOverview({
           accent
         />
       </div>
+
+      <ClientAlertsCard clients={clients} onNavigate={onNavigate} />
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

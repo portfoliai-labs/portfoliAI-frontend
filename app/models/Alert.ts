@@ -75,6 +75,12 @@ interface AlertRuleResponse {
   updatedAt: string;
 }
 
+// GET /v1/alerts/client-rules (advisors only): a rule the advisor put on a client's portfolio,
+// with the client it watches.
+interface ClientAlertRuleResponse extends AlertRuleResponse {
+  clientUuid: string;
+}
+
 interface AlertRuleCreateRequest {
   params: AlertParams;
   notifyEmail?: boolean;
@@ -93,5 +99,5 @@ interface AlertRuleUpdateRequest {
 export type {
   AlertDirection, AlertWindow, PortfolioChangeParams, AssetWeightParams, AlertParams,
   AlertReadingStatus, AlertUnavailableReason, AlertRuleReading, AlertRuleResponse,
-  AlertRuleCreateRequest, AlertRuleUpdateRequest,
+  ClientAlertRuleResponse, AlertRuleCreateRequest, AlertRuleUpdateRequest,
 };

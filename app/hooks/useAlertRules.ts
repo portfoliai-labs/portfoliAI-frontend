@@ -3,17 +3,17 @@
 
 import { useEffect, useState } from "react";
 import { alertService } from "../services/alertService";
-import type { AlertRuleResponse } from "../models/Alert";
+import type { AlertRuleResponse, ClientAlertRuleResponse } from "../models/Alert";
 
 /**
- * The user's alert rules. `rules` is null until the first load. With `pollMs` the list is
+ * A list of alert rules. `rules` is null until the first load. With `pollMs` the list is
  * refetched on that interval while the tab is visible, since the backend re-checks every rule
  * about every 5 minutes and a reading changes underneath the page; a failed refetch keeps the
  * rules already shown. `setRules` lets callers apply the result of a create / update / delete
  * directly, without another round trip.
  */
-export function useAlertRules(pollMs?: number) {
-  const [rules, setRules] = useState<AlertRuleResponse[] | null>(null);
+function useRuleList<T>(fetchRules: () => Promise<T[]>, key: string, pollMs?: number) {
+  const [rules, setRules] = useState<T[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -23,13 +23,13 @@ export function useAlertRules(pollMs?: number) {
 
     const load = async (initial: boolean) => {
       try {
-        const data = await alertService.listRules();
+        const data = await fetchRules();
         if (!cancelled) {
           setRules(data);
           setError(null);
         }
       } catch (err) {
-        if (!cancelled && initial) setError(err instanceof Error ? err.message : "Failed to load your alerts");
+        if (!cancelled && initial) setError(err instanceof Error ? err.message : "Failed to load the alerts");
       } finally {
         if (!cancelled && initial) setLoading(false);
       }
@@ -41,7 +41,9 @@ export function useAlertRules(pollMs?: number) {
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [pollMs, reloadKey]);
+    // `key` stands for fetchRules, which callers create on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollMs, reloadKey, key]);
 
   const reload = () => {
     setLoading(true);
@@ -50,4 +52,14 @@ export function useAlertRules(pollMs?: number) {
   };
 
   return { rules, setRules, loading, error, reload };
+}
+
+/** The user's own alert rules or, with `clientUuid`, the ones the advisor put on that client. */
+export function useAlertRules(pollMs?: number, clientUuid?: string | null) {
+  return useRuleList<AlertRuleResponse>(() => alertService.listRules(clientUuid), clientUuid ?? "", pollMs);
+}
+
+/** Advisors only: every rule they put on any of their clients, each with its clientUuid. */
+export function useClientAlertRules(pollMs?: number) {
+  return useRuleList<ClientAlertRuleResponse>(() => alertService.listClientRules(), "clients", pollMs);
 }
