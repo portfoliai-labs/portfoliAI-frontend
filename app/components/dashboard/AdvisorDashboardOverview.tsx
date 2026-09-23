@@ -12,6 +12,7 @@ import { useClientAlertRules } from "../../hooks/useAlertRules";
 import { alertFigures, alertState, alertUrgency, describeAlert, type AlertTone } from "../../lib/alerts";
 import { TONE_STYLES } from "./AlertGauge";
 import { CLIENT_HASH_PREFIX, clientDisplayName } from "./ClientsSection";
+import { NewsCarouselModule } from "./NewsSection";
 import type { Client, AdvisorProfile } from "../../models/Advisor";
 
 function formatCurrency(value: number, currency = "EUR") {
@@ -337,6 +338,10 @@ export default function AdvisorDashboardOverview({
       </div>
 
       <ClientAlertsCard clients={clients} onNavigate={onNavigate} />
+
+      {/* Today's market news, one story at a time — the same carousel as the investor
+          Dashboard; renders nothing when there's no news today. */}
+      <NewsCarouselModule />
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
