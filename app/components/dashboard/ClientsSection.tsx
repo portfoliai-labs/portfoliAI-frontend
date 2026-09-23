@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Trash2, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle, BellRing } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
 import { useClientAlertRules } from "../../hooks/useAlertRules";
@@ -212,8 +213,9 @@ function AddClientDrawer({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+  // Portaled to <body> above the dashboard's sticky header (z-60), like the app's other modals.
+  return createPortal(
+    <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl border border-[rgba(196,154,60,0.2)] p-8 max-h-[90vh] overflow-y-auto"
@@ -300,7 +302,8 @@ function AddClientDrawer({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -352,8 +355,9 @@ function ClientPanel({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+  // Portaled to <body> above the dashboard's sticky header (z-60), like the app's other modals.
+  return createPortal(
+    <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-3xl bg-[#F7F5EF] rounded-[2rem] shadow-2xl border border-[rgba(196,154,60,0.2)] p-5 sm:p-8 max-h-[90vh] overflow-y-auto space-y-6"
@@ -404,7 +408,8 @@ function ClientPanel({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
