@@ -7,15 +7,16 @@ import {
   Coins,
   TrendingUp,
   TrendingDown,
-  Info,
   AlertCircle,
   Loader2,
   BellRing,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
 import { portfolioService } from "../../services/portfolioService";
-import type { PortfolioSnapshot } from "../../models/Portfolio";
+import type { PortfolioSnapshot, TodayDashboard } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
-import { NewsCarouselModule, DailyArticleModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { AlertGaugeCard } from "./AlertGauge";
 import { useAlertRules } from "../../hooks/useAlertRules";
@@ -23,6 +24,7 @@ import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
 
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
+  const [today, setToday] = useState<TodayDashboard | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,8 +41,12 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
       try {
         setLoading(true);
         setError(null);
-        const data = await portfolioService.getPortfolioOverview();
+        const [data, todayData] = await Promise.all([
+          portfolioService.getPortfolioOverview(),
+          portfolioService.getTodayDashboard(),
+        ]);
         setSnapshot(data);
+        setToday(todayData);
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
         setError(err instanceof Error ? err.message : "Failed to load portfolio data");
@@ -76,14 +82,17 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         </div>
       </div>
 
-      {/* BLOCK 1 — YOUR PORTFOLIO TODAY. Answers "what's it all worth?" — the one place
-          currencies are summed together, because that's the only way to answer that question.
-          Composition (by asset/category/broker) and the holdings detail table used to live
-          here too — both moved to the Performance section's Today page, which now carries
-          the same summary (currently-held assets) alongside the rest of today's figures.
-          With no snapshot at all (a new account with no transactions) it's replaced by the
-          same "no data yet" window Insights shows; a failed request gets an error banner
-          instead, since "no data" would be the wrong thing to tell the user then. */}
+      {/* BLOCK 1 — YOUR PORTFOLIO TODAY. Answers both "what's it all worth?" (the one place
+          currencies are summed together, since that's the only way to answer that question)
+          and "how has it moved?" (day-over-day and month-to-date, folded in from the old
+          Today's trend module — the two used to be separate cards but both measured the same
+          today-snapshot of the portfolio, so they're one module now). Composition (by asset/
+          category/broker) and the holdings detail table used to live here too, then moved to
+          the Performance section's Today page — which has since been folded away too (see
+          Insights' Composition tab). With no snapshot at all (a new account with no
+          transactions) it's replaced by the same "no data yet" window Insights shows; a
+          failed request gets an error banner instead, since "no data" would be the wrong
+          thing to tell the user then. */}
       {error ? (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
           <AlertCircle className="h-5 w-5 shrink-0" />
@@ -97,7 +106,7 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         />
       ) : (
         <>
-          <PortfolioTodayModule snapshot={snapshot} />
+          <PortfolioTodayModule snapshot={snapshot} today={today} />
 
           {/* BLOCK 1.2 — ALERTS. Each alert as a fuel-gauge style dial showing how close it is
               to its limit. Shown only alongside real portfolio data, since an alert with no
@@ -105,14 +114,6 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
           <AlertsModule onManage={openAlertSettings} />
         </>
       )}
-
-      {/* BLOCK 1.5 — TODAY'S NEWS. One story at a time so it doesn't compete for attention
-          with Block 1's figures; renders nothing at all when there's no news today. */}
-      <NewsCarouselModule />
-
-      {/* BLOCK 1.6 — ARTICLE OF THE DAY. The same global pick for every user, not scoped to
-          this portfolio — renders nothing at all if it fails to load. */}
-      <DailyArticleModule />
 
       {/* BLOCK 2 — YOUR ACTIVITY. Answers "what did I actually do?"
           COSTS used to live here too — commented out for now, not removed: undecided whether
@@ -136,6 +137,87 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
 }
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const fullDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+
+// Axis tick labels and the day-change chart's tooltip box — same values PerformanceSection.tsx
+// uses for its own copy of this chart, kept local rather than imported (see the Module/
+// ModuleHead comment above on why this file doesn't depend on that one).
+const AXIS_TICK_COLOR = "#64748b";
+const TOOLTIP_STYLE: React.CSSProperties = {
+  borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12, color: "#334155",
+};
+
+/**
+ * AMOUNT WITH DELTA — a Stat value: the amount on its own line, with the percentage change in
+ * its own colored, directional line underneath instead of squeezed into "€X (+Y%)"
+ * parentheses — see PerformanceSection.tsx's identical helper for the full rationale.
+ */
+function AmountWithDelta({ amount, pct }: { amount: string; pct: number }) {
+  const isGain = pct >= 0;
+  const Icon = isGain ? TrendingUp : TrendingDown;
+  return (
+    <>
+      {amount}
+      <div className={`flex items-center gap-1 font-sans text-sm font-bold mt-1 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+        <Icon className="h-3.5 w-3.5" />
+        {formatPct(pct)}
+      </div>
+    </>
+  );
+}
+
+/**
+ * TODAY TREND CHART — day-over-day value change for the current month, one bar per DAILY
+ * snapshot. Deltas, not raw values: a stable portfolio's value-over-time line is visually flat
+ * at this timescale, and the absolute-value context is already covered by the Stat cards above
+ * it, so nothing is lost by charting the change instead.
+ */
+function TodayTrendChart({ data }: { data: TodayDashboard }) {
+  if (data.chart.length === 0) {
+    return <p className="text-sm text-slate-400 p-6 md:p-7">Not enough history yet to chart.</p>;
+  }
+
+  const sorted = [...data.chart].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
+  const points = sorted.map(s => ({ date: s.snapshotAt, deltaValue: s.deltaValue, deltaValuePct: s.deltaValuePct }));
+
+  return (
+    <div className="p-6 md:p-7 h-64">
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+        <BarChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tickFormatter={chartDateLabel}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={30}
+          />
+          <YAxis
+            tickFormatter={(v) => formatCurrency(v, data.currency, 0)}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+            axisLine={false}
+            tickLine={false}
+            width={80}
+          />
+          <Tooltip
+            labelFormatter={(label) => fullDateLabel(label as string)}
+            formatter={(value, name, props) => [
+              `${formatCurrency(Number(value), data.currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
+              "Day change",
+            ]}
+            contentStyle={TOOLTIP_STYLE}
+          />
+          <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
+            {points.map((d) => (
+              <Cell key={d.date} fill={d.deltaValue >= 0 ? "#10b981" : "#f43f5e"} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 // COSTS — commented out for now alongside its call site above, not removed: undecided
 // whether to keep this section.
@@ -172,15 +254,21 @@ const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US"
 // }
 
 /**
- * PORTFOLIO TODAY MODULE — Block 1. The three numbers that only make sense combined across
- * every currency: market value, invested capital, unrealized P&L. Always in the user's
- * reference currency (a profile-level preference, independent of what currencies the
- * holdings themselves are in) and always dated, since a converted figure without a date is
- * meaningless — see the "As of ..." line below.
+ * PORTFOLIO TODAY MODULE — Block 1. What the portfolio is worth today, combined across every
+ * currency (a profile-level reference currency, independent of what currencies the holdings
+ * themselves are in), plus how that figure has moved: day-over-day and since the start of the
+ * month. Used to be two separate modules — one from the snapshot endpoint (value, invested
+ * capital, unrealized P&L), one from the /today endpoint (value again, plus the two deltas) —
+ * merged into one because both were just today's portfolio performance told twice, with
+ * "Current Value" and "Market Value" literally the same number from two different endpoints.
+ * The second row (and its chart) only renders once /today has something to say — independent
+ * of the snapshot above, since a brand-new account can have one without the other.
  */
-function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot }) {
+function PortfolioTodayModule({ snapshot, today }: { snapshot: PortfolioSnapshot; today: TodayDashboard | null }) {
   const currency = snapshot.currency;
   const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
+  const isDayGain = (today?.deltaDayValue ?? 0) >= 0;
+  const isMtdGain = (today?.deltaMtdValue ?? 0) >= 0;
 
   return (
     <Module>
@@ -206,6 +294,34 @@ function PortfolioTodayModule({ snapshot }: { snapshot: PortfolioSnapshot }) {
           color={pnlIsGain ? "emerald" : "red"}
         />
       </div>
+      {today && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x border-t border-slate-100">
+            <Stat
+              title="Month Start Value"
+              value={formatCurrency(today.monthStartValue, today.currency, 0)}
+              icon={<Wallet className="h-4 w-4 text-slate-500" />}
+              description="Market value on the 1st of this month"
+              color="blue"
+            />
+            <Stat
+              title="Day Change"
+              value={<AmountWithDelta amount={`${isDayGain ? "+" : ""}${formatCurrency(today.deltaDayValue, today.currency, 0)}`} pct={today.deltaDayValuePct} />}
+              icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+              description="Day-over-day move"
+              color={isDayGain ? "emerald" : "red"}
+            />
+            <Stat
+              title="Month-to-Date Change"
+              value={<AmountWithDelta amount={`${isMtdGain ? "+" : ""}${formatCurrency(today.deltaMtdValue, today.currency, 0)}`} pct={today.deltaMtdValuePct} />}
+              icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+              description="Move since the start of the month"
+              color={isMtdGain ? "emerald" : "red"}
+            />
+          </div>
+          <TodayTrendChart data={today} />
+        </>
+      )}
     </Module>
   );
 }
@@ -398,7 +514,9 @@ function ModuleHead({
  */
 interface StatProps {
   title: string;
-  value: string;
+  // A plain string for a single figure, or richer content (see AmountWithDelta) for a figure
+  // that needs more than one line.
+  value: React.ReactNode;
   icon: React.ReactNode;
   description: string;
   color: "blue" | "emerald" | "violet" | "red" | "gold";
@@ -419,12 +537,12 @@ function Stat({ title, value, icon, description, color }: StatProps) {
         {icon}
       </div>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
-      <p
+      <div
         className="font-black text-slate-900 text-xl md:text-2xl"
         style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
       >
         {value}
-      </p>
+      </div>
       <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>
     </div>
   );

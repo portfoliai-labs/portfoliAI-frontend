@@ -46,7 +46,6 @@ interface CurrencyBreakdown {
   feesByBroker: BrokerFeesTotal[];
   totalRealizedPl: number;
   sellCount: number;
-  winRate: number;
 }
 
 // Every closed round-trip for one asset, aggregated together (not one row per individual
@@ -64,7 +63,6 @@ interface AssetRealizedTrade {
   totalProceeds: number;
   realizedPl: number;
   sellCount: number;
-  winRate: number;
 }
 
 // Matches TransactionsSummaryResponse
@@ -122,10 +120,6 @@ interface TodayDashboard {
   deltaMtdValuePct: number;
   currency: string;
   chart: DailyValueChange[];
-  // Currently-held assets and their composition (by asset/asset class/broker) — surfaced here
-  // so the Performance section's Today page can show "what do I hold right now" alongside
-  // today's figures. GET /v1/portfolio/ itself no longer returns this (see PortfolioSnapshot).
-  summary: PortfolioSummary;
 }
 
 // Matches one entry of PeriodDashboardResponse[] (GET /v1/portfolio/monthly, GET

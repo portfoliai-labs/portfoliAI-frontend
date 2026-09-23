@@ -1,5 +1,5 @@
 // services/portfolioService.ts
-import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDashboard } from "../models/Portfolio";
+import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSummary } from "../models/Portfolio";
 import type {
   HoldingsResponse, ExposureResponse, PerformanceResponse, VolatilityResponse, CategoriesResponse,
   DividendsResponse, TradingCostsResponse, BenchmarkResponse, RiskModelResponse,
@@ -31,6 +31,16 @@ export const portfolioService = {
   // transactions yet) — a 200 with a null body, not a 404.
   async getTodayDashboard(forUserUuid?: string | null): Promise<TodayDashboard | null> {
     return apiFetch<TodayDashboard | null>(`/v1/portfolio/today${forUserUuidQuery(forUserUuid)}`);
+  },
+
+  // GET /v1/portfolio/summary — current holdings and currency-breakdown composition, derived
+  // purely from stored transactions (not a snapshot tick or any time horizon). Used to live
+  // nested under getTodayDashboard's own `summary` field; split out to its own endpoint since
+  // a page showing composition shouldn't depend on the today dashboard's availability. Unlike
+  // every other call here this never returns null — an empty portfolio is a summary with empty
+  // lists, not "not computed yet".
+  async getPortfolioSummary(forUserUuid?: string | null): Promise<PortfolioSummary> {
+    return apiFetch<PortfolioSummary>(`/v1/portfolio/summary${forUserUuidQuery(forUserUuid)}`);
   },
 
   // GET /v1/portfolio/monthly — one entry per calendar month of `year` (defaults to the

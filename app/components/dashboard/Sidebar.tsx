@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -17,6 +17,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
+    { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -25,6 +26,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
+    { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

@@ -1,20 +1,22 @@
 // components/dashboard/NewsSection.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
-  Loader2, AlertCircle, ChevronLeft, ChevronRight, ExternalLink,
+  Loader2, AlertCircle, ExternalLink,
   Newspaper, TrendingUp, Globe2, LineChart, Landmark, Coins,
 } from "lucide-react";
 import { useNews, useDailyArticle } from "../../hooks/useNews";
 import type { NewsItem, DailyArticle } from "../../models/News";
 
 /**
- * NEWS SECTION — shared building blocks for showing market news, used by both the Dashboard
- * Overview (NewsCarouselModule, today only, one story at a time) and the Insights section
- * (NewsModule, today's or a given month's stories as a grid). Each card shows the backend's
- * `imageUrl` when the story has one; otherwise (or if that URL fails to load) it falls back to
- * a stylized placeholder derived from the story's own topic/title (see themeFor below).
+ * NEWS SECTION — shared building blocks for the sidebar's own News tab: today's headlines as
+ * a full-page grid (NewsPageSection) plus the article of the day (DailyArticleModule). Used to
+ * also back a Dashboard-only carousel/daily-article pair, both dashboards' own small preview of
+ * the same content — retired once News became a real destination of its own, so the content
+ * has one home instead of a summary everywhere. Each card shows the backend's `imageUrl` when
+ * the story has one; otherwise (or if that URL fails to load) it falls back to a stylized
+ * placeholder derived from the story's own topic/title (see themeFor below).
  */
 
 const dateLabel = (iso: string) =>
@@ -32,13 +34,9 @@ const PLACEHOLDER_THEMES: { gradient: string; icon: typeof Newspaper }[] = [
   { gradient: "linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)", icon: Coins },
 ];
 
-// Dashboard carousel shows one story at a time (paging through the rest), so it only ever
-// needs a small buffer; Insights grids show every story at once, so they get a roomier cap.
-const DASHBOARD_NEWS_LIMIT = 4;
+// The News page shows every story at once as a grid, so this is a roomier cap than a
+// one-at-a-time carousel would need.
 const INSIGHTS_NEWS_LIMIT = 10;
-
-// How long each story stays on screen before the dashboard carousel auto-advances.
-const AUTOPLAY_INTERVAL_MS = 6000;
 
 function themeFor(seed: string) {
   let hash = 0;
@@ -143,182 +141,57 @@ function NewsGridBody({ items }: { items: NewsItem[] }) {
 }
 
 /**
- * NEWS MODULE — Insights variant: a grid of every story for the requested period (today when
- * year/month are both omitted, otherwise that calendar month). Fetches on its own so callers
- * (TodayPage, MonthDetail) don't need to thread news state through their own data loading.
+ * NEWS PAGE SECTION — the sidebar's own "News" tab: today's headlines as a full page rather
+ * than a small supplementary module. Used to live embedded in Today's overview and in each
+ * month's detail page as NewsModule; both call sites are gone now (a news-shaped page of its
+ * own reads better than the same grid repeated across Insights), so this replaces it outright
+ * rather than sitting alongside an unused twin. Unlike the module it replaces, this needs a
+ * real empty state — a lone supplementary module on a busier page can just disappear on a
+ * newsless day, but a page someone navigated to on purpose can't render nothing with no
+ * explanation.
  */
-export function NewsModule({ year, month, title, desc }: { year?: number; month?: number; title: string; desc: string }) {
-  const { items, loading, error, notFound } = useNews(year, month, INSIGHTS_NEWS_LIMIT);
-
-  // No articles found for the period: hide just this section rather than showing an error.
-  if (notFound) return null;
+export function NewsPageSection() {
+  const { items, loading, error, notFound } = useNews(undefined, undefined, INSIGHTS_NEWS_LIMIT);
 
   return (
-    <Module>
-      <ModuleHead eyebrow="Market News" title={title} desc={desc} />
-      {loading ? (
-        <div className="flex h-40 items-center justify-center">
-          <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
-        </div>
-      ) : error ? (
-        <div className="p-6 md:p-7 flex items-center gap-3 text-rose-600">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-bold">{error}</p>
-        </div>
-      ) : (
-        <NewsGridBody items={items} />
-      )}
-    </Module>
-  );
-}
-
-/**
- * FEATURED NEWS CARD — the carousel's one-at-a-time layout: bigger placeholder art alongside
- * the full title/description/meta, rather than the compact grid card above.
- */
-function FeaturedNewsCard({ item }: { item: NewsItem }) {
-  const theme = themeFor(item.topic || item.title);
-  const Icon = theme.icon;
-  const published = item.publishedAt ? dateLabel(item.publishedAt) : null;
-  const clickable = !!item.url;
-  const [imageFailed, setImageFailed] = useState(false);
-  const showImage = !!item.imageUrl && !imageFailed;
-
-  const body = (
-    <div className="flex flex-col sm:flex-row">
-      <div
-        className="sm:w-72 h-48 sm:h-auto shrink-0 flex items-center justify-center relative overflow-hidden"
-        style={showImage ? undefined : { backgroundImage: theme.gradient }}
-      >
-        {showImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.imageUrl!}
-            alt=""
-            onError={() => setImageFailed(true)}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* The daily article used to sit on the investor Dashboard, right under the news
+          carousel — moved here so both news surfaces (carousel snippet aside, this is the
+          dedicated one) live in one place. Leads the page, ahead of the headlines grid, since
+          it's the day's single featured pick rather than one story among many. Renders
+          nothing on its own when there's no pick for today. */}
+      <DailyArticleModule />
+      <Module>
+        <ModuleHead eyebrow="Market News" title="Today's Headlines" desc="Market news published today." />
+        {loading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
+          </div>
+        ) : error ? (
+          <div className="p-6 md:p-7 flex items-center gap-3 text-rose-600">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p className="text-sm font-bold">{error}</p>
+          </div>
+        ) : notFound || items.length === 0 ? (
+          <div className="py-14 flex flex-col items-center justify-center text-center px-6">
+            <div className="p-4 bg-slate-50 rounded-2xl mb-3">
+              <Newspaper className="h-6 w-6 text-slate-300" />
+            </div>
+            <p className="text-slate-600 font-semibold">No news today</p>
+            <p className="text-slate-400 text-sm mt-1">Check back later for new market headlines.</p>
+          </div>
         ) : (
-          <Icon className="h-14 w-14 text-white/85" />
+          <NewsGridBody items={items} />
         )}
-        <span className="absolute top-3 left-3 text-[10px] font-black uppercase tracking-wider text-white px-2.5 py-1 rounded-full bg-black/25 backdrop-blur-sm">
-          {item.topic}
-        </span>
-      </div>
-      <div className="flex-1 p-7 md:p-8 flex flex-col gap-3 min-w-0 justify-center">
-        <h3 className="text-xl md:text-2xl font-black text-slate-900 leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          {item.title}
-        </h3>
-        {item.description && <p className="text-sm md:text-base text-slate-500 leading-relaxed line-clamp-3">{item.description}</p>}
-        <div className="flex items-center gap-2 text-xs text-slate-400 font-semibold mt-1">
-          {item.source && <span>{item.source}</span>}
-          {item.source && published && <span>·</span>}
-          {published && <span>{published}</span>}
-        </div>
-        {clickable && (
-          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#C49A3C] mt-1 group-hover:underline w-fit">
-            Read article <ExternalLink className="h-4 w-4" />
-          </span>
-        )}
-      </div>
+      </Module>
     </div>
   );
-
-  return clickable ? (
-    <a href={item.url!} target="_blank" rel="noreferrer" className="group block hover:bg-slate-50/60 transition-colors">{body}</a>
-  ) : (
-    <div>{body}</div>
-  );
 }
 
 /**
- * NEWS CAROUSEL MODULE — Dashboard variant: today's stories, one at a time, with
- * arrows/dots in the module head to page through the rest (same nav pattern as
- * PerformanceSection's CurrencyCarouselModule). Renders nothing at all — not an empty card —
- * when there's no news today or the fetch fails, so a non-critical, supplementary module
- * doesn't clutter the main dashboard when it has nothing to show. Auto-advances every
- * AUTOPLAY_INTERVAL_MS while there's more than one story, pausing while the pointer is over
- * the card so a story someone's actually reading doesn't get swapped out from under them;
- * any manual nav (arrows/dots) restarts the wait rather than advancing on top of it, since
- * the interval is recreated whenever `index` changes.
- */
-export function NewsCarouselModule() {
-  const { items, loading, error, notFound } = useNews(undefined, undefined, DASHBOARD_NEWS_LIMIT);
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  // Clamped rather than reset via an effect: a shorter `items` array (e.g. a refetch) could
-  // otherwise leave `index` pointing past the end.
-  const activeIndex = items.length > 0 ? Math.min(index, items.length - 1) : 0;
-  const multi = items.length > 1;
-
-  useEffect(() => {
-    if (!multi || paused) return;
-    const id = setInterval(() => {
-      setIndex(i => (i + 1) % items.length);
-    }, AUTOPLAY_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [multi, paused, items.length, index]);
-
-  if (loading) {
-    return (
-      <Module>
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
-        </div>
-      </Module>
-    );
-  }
-
-  if (notFound || error || items.length === 0) return null;
-
-  const active = items[activeIndex];
-
-  return (
-    <Module>
-      <div onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
-        <ModuleHead
-          eyebrow="Market News"
-          title="Today's Headlines"
-          desc="Stories published today, one at a time."
-          right={multi && (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setIndex(i => (i - 1 + items.length) % items.length)}
-                aria-label="Previous story"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronLeft className="h-3 w-3" />
-              </button>
-              <div className="flex items-center gap-1">
-                {items.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setIndex(i)}
-                    aria-label={`Go to story ${i + 1}`}
-                    className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => setIndex(i => (i + 1) % items.length)}
-                aria-label="Next story"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-        />
-        <FeaturedNewsCard item={active} />
-      </div>
-    </Module>
-  );
-}
-
-/**
- * DAILY ARTICLE CARD — same layout family as FeaturedNewsCard, including the same
- * image-with-placeholder-fallback art (DailyArticle has no `topic`, so the placeholder is
- * seeded by the article's title instead).
+ * DAILY ARTICLE CARD — a large featured layout (image-or-placeholder art beside the full
+ * title/description/meta), the same treatment NewsCard's compact grid card can't fit.
+ * DailyArticle has no `topic`, so the placeholder is seeded by the article's title instead.
  */
 function DailyArticleCard({ article }: { article: DailyArticle }) {
   const theme = themeFor(article.title);
@@ -367,9 +240,9 @@ function DailyArticleCard({ article }: { article: DailyArticle }) {
 
 /**
  * DAILY ARTICLE MODULE — the day's featured read, same article for every user (not a
- * per-user or per-portfolio pick). Renders nothing at all — not an empty card — while
- * loading fails or there's nothing to show, same "stay out of the way" rule as
- * NewsCarouselModule for a non-critical, supplementary module.
+ * per-user or per-portfolio pick). Renders nothing at all — not an empty card — when
+ * loading fails or there's nothing to show, so it never clutters the News page with an
+ * empty slot on a day with no pick.
  */
 export function DailyArticleModule() {
   const { article, loading, error, notFound } = useDailyArticle();

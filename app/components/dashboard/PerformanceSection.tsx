@@ -4,35 +4,27 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Sun, History,
+  Sun,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
-  Search, ChevronDown, ChevronLeft, ChevronRight,
+  Search, ChevronDown,
 } from "lucide-react";
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  AreaChart, Area, LineChart, Line, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
-import { NewsModule } from "./NewsSection";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import type {
-  TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, DailyValueChange,
+  PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
 import type {
   ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
   BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
 } from "../../models/PortfolioData";
-
-type PageId = "today" | "history";
-
-const PAGES: { id: PageId; label: string; icon: typeof Sun }[] = [
-  { id: "today", label: "Today", icon: Sun },
-  { id: "history", label: "All Time", icon: History },
-];
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const fullDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -57,34 +49,28 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 /**
- * INSIGHTS SECTION — two time horizons, each backed by its own backend dashboard endpoint
- * that already picks the relevant period(s) server-side: Today (vs. yesterday and vs.
- * month-to-date) and All Time, which now also carries the merged month-by-month view
- * (returns heatmap, drilled into per-month via /monthly?year=) and lifetime realized P&L —
- * no date picker needed, the tab itself is the date selection. /today and /history return
- * null rather than a zeroed-out object when there isn't enough history yet — such tabs are
- * hidden from the switcher entirely rather than shown empty. Both are fetched together on
- * mount (and whenever forUserUuid changes) so which tabs to show is known up front.
+ * INSIGHTS SECTION — lifetime portfolio figures: performance since inception, a month-by-month
+ * returns heatmap (drilled into per-month via /monthly?year=), risk, benchmark comparison and
+ * current composition, as sub-tabs of one page (see HISTORY_SUB_TABS below) rather than a
+ * Today/All Time switcher — Today's own figures moved to the Dashboard (PortfolioTodayModule)
+ * once composition stopped depending on the today dashboard for its data (GET
+ * /v1/portfolio/summary, not /today's own `summary` field anymore), which was the only reason
+ * this page ever needed Today's data in the first place. /history returns null rather than a
+ * zeroed-out object when there isn't enough history yet.
  */
 export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: string | null; onNavigate?: (section: string) => void } = {}) {
-  const [active, setActive] = useState<PageId>("today");
-  const [today, setToday] = useState<TodayDashboard | null>(null);
   const [history, setHistory] = useState<FullHistoryDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const loadAll = async () => {
+    const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const [t, h] = await Promise.all([
-          portfolioService.getTodayDashboard(forUserUuid),
-          portfolioService.getFullHistoryDashboard(forUserUuid),
-        ]);
+        const h = await portfolioService.getFullHistoryDashboard(forUserUuid);
         if (cancelled) return;
-        setToday(t);
         setHistory(h);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load portfolio data");
@@ -92,26 +78,12 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
         if (!cancelled) setLoading(false);
       }
     };
-    loadAll();
+    load();
     return () => { cancelled = true; };
   }, [forUserUuid]);
 
-  const availablePages = useMemo(() => {
-    const isAvailable: Record<PageId, boolean> = {
-      today: today != null,
-      history: history != null,
-    };
-    return PAGES.filter(p => isAvailable[p.id]);
-  }, [today, history]);
-  // Falls back to the first tab that actually has data whenever `active` itself doesn't
-  // (the default "today", or a tab that had data for a previously selected client and
-  // doesn't for this one) — computed rather than synced via an effect.
-  const effectiveActive: PageId | null = availablePages.some(p => p.id === active) ? active : (availablePages[0]?.id ?? null);
-
   return (
     <div className="px-0 py-6 space-y-6">
-      {/* MASTHEAD — page switcher sits on the same row as the title, pushed to the right,
-          rather than as its own row below. */}
       <div className="flex flex-wrap items-center justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
@@ -121,25 +93,8 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           >
             Insights
           </h1>
-          <p className="text-slate-500 font-medium mt-1">A closer look at your portfolio, one time horizon at a time.</p>
+          <p className="text-slate-500 font-medium mt-1">Your portfolio&apos;s lifetime performance, risk and composition.</p>
         </div>
-
-        {/* PAGE SWITCHER — only tabs with data show up here */}
-        {availablePages.length > 0 && (
-          <div className="flex bg-slate-100/80 p-1.5 rounded-xl border border-slate-200 w-full sm:w-fit overflow-x-auto">
-            {availablePages.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setActive(p.id)}
-                className={`flex-1 sm:flex-none flex justify-center items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-                  effectiveActive === p.id ? "bg-white shadow-sm text-[#C49A3C]" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <p.icon className="h-4 w-4" /> {p.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {error && (
@@ -153,19 +108,14 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
         <div className="flex h-96 items-center justify-center">
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
         </div>
-      ) : availablePages.length === 0 ? (
+      ) : history === null ? (
         <NoDataEmptyState
           title="No performance data yet"
           message="Add or upload your transactions and this is where you'll track how your portfolio moves over time."
           onNavigate={onNavigate}
         />
       ) : (
-        <>
-          {effectiveActive === "today" && today && <TodayPage key={forUserUuid ?? "self"} data={today} forUserUuid={forUserUuid} />}
-          {effectiveActive === "history" && history && (
-            <HistoryPage key={forUserUuid ?? "self"} data={history} forUserUuid={forUserUuid} />
-          )}
-        </>
+        <HistoryPage key={forUserUuid ?? "self"} data={history} forUserUuid={forUserUuid} />
       )}
     </div>
   );
@@ -231,7 +181,10 @@ interface StatProps {
   // needs more than one line.
   value: React.ReactNode;
   icon: React.ReactNode;
-  description: string;
+  // Omitted when `info` already covers the same ground — a stat card doesn't need both a
+  // caption sitting under the value at all times and the fuller explanation in the icon's
+  // hover tooltip (see Benchmark Comparison's cards, which carry only `info`).
+  description?: string;
   color: "blue" | "emerald" | "red" | "gold" | "slate";
   // Plain-language explanation of what the figure means, shown in a tooltip when the user
   // hovers (or focuses) the icon.
@@ -324,7 +277,7 @@ function StatContent({ title, value, icon, description, color, info }: StatProps
       <div className="font-black text-slate-900 text-xl md:text-2xl" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
         {value}
       </div>
-      <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>
+      {description && <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>}
     </div>
   );
 }
@@ -416,68 +369,6 @@ function ChartCard({ chart, currency, title, desc }: { chart: PortfolioSnapshot[
   );
 }
 
-/**
- * DAY CHANGE CHART — /today's chart entries are now day-over-day deltas rather than fresh
- * absolute-value snapshots (backend no longer duplicates the absolute value inside the chart
- * now that TodayDashboard's own top-level scalars already cover it), so a bar per day colored
- * by the sign of that day's move reads better than the area/line SnapshotChart uses for /history,
- * which still gets real snapshots.
- */
-function DayChangeChart({ chart, currency }: { chart: DailyValueChange[]; currency: string }) {
-  if (chart.length === 0) {
-    return <p className="text-sm text-slate-400 p-6 md:p-7">Not enough history yet to chart.</p>;
-  }
-
-  const sorted = [...chart].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
-  const data = sorted.map(s => ({ date: s.snapshotAt, deltaValue: s.deltaValue, deltaValuePct: s.deltaValuePct }));
-
-  return (
-    <div className="p-6 md:p-7 h-64">
-      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
-        <BarChart data={data} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
-          <XAxis
-            dataKey="date"
-            tickFormatter={chartDateLabel}
-            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-            axisLine={false}
-            tickLine={false}
-            minTickGap={30}
-          />
-          <YAxis
-            tickFormatter={(v) => formatCurrency(v, currency, 0)}
-            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-            axisLine={false}
-            tickLine={false}
-            width={80}
-          />
-          <Tooltip
-            labelFormatter={(label) => fullDateLabel(label as string)}
-            formatter={(value, name, props) => [
-              `${formatCurrency(Number(value), currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
-              "Day change",
-            ]}
-            contentStyle={TOOLTIP_STYLE}
-          />
-          <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
-            {data.map((d) => (
-              <Cell key={d.date} fill={d.deltaValue >= 0 ? "#10b981" : "#f43f5e"} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function DayChangeChartCard({ chart, currency, title, desc }: { chart: DailyValueChange[]; currency: string; title: string; desc: string }) {
-  return (
-    <Module>
-      <ModuleHead eyebrow={currency} title={title} desc={desc} />
-      <DayChangeChart chart={chart} currency={currency} />
-    </Module>
-  );
-}
-
 function ViewReportLink({ documentId }: { documentId: string | null }) {
   if (!documentId) return null;
   return (
@@ -531,10 +422,6 @@ function ModuleMessage({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-slate-400 p-6 md:p-7">{children}</p>;
 }
 
-const isTodayEmpty = (data: TodayDashboard) =>
-  data.currentValue === 0 && data.previousDayValue === 0 && data.deltaDayValue === 0 &&
-  data.monthStartValue === 0 && data.deltaMtdValue === 0 && data.chart.length === 0;
-
 const isPeriodEmpty = (data: PeriodDashboard) =>
   data.t0Value === 0 && data.t1Value === 0 && data.deltaValue === 0 && data.marketEffect === 0 &&
   data.netCapitalContributed === 0 && data.tradingCostsInPeriod === 0 && data.dividendsInPeriod === 0;
@@ -548,22 +435,46 @@ const isPeriodEmpty = (data: PeriodDashboard) =>
 const hasPeriodBaseline = (data: PeriodDashboard) => data.t0Value !== 0;
 const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 
+/**
+ * AMOUNT WITH DELTA — an absolute change and its percentage, stacked instead of squeezed into
+ * one "€X (+Y%)" string: the amount stays the primary figure, the percentage gets its own
+ * colored, directional line underneath so it reads as its own figure rather than an annotation
+ * in parentheses. `hasBaseline` covers the one case where the euro amount is meaningful but the
+ * percentage isn't (see hasPeriodBaseline above) — the delta line falls back to "—" instead of
+ * a misleading 0%.
+ */
+function AmountWithDelta({ amount, pct, hasBaseline = true }: { amount: string; pct: number; hasBaseline?: boolean }) {
+  const isGain = pct >= 0;
+  const Icon = isGain ? TrendingUp : TrendingDown;
+  return (
+    <>
+      {amount}
+      <div className={`flex items-center gap-1 font-sans text-sm font-bold mt-1 ${
+        !hasBaseline ? "text-slate-400" : isGain ? "text-emerald-600" : "text-rose-600"
+      }`}>
+        {hasBaseline ? (
+          <>
+            <Icon className="h-3.5 w-3.5" />
+            {formatPct(pct)}
+          </>
+        ) : (
+          "—"
+        )}
+      </div>
+    </>
+  );
+}
+
 const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.currentValue === 0 && data.totalInvestedCapital === 0 && data.totalRealizedPnl === 0 &&
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.lifetimeDividends === 0 && data.chart.length === 0;
 
-type TodaySubTabId = "overview" | "composition";
-
-const TODAY_SUB_TABS: SubTab<TodaySubTabId>[] = [
-  { id: "overview", label: "Overview", icon: Sun },
-  { id: "composition", label: "Composition", icon: LayoutGrid },
-];
-
-type HistorySubTabId = "overview" | "risk";
+type HistorySubTabId = "overview" | "composition" | "risk";
 
 const HISTORY_SUB_TABS: SubTab<HistorySubTabId>[] = [
   { id: "overview", label: "Overview", icon: TrendingUp },
+  { id: "composition", label: "Composition", icon: LayoutGrid },
   { id: "risk", label: "Risk", icon: Gauge },
 ];
 
@@ -573,7 +484,7 @@ interface SubTab<T extends string> {
   icon: typeof Sun;
 }
 
-/** SUB-TAB SWITCHER — the small pill switcher under a page's masthead (Today, All Time). */
+/** SUB-TAB SWITCHER — the small pill switcher under Insights' masthead. */
 function SubTabSwitcher<T extends string>({
   tabs, active, onChange,
 }: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
@@ -591,235 +502,6 @@ function SubTabSwitcher<T extends string>({
         </button>
       ))}
     </div>
-  );
-}
-
-// Each is null while the backend hasn't computed it for this user yet.
-interface TodayComposition {
-  sector: ExposureEntryResponse[] | null;
-  region: ExposureEntryResponse[] | null;
-}
-
-/**
- * TODAY PAGE — split into two sub-tabs: Overview (current value against two references —
- * yesterday, and the start of the current month — plus the month-to-date daily snapshots
- * that back those deltas; today's news is on the Dashboard) and Composition (what's actually held right now,
- * by currency/asset/broker from TodayDashboard.summary, plus sector/region exposure — fetched
- * lazily on first visit, since /today itself doesn't carry it). Everything derived from the
- * portfolio's history (volatility, risk model, benchmark) lives on the All Time page instead.
- */
-function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: string | null }) {
-  const isDayGain = data.deltaDayValue >= 0;
-  const isMtdGain = data.deltaMtdValue >= 0;
-  const [subTab, setSubTab] = useState<TodaySubTabId>("overview");
-  const [composition, setComposition] = useState<TodayComposition | null>(null);
-  const [compositionLoading, setCompositionLoading] = useState(false);
-  const [compositionError, setCompositionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (subTab !== "composition" || composition !== null) return;
-    let cancelled = false;
-    const loadComposition = async () => {
-      setCompositionLoading(true);
-      setCompositionError(null);
-      try {
-        const [sector, region] = await Promise.all([
-          portfolioService.getSectorExposure(forUserUuid),
-          portfolioService.getRegionExposure(forUserUuid),
-        ]);
-        if (cancelled) return;
-        setComposition({ sector: sector?.entries ?? null, region: region?.entries ?? null });
-      } catch (err) {
-        if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
-      } finally {
-        if (!cancelled) setCompositionLoading(false);
-      }
-    };
-    loadComposition();
-    return () => { cancelled = true; };
-  }, [subTab, composition, forUserUuid]);
-
-  if (isTodayEmpty(data)) {
-    return (
-      <div className="space-y-6">
-        <EmptyPeriodState message="Add or upload transactions to see today's portfolio value." />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <SubTabSwitcher tabs={TODAY_SUB_TABS} active={subTab} onChange={setSubTab} />
-
-      {subTab === "overview" ? (
-        <>
-          <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y divide-slate-100 sm:divide-x xl:divide-y-0">
-            <StatContent
-              title="Month Start Value"
-              value={formatCurrency(data.monthStartValue, data.currency, 0)}
-              icon={<Wallet className="h-4 w-4 text-slate-500" />}
-              description="Market value on the 1st of this month"
-              color="slate"
-            />
-            <StatContent
-              title="Current Value"
-              value={formatCurrency(data.currentValue, data.currency, 0)}
-              icon={<Wallet className="h-4 w-4 text-[#C49A3C]" />}
-              description="Market value as of today"
-              color="gold"
-            />
-            <StatContent
-              title="Day Change"
-              value={`${isDayGain ? "+" : ""}${formatCurrency(data.deltaDayValue, data.currency, 0)} (${isDayGain ? "+" : ""}${data.deltaDayValuePct.toFixed(2)}%)`}
-              icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-              description="Day-over-day move"
-              color={isDayGain ? "emerald" : "red"}
-            />
-            <StatContent
-              title="Month-to-Date Change"
-              value={`${isMtdGain ? "+" : ""}${formatCurrency(data.deltaMtdValue, data.currency, 0)} (${isMtdGain ? "+" : ""}${data.deltaMtdValuePct.toFixed(2)}%)`}
-              icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-              description="Move since the start of the month"
-              color={isMtdGain ? "emerald" : "red"}
-            />
-          </StatCardGroup>
-          <DayChangeChartCard
-            chart={data.chart}
-            currency={data.currency}
-            title="Month-to-Date Trend"
-            desc="Daily portfolio value change since the start of the month."
-          />
-        </>
-      ) : compositionLoading && !composition ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-        </div>
-      ) : compositionError ? (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-bold">{compositionError}</p>
-        </div>
-      ) : (
-        <>
-          <CurrencyCarouselModule
-            byCurrency={data.summary.byCurrency}
-            holdings={data.summary.holdings}
-            title="By Currency"
-            renderDesc={compositionDesc}
-            renderBody={CompositionBody}
-          />
-          <SectorRegionModule sector={composition?.sector ?? null} region={composition?.region ?? null} />
-          <HoldingsExplorer holdings={data.summary.holdings} />
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * CURRENCY CAROUSEL MODULE — one Module/card whose head (currency label, description) and
- * body independently page through every native currency present, currently used only by
- * Composition below. A single currency renders with no nav chrome at all (nothing to switch
- * between); with more than one, arrows/dots in the head page through them and the body scroll-
- * snaps in sync. No "land on the user's preferred currency" logic (unlike the near-identical
- * component this was ported from, in DashboardOverview) — Today doesn't otherwise load the
- * user's profile, and defaulting to the first currency is a reasonable simplification.
- */
-function CurrencyCarouselModule({
-  byCurrency, holdings, title, renderDesc, renderBody,
-}: {
-  byCurrency: CurrencyBreakdown[];
-  holdings: Holding[];
-  title: string;
-  renderDesc?: (data: CurrencyBreakdown) => string | undefined;
-  renderBody: (data: CurrencyBreakdown, holdings: Holding[]) => React.ReactNode;
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  if (byCurrency.length === 0) return null;
-
-  const multi = byCurrency.length > 1;
-  const active = byCurrency[activeIndex] ?? byCurrency[0];
-  const activeHoldings = holdings.filter(h => h.currency === active.currency);
-
-  const scrollToIndex = (i: number) => {
-    const clamped = Math.max(0, Math.min(byCurrency.length - 1, i));
-    const track = trackRef.current;
-    if (track) {
-      // Don't flip the head (eyebrow/title/dots) the instant this is called — the body
-      // takes ~300ms to actually scroll there, and jumping the head ahead of it made the
-      // label read as the new currency while the body still visibly showed the outgoing
-      // one's tail end. handleScroll below keeps activeIndex in sync with what's actually
-      // on screen as the smooth scroll progresses, so the two never disagree.
-      track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
-    } else {
-      setActiveIndex(clamped);
-    }
-  };
-
-  const handleScroll = () => {
-    const track = trackRef.current;
-    if (!track || track.clientWidth === 0) return;
-    setActiveIndex(Math.round(track.scrollLeft / track.clientWidth));
-  };
-
-  return (
-    <Module>
-      <ModuleHead
-        eyebrow={active.currency}
-        title={title}
-        desc={renderDesc?.(active)}
-        right={
-          multi && (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => scrollToIndex(activeIndex - 1)}
-                disabled={activeIndex === 0}
-                aria-label="Previous currency"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronLeft className="h-3 w-3" />
-              </button>
-              <div className="flex items-center gap-1">
-                {byCurrency.map((cb, i) => (
-                  <button
-                    key={cb.currency}
-                    onClick={() => scrollToIndex(i)}
-                    aria-label={`Go to ${cb.currency}`}
-                    className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"}`}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => scrollToIndex(activeIndex + 1)}
-                disabled={activeIndex === byCurrency.length - 1}
-                aria-label="Next currency"
-                className="w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-30 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-          )
-        }
-      />
-      {multi ? (
-        <div
-          ref={trackRef}
-          onScroll={handleScroll}
-          className="flex overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {byCurrency.map((cb) => (
-            <div key={cb.currency} className="w-full shrink-0 snap-center">
-              {renderBody(cb, holdings.filter(h => h.currency === cb.currency))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        renderBody(active, activeHoldings)
-      )}
-    </Module>
   );
 }
 
@@ -1472,7 +1154,17 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
  * USD bar next to a EUR bar of the same length would visually claim they're equal, which
  * isn't true without a live FX rate. A table just lists the numbers with their own currency.
  */
-function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
+/**
+ * HOLDINGS EXPLORER — the searchable/filterable holdings table, with the currency-composition
+ * breakdown (by asset / by category / by broker) folded in as what the Currency filter reveals
+ * rather than a separate carousel module above it: pick a currency here and its composition
+ * appears below the table, using the exact same holdings the table would show for that
+ * currency with no other filter applied. "All currencies" has no single breakdown to show —
+ * percentages from mixed currencies would silently treat e.g. 1 EUR and 1 USD as equal weight
+ * (the same reason CompositionDonut below requires one currency per call) — so that state
+ * prompts picking a currency instead of rendering something misleading.
+ */
+function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCurrency: CurrencyBreakdown[] }) {
   const [search, setSearch] = useState("");
   const [assetClass, setAssetClass] = useState("all");
   const [currency, setCurrency] = useState("all");
@@ -1489,6 +1181,11 @@ function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
       // Grouped by currency first so ordering never implies a cross-currency size comparison.
       .sort((a, b) => a.currency.localeCompare(b.currency) || b.investedValue - a.investedValue);
   }, [holdings, search, assetClass, currency]);
+
+  // Composition tracks only the Currency filter, not asset class or search — narrowing to one
+  // asset class would make "By category" a single 100% slice, and it answers "what does this
+  // currency look like overall", not "what does my current search match".
+  const activeBreakdown = currency !== "all" ? byCurrency.find(b => b.currency === currency) : undefined;
 
   return (
     <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1554,6 +1251,24 @@ function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
           </table>
         </div>
       )}
+
+      {byCurrency.length > 0 && (
+        <div className="border-t border-slate-200">
+          {activeBreakdown ? (
+            <>
+              <div className="px-5 md:px-6 pt-5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#C49A3C]">Composition · {activeBreakdown.currency}</p>
+                <p className="text-xs text-slate-500 mt-1">{compositionDesc(activeBreakdown)}</p>
+              </div>
+              {CompositionBody(activeBreakdown, holdings.filter(h => h.currency === activeBreakdown.currency))}
+            </>
+          ) : (
+            <p className="px-5 md:px-6 py-5 text-xs text-slate-400">
+              Select a currency above to see its composition — holdings in different currencies can&apos;t be combined into one percentage breakdown.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1589,6 +1304,7 @@ function PeriodHero({
 }: {
   currency: string; endValue: number; deltaValue: number; deltaValuePct: number; isGain: boolean; hasBaseline: boolean;
 }) {
+  const DeltaIcon = isGain ? TrendingUp : TrendingDown;
   return (
     <div className="p-6 md:p-7 pb-5 border-b border-slate-100">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">End Value</p>
@@ -1597,8 +1313,20 @@ function PeriodHero({
           {formatCurrency(endValue, currency, 0)}
         </p>
         <span className={`text-sm font-bold px-2.5 py-1 rounded-lg ${isGain ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-          {isGain ? "+" : ""}{formatCurrency(deltaValue, currency, 0)} ({hasBaseline ? formatPct(deltaValuePct) : "—"})
+          {isGain ? "+" : ""}{formatCurrency(deltaValue, currency, 0)}
         </span>
+      </div>
+      {/* The percentage gets its own colored, directional line rather than sitting in
+          parentheses next to the amount above — it's a distinct figure, not an annotation. */}
+      <div className={`flex items-center gap-1 text-sm font-bold mt-2 ${!hasBaseline ? "text-slate-400" : isGain ? "text-emerald-600" : "text-rose-600"}`}>
+        {hasBaseline ? (
+          <>
+            <DeltaIcon className="h-3.5 w-3.5" />
+            {formatPct(deltaValuePct)}
+          </>
+        ) : (
+          "—"
+        )}
       </div>
       <p className="text-[13px] text-slate-500 mt-1.5">Total change for the month, including capital added or withdrawn</p>
     </div>
@@ -1613,7 +1341,7 @@ function PeriodHero({
  * these are risk figures, not performance, and mixing them read as one undifferentiated wall
  * of tiles (see the Monthly/Annual detail view this replaces).
  */
-function MonthDetail({ period, year, month }: { period: PeriodDashboard; year: number; month: number }) {
+function MonthDetail({ period }: { period: PeriodDashboard }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
@@ -1651,7 +1379,7 @@ function MonthDetail({ period, year, month }: { period: PeriodDashboard; year: n
               />
               <StatContent
                 title="Market Effect"
-                value={`${marketIsGain ? "+" : ""}${formatCurrency(period.marketEffect, period.currency, 0)} (${hasBaseline ? formatPct(period.marketEffectPct) : "—"})`}
+                value={<AmountWithDelta amount={`${marketIsGain ? "+" : ""}${formatCurrency(period.marketEffect, period.currency, 0)}`} pct={period.marketEffectPct} hasBaseline={hasBaseline} />}
                 icon={marketIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
                 description="Price movement alone, capital flows excluded"
                 color={marketIsGain ? "emerald" : "red"}
@@ -1690,7 +1418,6 @@ function MonthDetail({ period, year, month }: { period: PeriodDashboard; year: n
           </Module>
         </>
       )}
-      <NewsModule year={year} month={month} title={`${title} Headlines`} desc="Market news published that month." />
     </div>
   );
 }
@@ -1785,16 +1512,10 @@ function MonthlyReturnsHeatmap({
   );
 }
 
-// Below this many closed sells, a win rate is more noise than signal — this is a
-// long-horizon investing product, not a trading platform, so the metric is withheld
-// rather than shown with false precision on a handful of trades.
-const MIN_SELLS_FOR_WIN_RATE = 20;
-
 interface CurrencyRealizedGroup {
   currency: string;
   totalPl: number;
   sellCount: number;
-  winRate: number;
   trades: AssetRealizedTrade[];
 }
 
@@ -1805,16 +1526,12 @@ function groupRealizedTradesByCurrency(trades: AssetRealizedTrade[]): CurrencyRe
     byCurrency.get(t.currency)!.push(t);
   }
   return [...byCurrency.entries()]
-    .map(([currency, list]) => {
-      const sellCount = list.reduce((sum, t) => sum + t.sellCount, 0);
-      return {
-        currency,
-        totalPl: list.reduce((sum, t) => sum + t.realizedPl, 0),
-        sellCount,
-        winRate: sellCount > 0 ? list.reduce((sum, t) => sum + t.winRate * t.sellCount, 0) / sellCount : 0,
-        trades: [...list].sort((a, b) => Math.abs(b.realizedPl) - Math.abs(a.realizedPl)),
-      };
-    })
+    .map(([currency, list]) => ({
+      currency,
+      totalPl: list.reduce((sum, t) => sum + t.realizedPl, 0),
+      sellCount: list.reduce((sum, t) => sum + t.sellCount, 0),
+      trades: [...list].sort((a, b) => Math.abs(b.realizedPl) - Math.abs(a.realizedPl)),
+    }))
     .sort((a, b) => b.trades.length - a.trades.length);
 }
 
@@ -1825,9 +1542,18 @@ function groupRealizedTradesByCurrency(trades: AssetRealizedTrade[]): CurrencyRe
  * trade's own native currency (not the reference currency the rest of this page's figures
  * are in) — a group's totals are computed locally from its trades rather than relying on a
  * pre-aggregated backend figure, since FullHistoryDashboard only supplies the trade list.
+ *
+ * With exactly one currency in play, its Total P&L / Sell Transactions move up into the card's
+ * own header (right-aligned next to the title, same treatment as VolatilityModule's headline
+ * figure) instead of repeating in a row above that single group's trade list — one currency
+ * means one unambiguous total. With more than one currency, a single header figure would imply
+ * the totals can be summed across them, which they can't (see groupRealizedTradesByCurrency),
+ * so each group keeps its own totals row in that case.
  */
 function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
   const groups = useMemo(() => groupRealizedTradesByCurrency(trades), [trades]);
+  const single = groups.length === 1 ? groups[0] : null;
+  const singleIsGain = single !== null && single.totalPl >= 0;
 
   return (
     <Module>
@@ -1835,13 +1561,32 @@ function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
         eyebrow="Lifetime"
         title="Realized P&L"
         desc="From closed positions, based on recorded buy and sell prices."
+        right={single ? (
+          <div className="flex gap-6 flex-wrap">
+            <div className="text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total P&L</p>
+              <p
+                className={`text-2xl font-black tabular-nums mt-1 ${singleIsGain ? "text-emerald-600" : "text-rose-600"}`}
+                style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+              >
+                {singleIsGain ? "+" : ""}{formatCurrency(single.totalPl, single.currency, 2)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sell Transactions</p>
+              <p className="text-2xl font-black tabular-nums text-slate-900 mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                {single.sellCount}
+              </p>
+            </div>
+          </div>
+        ) : undefined}
       />
       {groups.length === 0 ? (
         <p className="text-sm text-slate-400 p-6 md:p-7">No closed positions yet.</p>
       ) : (
         <div className="divide-y divide-slate-100">
           {groups.map((group) => (
-            <RealizedPnLGroup key={group.currency} group={group} showCurrencyLabel={groups.length > 1} />
+            <RealizedPnLGroup key={group.currency} group={group} showCurrencyLabel={groups.length > 1} showTotals={groups.length > 1} />
           ))}
         </div>
       )}
@@ -1849,37 +1594,37 @@ function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
   );
 }
 
-function RealizedPnLGroup({ group, showCurrencyLabel }: { group: CurrencyRealizedGroup; showCurrencyLabel: boolean }) {
+function RealizedPnLGroup({
+  group, showCurrencyLabel, showTotals,
+}: { group: CurrencyRealizedGroup; showCurrencyLabel: boolean; showTotals: boolean }) {
   const isGain = group.totalPl >= 0;
   const maxAbsPl = Math.max(0, ...group.trades.map(t => Math.abs(t.realizedPl)));
 
   return (
     <div className="p-6 md:p-7">
-      <div className="flex flex-wrap items-baseline justify-between gap-4 mb-5">
-        {showCurrencyLabel && <p className="text-xs font-black uppercase tracking-wider text-slate-400">{group.currency}</p>}
-        <div className="flex gap-6 flex-wrap ml-auto">
-          <div className="text-right">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total P&L</p>
-            <p className={`text-lg font-black tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {isGain ? "+" : ""}{formatCurrency(group.totalPl, group.currency, 2)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Sell Transactions</p>
-            <p className="text-lg font-black tabular-nums text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {group.sellCount}
-            </p>
-          </div>
-          {group.sellCount >= MIN_SELLS_FOR_WIN_RATE && (
-            <div className="text-right">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Win Rate</p>
-              <p className="text-lg font-black tabular-nums text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                {(group.winRate * 100).toFixed(0)}%
-              </p>
+      {/* Skipped entirely when there's nothing left to show here — a single currency's Total
+          P&L / Sell Transactions already moved up into the card header (see RealizedPnLCard). */}
+      {(showCurrencyLabel || showTotals) && (
+        <div className="flex flex-wrap items-baseline justify-between gap-4 mb-5">
+          {showCurrencyLabel && <p className="text-xs font-black uppercase tracking-wider text-slate-400">{group.currency}</p>}
+          {showTotals && (
+            <div className="flex gap-6 flex-wrap ml-auto">
+              <div className="text-right">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total P&L</p>
+                <p className={`text-lg font-black tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                  {isGain ? "+" : ""}{formatCurrency(group.totalPl, group.currency, 2)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Sell Transactions</p>
+                <p className="text-lg font-black tabular-nums text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                  {group.sellCount}
+                </p>
+              </div>
             </div>
           )}
         </div>
-      </div>
+      )}
       <div className="space-y-5">
         {group.trades.map((t) => {
           const tradeIsGain = t.realizedPl >= 0;
@@ -1904,7 +1649,6 @@ function RealizedPnLGroup({ group, showCurrencyLabel }: { group: CurrencyRealize
               <div className="flex items-center justify-between mt-1">
                 <span className="text-[11px] text-slate-400">
                   {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
-                  {t.sellCount > 1 && ` · ${(t.winRate * 100).toFixed(0)}% win rate`}
                 </span>
                 <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
               </div>
@@ -2222,7 +1966,6 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                     </div>
                   }
                   icon={outperformed === false ? <TrendingDown className="h-4 w-4 text-rose-600" /> : <TrendingUp className="h-4 w-4 text-emerald-600" />}
-                  description="Over the period shared with the benchmark"
                   color={outperformed === null ? "slate" : outperformed ? "emerald" : "red"}
                   info="How much each grew over the shared period, counting only market moves: deposits and withdrawals are stripped out, so it isn't the gain on your open positions. The benchmark is fed the same cash flows as your portfolio."
                 />
@@ -2230,7 +1973,6 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   title="Excess Return"
                   value={formatPctOrDash(data.excessReturnPct)}
                   icon={<Scale className="h-4 w-4 text-slate-500" />}
-                  description="Annualized, portfolio minus benchmark (percentage points)"
                   color="slate"
                   info="The gap between your portfolio's annualized return and the benchmark's, in percentage points. Positive means your portfolio grew faster than the benchmark, negative means slower."
                 />
@@ -2238,7 +1980,6 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   title="Alpha"
                   value={formatPctOrDash(data.alphaPct)}
                   icon={<Activity className="h-4 w-4 text-slate-500" />}
-                  description="Annualized return not explained by market exposure"
                   color="slate"
                   info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain, calculated with a risk-free rate of 0. Positive means the portfolio earned more than its market exposure alone would suggest."
                 />
@@ -2246,7 +1987,6 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
                   title="Beta"
                   value={data.beta === null ? "—" : data.beta.toFixed(2)}
                   icon={<Activity className="h-4 w-4 text-slate-500" />}
-                  description="Sensitivity to benchmark moves"
                   color="slate"
                   info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves."
                 />
@@ -2259,12 +1999,22 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
   );
 }
 
+// Each is null while the backend hasn't computed it for this user yet; `summary` never is
+// (see portfolioService.getPortfolioSummary).
+interface PortfolioComposition {
+  summary: PortfolioSummary;
+  sector: ExposureEntryResponse[] | null;
+  region: ExposureEntryResponse[] | null;
+}
+
 /**
- * HISTORY PAGE — backs the "All Time" tab, merging what used to be three separate tabs
- * (Monthly, Annual, Full History) into one: lifetime figures + trend chart up top, a
- * year-by-month returns heatmap, and lifetime realized P&L. Clicking a heatmap cell swaps
- * the whole page for that month's own detail (MonthDetail) — same "replace, don't stack"
- * pattern the old Monthly/Annual picker used, with a back button to return. Month detail
+ * HISTORY PAGE — Insights' entire page now (see PerformanceSection above): lifetime figures +
+ * trend chart, a year-by-month returns heatmap, lifetime realized P&L and benchmark comparison
+ * under Overview; current holdings/composition under its own tab; volatility and the risk model
+ * under Risk. Used to merge what were three separate tabs (Monthly, Annual, Full History) into
+ * just Overview. Clicking a heatmap cell swaps the whole page for that month's own detail
+ * (MonthDetail) — same "replace, don't stack" pattern the old Monthly/Annual picker used, with
+ * a back button to return. Month detail
  * needs the richer per-month figures (t0/t1 value, dividends, volatility, drawdown, report)
  * that monthlyMarketEffect doesn't carry, so it's fetched on demand via /monthly?year=, one
  * request per year, cached in `monthCache` so re-opening a month already visited this
@@ -2278,6 +2028,40 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<HistorySubTabId>("overview");
+
+  // Composition (current holdings/currency breakdown plus sector/region exposure) used to live
+  // on Insights' own Today page, fetched from the today dashboard's own `summary` field —
+  // that endpoint no longer carries it (see GET /v1/portfolio/summary), so this fetches it
+  // directly instead. Lazy, same as before: nothing loads until this tab is actually opened,
+  // and the result is cached in this component's own state (not re-fetched on switching sub-
+  // tabs back and forth) since HistoryPage itself doesn't unmount between them.
+  const [composition, setComposition] = useState<PortfolioComposition | null>(null);
+  const [compositionLoading, setCompositionLoading] = useState(false);
+  const [compositionError, setCompositionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (subTab !== "composition" || composition !== null) return;
+    let cancelled = false;
+    const loadComposition = async () => {
+      setCompositionLoading(true);
+      setCompositionError(null);
+      try {
+        const [summary, sector, region] = await Promise.all([
+          portfolioService.getPortfolioSummary(forUserUuid),
+          portfolioService.getSectorExposure(forUserUuid),
+          portfolioService.getRegionExposure(forUserUuid),
+        ]);
+        if (cancelled) return;
+        setComposition({ summary, sector: sector?.entries ?? null, region: region?.entries ?? null });
+      } catch (err) {
+        if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
+      } finally {
+        if (!cancelled) setCompositionLoading(false);
+      }
+    };
+    loadComposition();
+    return () => { cancelled = true; };
+  }, [subTab, composition, forUserUuid]);
 
   const handleSelectMonth = async (year: number, month: number) => {
     setSelected({ year, month });
@@ -2315,7 +2099,7 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
             <p className="text-sm font-bold">{monthError}</p>
           </div>
         ) : period ? (
-          <MonthDetail period={period} year={selected.year} month={selected.month} />
+          <MonthDetail period={period} />
         ) : (
           <EmptyPeriodState message="No detail available for this month." />
         )}
@@ -2326,7 +2110,6 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
   if (isHistoryEmpty(data)) {
     return (
       <div className="space-y-6">
-        <PageHeader eyebrow={data.currency} title="All Time" desc="Lifetime portfolio figures." />
         <EmptyPeriodState message="Add or upload transactions to build your full portfolio history." />
       </div>
     );
@@ -2341,6 +2124,22 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
           <VolatilityModule forUserUuid={forUserUuid} />
           <RiskModelTab forUserUuid={forUserUuid} />
         </>
+      ) : subTab === "composition" ? (
+        compositionLoading && !composition ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
+          </div>
+        ) : compositionError ? (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p className="text-sm font-bold">{compositionError}</p>
+          </div>
+        ) : composition ? (
+          <>
+            <HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} />
+            <SectorRegionModule sector={composition.sector} region={composition.region} />
+          </>
+        ) : null
       ) : (
         <>
           <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
