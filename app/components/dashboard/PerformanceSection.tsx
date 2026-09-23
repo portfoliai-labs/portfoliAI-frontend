@@ -603,7 +603,7 @@ interface TodayComposition {
 /**
  * TODAY PAGE — split into two sub-tabs: Overview (current value against two references —
  * yesterday, and the start of the current month — plus the month-to-date daily snapshots
- * that back those deltas, and today's news) and Composition (what's actually held right now,
+ * that back those deltas; today's news is on the Dashboard) and Composition (what's actually held right now,
  * by currency/asset/broker from TodayDashboard.summary, plus sector/region exposure — fetched
  * lazily on first visit, since /today itself doesn't carry it). Everything derived from the
  * portfolio's history (volatility, risk model, benchmark) lives on the All Time page instead.
@@ -689,7 +689,6 @@ function TodayPage({ data, forUserUuid }: { data: TodayDashboard; forUserUuid?: 
             title="Month-to-Date Trend"
             desc="Daily portfolio value change since the start of the month."
           />
-          <NewsModule title="Today's Headlines" desc="Market news published today." />
         </>
       ) : compositionLoading && !composition ? (
         <div className="flex h-64 items-center justify-center">

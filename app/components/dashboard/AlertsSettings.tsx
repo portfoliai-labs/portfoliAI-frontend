@@ -28,12 +28,16 @@ const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
 /**
- * ALERTS SETTINGS — the Settings tab for managing alert rules: list them (with their state, a
- * switch to turn each on or off, edit, delete) and create new ones. The Dashboard shows the same
- * rules as dials; this is where they're configured. A user can have at most ALERT_RULE_LIMIT.
+ * ALERTS SETTINGS — managing alert rules: list them (with their state, a switch to turn each on or
+ * off, edit, delete) and create new ones. The Dashboard shows the same rules as dials; this is
+ * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
+ *
+ * Without props it's the user's own rules (the Settings tab). With `clientUuid` it's an advisor's
+ * rules on that client's portfolio (the Clients section): the asset picker lists the client's
+ * holdings, and the advisor is the one notified.
  */
-export function AlertsSettings() {
-  const { rules, setRules, loading, error, reload } = useAlertRules();
+export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string; clientName?: string } = {}) {
+  const { rules, setRules, loading, error, reload } = useAlertRules(undefined, clientUuid);
   // null = form closed; { rule: null } = creating; { rule } = editing that rule.
   const [form, setForm] = useState<{ rule: AlertRuleResponse | null } | null>(null);
   const [assetOptions, setAssetOptions] = useState<AssetOption[] | null>(null);
@@ -46,7 +50,7 @@ export function AlertsSettings() {
   useEffect(() => {
     if (form === null || assetOptions !== null) return;
     let cancelled = false;
-    portfolioService.getHoldings()
+    portfolioService.getHoldings(clientUuid)
       .then((res) => {
         if (cancelled) return;
         setAssetOptions((res?.holdings ?? []).map((h) => ({
@@ -56,7 +60,7 @@ export function AlertsSettings() {
       })
       .catch(() => { if (!cancelled) setAssetOptions([]); });
     return () => { cancelled = true; };
-  }, [form, assetOptions]);
+  }, [form, assetOptions, clientUuid]);
 
   useEffect(() => {
     if (!message) return;
@@ -71,7 +75,7 @@ export function AlertsSettings() {
     setBusyId(rule.ruleId);
     setMessage(null);
     try {
-      replaceRule(await alertService.updateRule(rule.ruleId, { enabled: !rule.enabled }));
+      replaceRule(await alertService.updateRule(rule.ruleId, { enabled: !rule.enabled }, clientUuid));
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Unable to update this alert." });
     } finally {
@@ -83,7 +87,7 @@ export function AlertsSettings() {
     if (!toDelete) return;
     setDeleting(true);
     try {
-      await alertService.deleteRule(toDelete.ruleId);
+      await alertService.deleteRule(toDelete.ruleId, clientUuid);
       setRules((prev) => (prev ? prev.filter((r) => r.ruleId !== toDelete.ruleId) : prev));
       setMessage({ type: "success", text: "Alert deleted." });
       setToDelete(null);
@@ -114,7 +118,9 @@ export function AlertsSettings() {
               <BellRing className="w-5 h-5" />
             </div>
             <div>
-              <span className="font-bold text-sm text-[#1c1917]">Your alerts</span>
+              <span className="font-bold text-sm text-[#1c1917]">
+                {clientName ? `Alerts on ${clientName}'s portfolio` : "Your alerts"}
+              </span>
               <p className="text-xs text-[#78716c] mt-0.5">
                 {count} of {ALERT_RULE_LIMIT} · checked about every 5 minutes
               </p>
@@ -152,6 +158,8 @@ export function AlertsSettings() {
           <AlertForm
             key={form.rule?.ruleId ?? "new"}
             rule={form.rule}
+            clientUuid={clientUuid}
+            clientName={clientName}
             assetOptions={assetOptions}
             onSaved={handleSaved}
             onCancel={() => setForm(null)}
@@ -169,13 +177,14 @@ export function AlertsSettings() {
           </div>
         ) : rules !== null && rules.length === 0 ? (
           <p className="text-sm text-[#78716c] py-2">
-            You have no alerts yet. Create one to be told when your portfolio moves by a set amount, or when a single
-            holding grows past a share you choose.
+            {clientName
+              ? `No alerts on ${clientName}'s portfolio yet. Create one to be told when it moves by a set amount, or when a single holding grows past a share you choose.`
+              : "You have no alerts yet. Create one to be told when your portfolio moves by a set amount, or when a single holding grows past a share you choose."}
           </p>
         ) : (
           <ul className="divide-y divide-[rgba(196,154,60,0.1)]">
             {(rules ?? []).map((rule) => {
-              const { title, subtitle } = describeAlert(rule);
+              const { title, subtitle } = describeAlert(rule, clientName);
               const state = alertState(rule);
               const busy = busyId === rule.ruleId;
               return (
@@ -244,15 +253,18 @@ export function AlertsSettings() {
  * are shown as the backend words them.
  */
 function AlertForm({
-  rule, assetOptions, onSaved, onCancel,
+  rule, clientUuid, clientName, assetOptions, onSaved, onCancel,
 }: {
   rule: AlertRuleResponse | null;
+  clientUuid?: string;
+  clientName?: string;
   assetOptions: AssetOption[] | null;
   onSaved: (saved: AlertRuleResponse, created: boolean) => void;
   onCancel: () => void;
 }) {
   const editing = rule !== null;
   const initial = rule?.params;
+  const portfolio = clientName ? `${clientName}'s portfolio` : "your portfolio";
 
   const [type, setType] = useState<AlertParams["type"]>(initial?.type ?? "portfolio_change");
   const [direction, setDirection] = useState<AlertDirection>(initial?.type === "portfolio_change" ? initial.direction : "down");
@@ -289,7 +301,7 @@ function AlertForm({
     setFormError(null);
     try {
       if (rule === null) {
-        onSaved(await alertService.createRule({ params, notifyEmail, notifyInApp }), true);
+        onSaved(await alertService.createRule({ params, notifyEmail, notifyInApp }, clientUuid), true);
         return;
       }
       const changes: AlertRuleUpdateRequest = {};
@@ -300,7 +312,7 @@ function AlertForm({
         onCancel();
         return;
       }
-      onSaved(await alertService.updateRule(rule.ruleId, changes), false);
+      onSaved(await alertService.updateRule(rule.ruleId, changes, clientUuid), false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Unable to save this alert.");
     } finally {
@@ -365,8 +377,8 @@ function AlertForm({
             </label>
           </div>
           <p className="text-xs text-[#78716c]">
-            Measured on your portfolio&apos;s result, net of deposits and withdrawals. It isn&apos;t the time-weighted
-            return shown in your reports.
+            Measured on the result of {portfolio}, net of deposits and withdrawals. It isn&apos;t the time-weighted
+            return shown in the reports.
           </p>
         </div>
       ) : (
@@ -392,8 +404,8 @@ function AlertForm({
             </label>
           </div>
           <p className="text-xs text-[#78716c]">
-            Triggers when the asset&apos;s share of your portfolio goes above this value.
-            {assetOptions === null && " Loading your holdings…"}
+            Triggers when the asset&apos;s share of {portfolio} goes above this value.
+            {assetOptions === null && " Loading the holdings…"}
           </p>
         </div>
       )}
@@ -421,7 +433,7 @@ function AlertForm({
 
       {params && (
         <p className="text-sm text-[#1c1917] bg-white border border-[rgba(196,154,60,0.2)] rounded-xl px-4 py-3 leading-relaxed">
-          {describeParams(params, assetLabel)}
+          {describeParams(params, assetLabel, clientName)}
         </p>
       )}
 

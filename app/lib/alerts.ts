@@ -54,8 +54,11 @@ export function alertState(rule: AlertRuleResponse): AlertState {
   return { kind: "ok", label: "Within range", tone: "ok", progressPct, breached: false };
 }
 
-/** A short title and subtitle for a rule, in neutral factual wording. */
-export function describeAlert(rule: AlertRuleResponse): { title: string; subtitle: string } {
+/**
+ * A short title and subtitle for a rule, in neutral factual wording. `clientName` words it for an
+ * advisor's rule on that client's portfolio.
+ */
+export function describeAlert(rule: AlertRuleResponse, clientName?: string): { title: string; subtitle: string } {
   const { params, reading } = rule;
 
   if (params.type === "portfolio_change") {
@@ -68,7 +71,9 @@ export function describeAlert(rule: AlertRuleResponse): { title: string; subtitl
   const assetLabel = params.assetId === null ? "Any asset" : reading?.ticker ?? reading?.assetName ?? "Selected asset";
   return {
     title: `${assetLabel} above ${formatAlertPct(params.thresholdPct)}`,
-    subtitle: params.assetId === null && reading?.ticker ? `Heaviest now: ${reading.ticker}` : "Share of your portfolio",
+    subtitle: params.assetId === null && reading?.ticker
+      ? `Heaviest now: ${reading.ticker}`
+      : `Share of ${clientName ? `${clientName}'s` : "your"} portfolio`,
   };
 }
 
@@ -86,14 +91,37 @@ export function alertFigures(rule: AlertRuleResponse): { current: string; limit:
   };
 }
 
-/** One sentence saying what a set of params means, for the form's preview. */
-export function describeParams(params: AlertParams, assetLabel?: string): string {
+/**
+ * One sentence saying what a set of params means, for the form's preview. `clientName` words it
+ * for an advisor's rule on that client's portfolio.
+ */
+export function describeParams(params: AlertParams, assetLabel?: string, clientName?: string): string {
+  const portfolio = clientName ? `${clientName}'s portfolio` : "my portfolio";
   if (params.type === "portfolio_change") {
     const verb = params.direction === "down" ? "falls" : "rises";
-    return `Notify me when my portfolio's result ${verb} by ${formatAlertPct(params.thresholdPct)} or more over ${WINDOW_LABEL[params.window]}.`;
+    return `Notify me when the result of ${portfolio} ${verb} by ${formatAlertPct(params.thresholdPct)} or more over ${WINDOW_LABEL[params.window]}.`;
   }
   const subject = params.assetId === null ? "any single holding" : assetLabel ?? "the selected asset";
-  return `Notify me when ${subject} is above ${formatAlertPct(params.thresholdPct)} of my portfolio.`;
+  return `Notify me when ${subject} is above ${formatAlertPct(params.thresholdPct)} of ${portfolio}.`;
+}
+
+/**
+ * How pressing a rule is, for ordering a list with the most urgent first: triggered or at the
+ * threshold, then approaching, then within range (each by how close it is), then the rules with
+ * nothing to show (waiting, not measurable, off).
+ */
+export function alertUrgency(rule: AlertRuleResponse): number {
+  const state = alertState(rule);
+  const progress = state.progressPct ?? 0;
+  switch (state.kind) {
+    case "triggered": return 400 + progress;
+    case "reached": return 300 + progress;
+    case "approaching": return 200 + progress;
+    case "ok": return 100 + progress;
+    case "pending": return 2;
+    case "unavailable": return 1;
+    default: return 0;
+  }
 }
 
 /** Whether two sets of params describe the same condition, so an edit can skip resending them. */

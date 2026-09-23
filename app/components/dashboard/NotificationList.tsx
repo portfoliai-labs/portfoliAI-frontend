@@ -72,7 +72,8 @@ function getReportName(n: NotificationResponse): string | undefined {
 
 // An alert firing (type ALERT_TRIGGERED). Its payload is snake_case with numbers already in %:
 // rule_type, threshold_pct, and either asset_id / asset_name / ticker / weight_pct (asset_weight)
-// or direction / window / change_pct (portfolio_change).
+// or direction / window / change_pct (portfolio_change). On an advisor's rule it also carries
+// client_uuid / client_name, the client whose portfolio fired.
 const ALERT_CONFIG = {
   label: "Alert",
   icon: <BellRing className="w-5 h-5 text-amber-500 shrink-0" />,
@@ -82,19 +83,22 @@ const ALERT_CONFIG = {
 function getAlertSummary(n: NotificationResponse): { title: string; detail: string } {
   const p = n.payload ?? {};
   const threshold = typeof p.threshold_pct === "number" ? formatAlertPct(p.threshold_pct) : null;
+  const client = typeof p.client_name === "string" ? p.client_name : null;
+  const portfolio = client ? `${client}'s portfolio` : "your portfolio";
 
   if (p.rule_type === "asset_weight") {
     const asset = (p.ticker as string | null) ?? (p.asset_name as string | null) ?? "An asset";
     return {
-      title: threshold ? `${asset} above ${threshold} of your portfolio` : `${asset} passed its weight limit`,
-      detail: typeof p.weight_pct === "number" ? `Now ${formatAlertPct(p.weight_pct)} of your portfolio` : "",
+      title: threshold ? `${asset} above ${threshold} of ${portfolio}` : `${asset} passed its weight limit`,
+      detail: typeof p.weight_pct === "number" ? `Now ${formatAlertPct(p.weight_pct)} of ${portfolio}` : "",
     };
   }
 
   const direction = p.direction === "up" ? "up" : "down";
   const window = WINDOW_LABEL[p.window as AlertWindow];
+  const subject = client ? `${client}'s portfolio` : "Portfolio";
   return {
-    title: threshold ? `Portfolio ${direction} ${threshold}` : "Portfolio alert",
+    title: threshold ? `${subject} ${direction} ${threshold}` : client ? `Alert on ${client}'s portfolio` : "Portfolio alert",
     detail:
       typeof p.change_pct === "number"
         ? `${formatAlertPct(p.change_pct, true)}${window ? ` over ${window}` : ""}`
