@@ -120,6 +120,14 @@ interface TodayDashboard {
   deltaMtdValuePct: number;
   currency: string;
   chart: DailyValueChange[];
+  // True while a transaction edit has landed but the rebuild it triggered hasn't yet: today's
+  // value/transactions are already the new portfolio while the past days here are still being
+  // rebuilt, so chart/deltas can mix two different portfolios. Don't render them while true —
+  // show an "updating" state and refetch every 15s; if it's still true after ~5 minutes, stop
+  // polling and show the (possibly still-mixed) data with a "taking longer than usual" hint.
+  // Unlike PortfolioSnapshot (from GET /v1/portfolio/, no isStale — never mixes history with
+  // fresh data), this endpoint does, hence the flag.
+  isStale: boolean;
 }
 
 // Matches one entry of PeriodDashboardResponse[] (GET /v1/portfolio/monthly, GET
@@ -161,6 +169,9 @@ interface PeriodDashboard {
   // Set only once a report covering this exact period has been generated — null is normal
   // for the current in-progress year (annual) or for a month too recent to have a report yet.
   reportDocumentId: string | null;
+  // Same value on every entry of one /monthly or /annual response — see TodayDashboard.isStale
+  // for what it means and how to handle it.
+  isStale: boolean;
 }
 
 // One month's market-effect percentage, keyed by calendar year/month rather than a date
@@ -195,6 +206,8 @@ interface FullHistoryDashboard {
   // across the portfolio's full history. Not necessarily sorted.
   monthlyMarketEffect: MonthlyMarketEffectEntry[];
   reportDocumentId: string | null;
+  // See TodayDashboard.isStale for what it means and how to handle it.
+  isStale: boolean;
 }
 
 export type {

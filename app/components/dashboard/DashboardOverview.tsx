@@ -22,11 +22,20 @@ import { AlertGaugeCard } from "./AlertGauge";
 import { useAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
 
+// How often to refetch /today while it comes back `isStale: true` (a transaction edit
+// triggered a rebuild that hasn't landed yet), and how long to keep trying before giving up
+// and showing the — possibly still-mixed — data anyway with a hint. Same values and rationale
+// as PerformanceSection.tsx's own copy of these constants (see that file for the full
+// explanation of why /today carries this flag at all).
+const STALE_POLL_INTERVAL_MS = 15_000;
+const STALE_TIMEOUT_MS = 5 * 60_000;
+
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [today, setToday] = useState<TodayDashboard | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [todayStaleTimedOut, setTodayStaleTimedOut] = useState(false);
 
   // Alerts live in Settings; this section only shows them, so "Manage alerts" (and the empty
   // state's button) open Settings on its Alerts tab — via the URL hash, which SettingsSection
@@ -56,6 +65,33 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     };
     fetchDashboardData();
   }, []);
+
+  // `snapshot` (GET /v1/portfolio/) never mixes history with fresh data, so it has no isStale
+  // and needs no polling — only `today` does. Keyed off `today?.isStale` rather than `today`
+  // itself so a poll's own setToday call (still isStale, next tick due) doesn't reset the
+  // deadline below.
+  useEffect(() => {
+    if (!today?.isStale) {
+      setTodayStaleTimedOut(false);
+      return;
+    }
+    let cancelled = false;
+    const deadline = Date.now() + STALE_TIMEOUT_MS;
+    const timer = setInterval(async () => {
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        if (!cancelled) setTodayStaleTimedOut(true);
+        return;
+      }
+      try {
+        const fresh = await portfolioService.getTodayDashboard();
+        if (!cancelled) setToday(fresh);
+      } catch {
+        // Transient error while polling — the next tick tries again.
+      }
+    }, STALE_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [today?.isStale]);
 
   if (loading) {
     return (
@@ -106,7 +142,7 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         />
       ) : (
         <>
-          <PortfolioTodayModule snapshot={snapshot} today={today} />
+          <PortfolioTodayModule snapshot={snapshot} today={today} todayStaleTimedOut={todayStaleTimedOut} />
 
           {/* BLOCK 1.2 — ALERTS. Each alert as a fuel-gauge style dial showing how close it is
               to its limit. Shown only alongside real portfolio data, since an alert with no
@@ -254,6 +290,36 @@ function TodayTrendChart({ data }: { data: TodayDashboard }) {
 // }
 
 /**
+ * STALE STATES — /today carries `isStale: true` while a transaction edit's rebuild hasn't
+ * landed yet (today's value/transactions are already the new portfolio, the past days behind
+ * the chart/deltas aren't yet); see PerformanceSection.tsx's own copy of these two for the
+ * full rationale (this file keeps its own rather than importing, same reason as Module/
+ * ModuleHead above). UpdatingState hides the second row + chart while still within the poll
+ * window; UpdatingNote is the fallback hint once that window times out and the — possibly
+ * still-mixed — data is shown anyway.
+ */
+function TodayUpdatingState() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2.5 py-14 px-6 text-center border-t border-slate-100">
+      <Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" />
+      <p className="text-slate-600 font-semibold">Updating after a recent change</p>
+      <p className="text-slate-400 text-sm max-w-sm">
+        This usually takes a few minutes — it&apos;ll refresh here on its own once it&apos;s ready.
+      </p>
+    </div>
+  );
+}
+
+function TodayUpdatingNote() {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 mx-6 md:mx-7 mt-6 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700">
+      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+      <p className="text-xs font-bold">Update is taking longer than usual — the figures below may be out of date.</p>
+    </div>
+  );
+}
+
+/**
  * PORTFOLIO TODAY MODULE — Block 1. What the portfolio is worth today, combined across every
  * currency (a profile-level reference currency, independent of what currencies the holdings
  * themselves are in), plus how that figure has moved: day-over-day and since the start of the
@@ -262,13 +328,18 @@ function TodayTrendChart({ data }: { data: TodayDashboard }) {
  * merged into one because both were just today's portfolio performance told twice, with
  * "Current Value" and "Market Value" literally the same number from two different endpoints.
  * The second row (and its chart) only renders once /today has something to say — independent
- * of the snapshot above, since a brand-new account can have one without the other.
+ * of the snapshot above, since a brand-new account can have one without the other (`snapshot`,
+ * from GET /v1/portfolio/, never mixes history with fresh data so it has no isStale of its
+ * own and is never hidden here).
  */
-function PortfolioTodayModule({ snapshot, today }: { snapshot: PortfolioSnapshot; today: TodayDashboard | null }) {
+function PortfolioTodayModule({
+  snapshot, today, todayStaleTimedOut,
+}: { snapshot: PortfolioSnapshot; today: TodayDashboard | null; todayStaleTimedOut: boolean }) {
   const currency = snapshot.currency;
   const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
   const isDayGain = (today?.deltaDayValue ?? 0) >= 0;
   const isMtdGain = (today?.deltaMtdValue ?? 0) >= 0;
+  const todayUpdating = !!today?.isStale && !todayStaleTimedOut;
 
   return (
     <Module>
@@ -295,32 +366,37 @@ function PortfolioTodayModule({ snapshot, today }: { snapshot: PortfolioSnapshot
         />
       </div>
       {today && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x border-t border-slate-100">
-            <Stat
-              title="Month Start Value"
-              value={formatCurrency(today.monthStartValue, today.currency, 0)}
-              icon={<Wallet className="h-4 w-4 text-slate-500" />}
-              description="Market value on the 1st of this month"
-              color="blue"
-            />
-            <Stat
-              title="Day Change"
-              value={<AmountWithDelta amount={`${isDayGain ? "+" : ""}${formatCurrency(today.deltaDayValue, today.currency, 0)}`} pct={today.deltaDayValuePct} />}
-              icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-              description="Day-over-day move"
-              color={isDayGain ? "emerald" : "red"}
-            />
-            <Stat
-              title="Month-to-Date Change"
-              value={<AmountWithDelta amount={`${isMtdGain ? "+" : ""}${formatCurrency(today.deltaMtdValue, today.currency, 0)}`} pct={today.deltaMtdValuePct} />}
-              icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-              description="Move since the start of the month"
-              color={isMtdGain ? "emerald" : "red"}
-            />
-          </div>
-          <TodayTrendChart data={today} />
-        </>
+        todayUpdating ? (
+          <TodayUpdatingState />
+        ) : (
+          <>
+            {today.isStale && <TodayUpdatingNote />}
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x border-t border-slate-100">
+              <Stat
+                title="Month Start Value"
+                value={formatCurrency(today.monthStartValue, today.currency, 0)}
+                icon={<Wallet className="h-4 w-4 text-slate-500" />}
+                description="Market value on the 1st of this month"
+                color="blue"
+              />
+              <Stat
+                title="Day Change"
+                value={<AmountWithDelta amount={`${isDayGain ? "+" : ""}${formatCurrency(today.deltaDayValue, today.currency, 0)}`} pct={today.deltaDayValuePct} />}
+                icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                description="Day-over-day move"
+                color={isDayGain ? "emerald" : "red"}
+              />
+              <Stat
+                title="Month-to-Date Change"
+                value={<AmountWithDelta amount={`${isMtdGain ? "+" : ""}${formatCurrency(today.deltaMtdValue, today.currency, 0)}`} pct={today.deltaMtdValuePct} />}
+                icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                description="Move since the start of the month"
+                color={isMtdGain ? "emerald" : "red"}
+              />
+            </div>
+            <TodayTrendChart data={today} />
+          </>
+        )
       )}
     </Module>
   );

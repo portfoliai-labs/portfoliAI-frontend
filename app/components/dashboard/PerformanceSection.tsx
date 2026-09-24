@@ -41,6 +41,12 @@ const BENCHMARK_COLOR = "#64748b";
 // lighter slate-400 they used to have washed out against the white card.
 const AXIS_TICK_COLOR = "#64748b";
 
+// How often to refetch a document that came back `isStale: true` (a transaction edit triggered
+// a rebuild that hasn't landed yet), and how long to keep trying before giving up and showing
+// the possibly-mixed data anyway with a hint instead of polling forever. See useAnalytics.
+const STALE_POLL_INTERVAL_MS = 15_000;
+const STALE_TIMEOUT_MS = 5 * 60_000;
+
 // Shared recharts tooltip box. The text colour is set explicitly: recharts leaves the date
 // label uncoloured, so it inherits the page's text colour — near-white in dark mode (see
 // globals.css) — on the tooltip's white background, making it unreadable.
@@ -56,31 +62,11 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * once composition stopped depending on the today dashboard for its data (GET
  * /v1/portfolio/summary, not /today's own `summary` field anymore), which was the only reason
  * this page ever needed Today's data in the first place. /history returns null rather than a
- * zeroed-out object when there isn't enough history yet.
+ * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
+ * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: string | null; onNavigate?: (section: string) => void } = {}) {
-  const [history, setHistory] = useState<FullHistoryDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const h = await portfolioService.getFullHistoryDashboard(forUserUuid);
-        if (cancelled) return;
-        setHistory(h);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load portfolio data");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [forUserUuid]);
+  const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, forUserUuid);
 
   return (
     <div className="px-0 py-6 space-y-6">
@@ -97,10 +83,10 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
         </div>
       </div>
 
-      {error && (
+      {failed && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
           <AlertCircle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-bold">{error}</p>
+          <p className="text-sm font-bold">Failed to load portfolio data</p>
         </div>
       )}
 
@@ -115,7 +101,7 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           onNavigate={onNavigate}
         />
       ) : (
-        <HistoryPage key={forUserUuid ?? "self"} data={history} forUserUuid={forUserUuid} />
+        <HistoryPage key={forUserUuid ?? "self"} data={history} historyUpdating={updating} forUserUuid={forUserUuid} />
       )}
     </div>
   );
@@ -403,16 +389,37 @@ function EmptyPeriodState({ message }: { message: string }) {
 }
 
 /**
- * UPDATING NOTE — shown when an analytics document has `isStale: true`, i.e. the user edited
- * transactions after it was computed and a rebuild is already queued. The numbers next to it
- * are the previous ones and still render as usual, so this is a soft heads-up, not a loading
- * state that blocks the module.
+ * UPDATING NOTE — shown once a document has been `isStale: true` for the full
+ * STALE_TIMEOUT_MS polling window (see useAnalytics): the rebuild triggered by a transaction
+ * edit is taking longer than the usual few minutes, so polling has stopped and the (possibly
+ * still-mixed) numbers are drawn anyway with this heads-up rather than blocking on it forever.
+ * The normal case — still within the window — hides the numbers instead (StaleUpdatingState),
+ * so reaching this note at all is the unusual path.
  */
 function UpdatingNote() {
   return (
     <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700">
       <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-      <p className="text-xs font-bold">Updating after a recent change — the figures below may be slightly out of date.</p>
+      <p className="text-xs font-bold">Update is taking longer than usual — the figures below may be out of date.</p>
+    </div>
+  );
+}
+
+/**
+ * STALE UPDATING STATE — replaces a module's numbers/charts entirely while its document is
+ * `isStale: true` and still within the polling window (see useAnalytics): after an edit, the
+ * old numbers and the new ones would describe two different portfolios, so nothing here is
+ * safe to draw until the rebuild lands. The page keeps refetching in the background; this just
+ * says so instead of showing a plain empty module.
+ */
+function StaleUpdatingState() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2.5 py-14 px-6 text-center">
+      <Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" />
+      <p className="text-slate-600 font-semibold">Updating after a recent change</p>
+      <p className="text-slate-400 text-sm max-w-sm">
+        This usually takes a few minutes — it&apos;ll refresh here on its own once it&apos;s ready.
+      </p>
     </div>
   );
 }
@@ -788,21 +795,23 @@ function riskModelUnavailableMessage(model: RiskModelResponse): string {
  * null → "being prepared"; status other than "ok" → a single explanation (the document then has
  * no per-asset estimates, allocations, frontier or gaps), worded by unavailableReason, though a
  * correlation matrix is still drawn if the backend sent one (it does for no_positive_returns and
- * solver_failed, since correlations need only returns); isStale → an "updating" note over the previous numbers.
+ * solver_failed, since correlations need only returns); isStale → hide everything below behind
+ * StaleUpdatingState (see useAnalytics's `updating`) rather than draw stale numbers.
  * Everything on the page is built from past returns, so it says so up front and avoids
  * recommendation wording.
  */
 function RiskModelTab({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, forUserUuid);
+  const { data, loading, failed, updating } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, forUserUuid);
 
-  if (loading || failed || data === null) {
+  if (loading || failed || data === null || updating) {
     return (
       <Module>
         <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
         <AnalyticsPlaceholder
           loading={loading}
           failed={failed}
-          hasData={false}
+          hasData={data !== null}
+          updating={updating}
           preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
         />
       </Module>
@@ -1670,34 +1679,66 @@ const formatPctOrDash = (pct: number | null) => (pct === null ? "—" : formatPc
  * yet"; `failed` is only for a request that errored. A failed request degrades to the
  * module's own message rather than the page-level error banner, since the other modules on
  * the page are unaffected.
+ *
+ * `updating` is true while the document came back `isStale: true` and the rebuild it's waiting
+ * on hasn't landed: the caller should hide its numbers/charts behind an "updating" state rather
+ * than draw them (see StaleUpdatingState). This hook refetches every STALE_POLL_INTERVAL_MS
+ * while that's the case, and gives up after STALE_TIMEOUT_MS — at that point `updating` drops
+ * back to false (so the caller draws the — possibly still-mixed — data) even though
+ * `data.isStale` is still true, which the caller reads as "show the taking-longer-than-usual
+ * hint instead of the updating state" (see UpdatingNote's call sites).
  */
-function useAnalytics<T>(load: (forUserUuid?: string | null) => Promise<T | null>, forUserUuid?: string | null) {
-  const [state, setState] = useState<{ data: T | null; loading: boolean; failed: boolean }>({
-    data: null, loading: true, failed: false,
+function useAnalytics<T extends { isStale: boolean }>(
+  load: (forUserUuid?: string | null) => Promise<T | null>,
+  forUserUuid?: string | null,
+) {
+  const [state, setState] = useState<{ data: T | null; loading: boolean; failed: boolean; updating: boolean }>({
+    data: null, loading: true, failed: false, updating: false,
   });
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      setState({ data: null, loading: true, failed: false });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let staleSince: number | null = null;
+
+    const tick = async (isFirst: boolean) => {
+      if (isFirst) setState({ data: null, loading: true, failed: false, updating: false });
       try {
         const data = await load(forUserUuid);
-        if (!cancelled) setState({ data, loading: false, failed: false });
+        if (cancelled) return;
+        if (data?.isStale) {
+          staleSince ??= Date.now();
+          const timedOut = Date.now() - staleSince >= STALE_TIMEOUT_MS;
+          setState({ data, loading: false, failed: false, updating: !timedOut });
+          if (!timedOut) timer = setTimeout(() => tick(false), STALE_POLL_INTERVAL_MS);
+        } else {
+          staleSince = null;
+          setState({ data, loading: false, failed: false, updating: false });
+        }
       } catch {
-        if (!cancelled) setState({ data: null, loading: false, failed: true });
+        if (!cancelled) setState({ data: null, loading: false, failed: true, updating: false });
       }
     };
-    run();
-    return () => { cancelled = true; };
+    tick(true);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [load, forUserUuid]);
 
   return state;
 }
 
-/** Shared loading / failed / null placeholder for the analytics modules; null when there's a document to draw. */
+/**
+ * Shared loading / failed / null / updating placeholder for the analytics modules; null when
+ * there's a document to draw normally. `updating` (see useAnalytics) takes priority over
+ * drawing the module's own content but comes after the other states, which all mean there's no
+ * document at all to be stale about.
+ */
 function AnalyticsPlaceholder({
-  loading, failed, hasData, preparingMessage,
-}: { loading: boolean; failed: boolean; hasData: boolean; preparingMessage: string }) {
+  loading, failed, hasData, updating, preparingMessage,
+}: { loading: boolean; failed: boolean; hasData: boolean; updating: boolean; preparingMessage: string }) {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -1707,6 +1748,7 @@ function AnalyticsPlaceholder({
   }
   if (failed) return <ModuleMessage>Unable to load this right now. Try again in a moment.</ModuleMessage>;
   if (!hasData) return <ModuleMessage>{preparingMessage}</ModuleMessage>;
+  if (updating) return <StaleUpdatingState />;
   return null;
 }
 
@@ -1758,9 +1800,9 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
  * "insufficient_history" (nothing to show but a message) under a year of history.
  */
 function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, forUserUuid);
+  const { data, loading, failed, updating } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, forUserUuid);
 
-  const showFigure = data !== null && data.status !== "insufficient_history";
+  const showFigure = data !== null && !updating && data.status !== "insufficient_history";
 
   return (
     <Module>
@@ -1788,9 +1830,10 @@ function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
         loading={loading}
         failed={failed}
         hasData={data !== null}
+        updating={updating}
         preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
       />
-      {data !== null && (
+      {data !== null && !updating && (
         <>
           {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {data.status === "insufficient_history" ? (
@@ -1924,7 +1967,7 @@ function BenchmarkComposition({ components }: { components: BenchmarkComponentEn
  * composition is shown under the chart (see BenchmarkComposition).
  */
 function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, forUserUuid);
+  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, forUserUuid);
 
   const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
   const outperformed = data?.outperformed ?? null;
@@ -1934,15 +1977,16 @@ function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
       <ModuleHead
         eyebrow="All Time"
         title="Benchmark Comparison"
-        desc={data ? `${coverage}.` : "How your portfolio compares to the market."}
+        desc={data && !updating ? `${coverage}.` : "How your portfolio compares to the market."}
       />
       <AnalyticsPlaceholder
         loading={loading}
         failed={failed}
         hasData={data !== null}
+        updating={updating}
         preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
       />
-      {data !== null && (
+      {data !== null && !updating && (
         <>
           {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {data.status !== "ok" ? (
@@ -2020,7 +2064,9 @@ interface PortfolioComposition {
  * request per year, cached in `monthCache` so re-opening a month already visited this
  * session doesn't refetch.
  */
-function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUserUuid?: string | null }) {
+function HistoryPage({
+  data, historyUpdating, forUserUuid,
+}: { data: FullHistoryDashboard; historyUpdating: boolean; forUserUuid?: string | null }) {
   const unrealizedIsGain = data.totalUnrealizedPnl >= 0;
 
   const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
@@ -2078,9 +2124,42 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
     }
   };
 
+  // Same isStale contract as useAnalytics, applied to the currently-open month's cached
+  // /monthly?year= response (same value on every entry of that response, so the first one
+  // speaks for all): poll every STALE_POLL_INTERVAL_MS while stale, stop after
+  // STALE_TIMEOUT_MS. Keyed off the derived `selectedYearStale` boolean rather than
+  // `monthCache` itself so a poll's own setMonthCache call doesn't reset the deadline.
+  const selectedYear = selected?.year;
+  const selectedYearStale = selectedYear !== undefined ? (monthCache[selectedYear]?.[0]?.isStale ?? false) : false;
+  const [monthStaleTimedOut, setMonthStaleTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!selectedYearStale || selectedYear === undefined) {
+      setMonthStaleTimedOut(false);
+      return;
+    }
+    let cancelled = false;
+    const deadline = Date.now() + STALE_TIMEOUT_MS;
+    const timer = setInterval(async () => {
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        if (!cancelled) setMonthStaleTimedOut(true);
+        return;
+      }
+      try {
+        const fresh = await portfolioService.getMonthlyDashboard(forUserUuid, selectedYear);
+        if (!cancelled) setMonthCache(prev => ({ ...prev, [selectedYear]: fresh }));
+      } catch {
+        // Transient error while polling — the next tick tries again.
+      }
+    }, STALE_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [selectedYearStale, selectedYear, forUserUuid]);
+
   if (selected) {
     const yearData = monthCache[selected.year];
     const period = yearData?.find(p => new Date(p.periodStart).getUTCMonth() + 1 === selected.month);
+    const monthUpdating = selectedYearStale && !monthStaleTimedOut;
     return (
       <div className="space-y-6">
         <button
@@ -2098,8 +2177,13 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
             <AlertCircle className="h-5 w-5 shrink-0" />
             <p className="text-sm font-bold">{monthError}</p>
           </div>
+        ) : monthUpdating ? (
+          <Module><StaleUpdatingState /></Module>
         ) : period ? (
-          <MonthDetail period={period} />
+          <>
+            {period.isStale && <UpdatingNote />}
+            <MonthDetail period={period} />
+          </>
         ) : (
           <EmptyPeriodState message="No detail available for this month." />
         )}
@@ -2142,45 +2226,61 @@ function HistoryPage({ data, forUserUuid }: { data: FullHistoryDashboard; forUse
         ) : null
       ) : (
         <>
-          <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
-            <StatContent
-              title="Invested Capital"
-              value={formatCurrency(data.totalInvestedCapital, data.currency, 0)}
-              icon={<Receipt className="h-4 w-4 text-blue-600" />}
-              description="Capital deployed to date"
-              color="blue"
-            />
-            <StatContent
-              title="Unrealized P&L"
-              value={`${unrealizedIsGain ? "+" : ""}${formatCurrency(data.totalUnrealizedPnl, data.currency, 0)}`}
-              icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-              description="Open positions vs. invested capital"
-              color={unrealizedIsGain ? "emerald" : "red"}
-            />
-            <StatContent
-              title="Lifetime Dividends"
-              value={formatCurrency(data.lifetimeDividends, data.currency, 0)}
-              icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-              description="All dividend cash flows recorded"
-              color="blue"
-            />
-          </StatCardGroup>
-          <ChartCard
-            chart={data.chart}
-            currency={data.currency}
-            title="Value Since Inception"
-            desc="Daily portfolio market value across your full history."
-          />
+          {/* data.isStale here means the same edit-triggered rebuild covers everything below
+              (chart, heatmap, lifetime totals, realized P&L) — hide it all behind one
+              StaleUpdatingState while historyUpdating, or show it with one hint once that
+              window times out, rather than repeating the check per module. BenchmarkModule is
+              unaffected: it's its own document/fetch with its own isStale. */}
+          {historyUpdating ? (
+            <Module><StaleUpdatingState /></Module>
+          ) : (
+            <>
+              {data.isStale && <UpdatingNote />}
+              <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+                <StatContent
+                  title="Invested Capital"
+                  value={formatCurrency(data.totalInvestedCapital, data.currency, 0)}
+                  icon={<Receipt className="h-4 w-4 text-blue-600" />}
+                  description="Capital deployed to date"
+                  color="blue"
+                />
+                <StatContent
+                  title="Unrealized P&L"
+                  value={`${unrealizedIsGain ? "+" : ""}${formatCurrency(data.totalUnrealizedPnl, data.currency, 0)}`}
+                  icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                  description="Open positions vs. invested capital"
+                  color={unrealizedIsGain ? "emerald" : "red"}
+                />
+                <StatContent
+                  title="Lifetime Dividends"
+                  value={formatCurrency(data.lifetimeDividends, data.currency, 0)}
+                  icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
+                  description="All dividend cash flows recorded"
+                  color="blue"
+                />
+              </StatCardGroup>
+              <ChartCard
+                chart={data.chart}
+                currency={data.currency}
+                title="Value Since Inception"
+                desc="Daily portfolio market value across your full history."
+              />
+            </>
+          )}
           <BenchmarkModule forUserUuid={forUserUuid} />
-          <Module>
-            <ModuleHead
-              eyebrow={data.currency}
-              title="Monthly Returns"
-              desc="Market effect by month, since inception. Click a month for its full detail."
-            />
-            <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={handleSelectMonth} />
-          </Module>
-          <RealizedPnLCard trades={data.realizedTradesByAsset} />
+          {!historyUpdating && (
+            <>
+              <Module>
+                <ModuleHead
+                  eyebrow={data.currency}
+                  title="Monthly Returns"
+                  desc="Market effect by month, since inception. Click a month for its full detail."
+                />
+                <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={handleSelectMonth} />
+              </Module>
+              <RealizedPnLCard trades={data.realizedTradesByAsset} />
+            </>
+          )}
         </>
       )}
     </div>
