@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   BarChart3, ArrowRight,
   TrendingUp, DollarSign, Activity, Shield, Scale,
-  LayoutDashboard, Sparkles, Bell,
+  LayoutDashboard,
 } from "lucide-react";
 import FeatureCard from "../components/homepage/FeatureCard";
 import SubscriptionSection from "../components/homepage/SubscriptionsSection";
@@ -15,11 +15,8 @@ import HowItWorksSection from "../components/homepage/HowItWorksSection";
 import { BetaBadge } from "../components/common/BetaBadge";
 
 const featuresData = [
-  { icon: Sparkles,       title: "AI-Powered Insights",   description: "Plain-language answers about what's driving your performance, risk and costs — generated automatically as your portfolio changes." },
   { icon: LayoutDashboard, title: "Daily Dashboard",       description: "Current value, unrealized P/L, composition and costs — refreshed once a day after markets close." },
-  { icon: Bell,           title: "Portfolio Alerts",      description: "Set thresholds on value, drawdown or allocation drift and get notified the moment one is crossed." },
   { icon: DollarSign,     title: "Cost Transparency",     description: "Explicit commissions and implicit bid-ask spreads broken down by broker, asset, and period. The true cost of every trade." },
-  { icon: BarChart3,      title: "Portfolio Overview",    description: "Total invested capital vs. current value, unrealized P/L, and overall ROI — all in one high-level snapshot." },
   { icon: TrendingUp,     title: "Cash Flow & Dividends", description: "Historical deposits, withdrawals, buy/sell activity, and dividend income broken down by asset — yield, yield on cost, and YoY growth." },
   { icon: Activity,       title: "Performance & ROI",     description: "Monthly heatmaps, annual returns, trailing period performance, and comparison against a market benchmark — alpha, tracking error, and more." },
   { icon: Scale,          title: "Efficient Frontier",    description: "Mean-variance optimization, Max Sharpe and Min Volatility allocations, and an asset correlation matrix — where you stand vs. the theoretical optimum." },
