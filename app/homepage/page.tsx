@@ -141,14 +141,13 @@ function HeroSection({ onLogin }: { onLogin: () => void }) {
           </div>
         </motion.div>
 
-        {/* Product card — right */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          <HeroProductCard />
-        </motion.div>
+        {/* Product card — right. No wrapping fade-in here: HeroProductCard already animates its
+            own layers in (shadow, back depth card, front card) on mount. A wrapping opacity
+            fade ABOVE it would multiply with those inner fades — including the shadow layer,
+            which is deliberately static precisely so it's never dimmed by an ancestor's opacity
+            — reintroducing the same "shadow outshines the still-fading card" flash from one
+            level up. */}
+        <HeroProductCard />
       </div>
     </section>
   );

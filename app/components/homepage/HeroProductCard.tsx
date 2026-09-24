@@ -21,25 +21,42 @@ const CHART_POINTS: [number, number][] = [
 export default function HeroProductCard() {
   return (
     <div className="relative" style={{ perspective: "1600px" }}>
-      {/* back card — depth */}
-      <motion.div
+      {/* Shadow and back-depth layers are static — never animated, always fully there from the
+          first frame. Both used to fade in via opacity (independently of the front card and of
+          each other), and both are dark/high-contrast against the page's cream background, so
+          partway through any of those fades they already read as clearly "arrived" while the
+          low-contrast white front card was still mostly transparent — looking like something
+          dark sitting on top of / cutting across the card, for as long as the front card's own
+          fade took. Worse, a translucent-during-its-fade front card doesn't just let something
+          BEHIND it peek out at the edges, it lets it show straight THROUGH, tinting the whole
+          card grey until the fade finishes. That's why the front card below doesn't animate
+          opacity at all now: it's fully opaque from frame one (sliding/scaling into place
+          instead), which is the only way to guarantee it always fully occludes these two. */}
+      <div
         className="absolute inset-0 rounded-[14px]"
-        style={{ background: "#1c1917", transform: "rotateY(-8deg) rotateX(3deg) translate(28px, 28px)", transformStyle: "preserve-3d" }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
+        style={{ boxShadow: "0 60px 100px -30px rgba(28,25,23,0.28)", transform: "rotateY(-8deg) rotateX(3deg)" }}
       />
-      {/* front card */}
+      <div
+        className="absolute inset-0 rounded-[14px]"
+        style={{
+          background: "#1c1917",
+          transform: "rotateY(-8deg) rotateX(3deg) translate(28px, 28px)",
+        }}
+      />
+      {/* Front card — always fully opaque (see above); the entrance is a slide+scale settle
+          instead of a fade, driven entirely through framer-motion's own transform props
+          (rotateY/rotateX included, held constant) rather than a static `transform` string,
+          since motion takes over the whole `transform` property once any of x/y/rotate/scale
+          are animated and would silently clobber a static one set alongside it. */}
       <motion.div
         className="relative rounded-[14px] p-7"
         style={{
-          background: "#fff", border: "1px solid #E0DACC",
-          boxShadow: "0 60px 100px -30px rgba(28,25,23,0.28)",
-          transform: "rotateY(-8deg) rotateX(3deg)", transformStyle: "preserve-3d",
+          background: "#fff", border: "1px solid #E0DACC", transformStyle: "preserve-3d",
+          willChange: "transform",
         }}
-        initial={{ rotateY: -16, opacity: 0 }}
-        animate={{ rotateY: -8, opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.25, ease: "easeOut" }}
+        initial={{ y: 20, scale: 0.97, rotateY: -8, rotateX: 3 }}
+        animate={{ y: 0, scale: 1, rotateY: -8, rotateX: 3 }}
+        transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
       >
         <div className="flex items-center justify-between mb-6">
           <span className="text-[10px] uppercase tracking-widest font-medium" style={{ color: "#8A6A28" }}>Portfolio Value</span>

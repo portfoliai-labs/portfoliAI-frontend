@@ -37,48 +37,55 @@ function LoginContent() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Which specific action is in flight, not just whether one is — every button below shares
+  // `isLoading` (derived below) to stay disabled while any of them runs, but each button's own
+  // loading look (Google's spinner-for-icon swap, the submit button's "Please wait…") must key
+  // off pendingAction being ITS action specifically, or triggering one action makes every
+  // other button visually look like it's the one running too.
+  const [pendingAction, setPendingAction] = useState<
+    "google" | "password" | "resend" | "demo-investor" | "demo-advisor" | null
+  >(null);
 
   const handleGoogle = async () => {
-    setIsSubmitting(true);
+    setPendingAction("google");
     await login();
-    setIsSubmitting(false);
+    setPendingAction(null);
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setPendingAction("password");
     if (authMode === "signin") {
       await loginWithPassword(email, password);
     } else {
       await signUpWithPassword(email, password);
     }
-    setIsSubmitting(false);
+    setPendingAction(null);
   };
 
   const handleResend = async () => {
     if (!needsEmailConfirmation) return;
-    setIsSubmitting(true);
+    setPendingAction("resend");
     await resendConfirmation(needsEmailConfirmation);
-    setIsSubmitting(false);
+    setPendingAction(null);
   };
 
   // Two separate demo accounts, kept as separate handlers (rather than one that takes an
   // email/password pair) so each button below is an unambiguous, one-purpose click target —
   // which account a click signs into is never implicit from shared state.
   const handleInvestorDemoLogin = async () => {
-    setIsSubmitting(true);
+    setPendingAction("demo-investor");
     await loginWithPassword("demo@portfoliai.app", "demoportfoliai");
-    setIsSubmitting(false);
+    setPendingAction(null);
   };
 
   const handleAdvisorDemoLogin = async () => {
-    setIsSubmitting(true);
+    setPendingAction("demo-advisor");
     await loginWithPassword("advisor-demo@portfoliai.app", "demoportfoliai");
-    setIsSubmitting(false);
+    setPendingAction(null);
   };
 
-  const isLoading = isSubmitting;
+  const isLoading = pendingAction !== null;
 
   return (
     <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-8 sm:p-12 lg:p-20" style={{ background: "#F7F5EF" }}>
@@ -151,7 +158,7 @@ function LoginContent() {
                 className="text-[12px] font-semibold underline disabled:opacity-60"
                 style={{ color: "#78716c" }}
               >
-                {isLoading ? "Resending…" : "Resend confirmation email"}
+                {pendingAction === "resend" ? "Resending…" : "Resend confirmation email"}
               </button>
             </div>
           ) : (
@@ -164,7 +171,7 @@ function LoginContent() {
                 onMouseEnter={(e) => { if (!isLoading) (e.currentTarget.style.background = "#2a2820"); }}
                 onMouseLeave={(e) => { if (!isLoading) (e.currentTarget.style.background = "#1c1917"); }}
               >
-                {isLoading ? (
+                {pendingAction === "google" ? (
                   <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#C49A3C" }} />
                 ) : (
                   <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
@@ -220,7 +227,7 @@ function LoginContent() {
                   className="w-full py-3.5 px-6 rounded-[3px] text-[13px] font-semibold tracking-[0.04em] uppercase transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ background: "#fff", color: "#1c1917", border: "1px solid #1c1917" }}
                 >
-                  {isLoading ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}
+                  {pendingAction === "password" ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}
                 </button>
               </form>
 
