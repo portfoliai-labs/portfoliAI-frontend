@@ -54,9 +54,13 @@ function useRuleList<T>(fetchRules: () => Promise<T[]>, key: string, pollMs?: nu
   return { rules, setRules, loading, error, reload };
 }
 
-/** The user's own alert rules or, with `clientUuid`, the ones the advisor put on that client. */
-export function useAlertRules(pollMs?: number, clientUuid?: string | null) {
-  return useRuleList<AlertRuleResponse>(() => alertService.listRules(clientUuid), clientUuid ?? "", pollMs);
+/**
+ * The rules on one portfolio — the caller's own, or (for an advisor) a client's. `portfolioUuid`
+ * is required now that every portfolio-scoped route needs one explicitly (no more implicit
+ * "self" via an omitted for_user_uuid).
+ */
+export function useAlertRules(portfolioUuid: string, pollMs?: number) {
+  return useRuleList<AlertRuleResponse>(() => alertService.listRules(portfolioUuid), portfolioUuid, pollMs);
 }
 
 /** Advisors only: every rule they put on any of their clients, each with its clientUuid. */

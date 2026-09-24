@@ -3,6 +3,7 @@
 
 import React from "react";
 import { NotificationsProvider } from "../../context/NotificationsContext";
+import { PortfolioProvider } from "../../context/PortfolioContext";
 
 /**
  * DashboardLayout component
@@ -17,10 +18,12 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <NotificationsProvider>
-      <div className="dashboard-container">
-        {children}
-      </div>
-    </NotificationsProvider>
+    <PortfolioProvider>
+      <NotificationsProvider>
+        <div className="dashboard-container">
+          {children}
+        </div>
+      </NotificationsProvider>
+    </PortfolioProvider>
   );
 }

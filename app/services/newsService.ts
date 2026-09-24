@@ -25,10 +25,12 @@ const sanitizeDailyArticle = (article: DailyArticle): DailyArticle => ({
 });
 
 export const newsService = {
-  // GET /v1/news/ — news for a given calendar month (year+month, must be passed together),
-  // or for today when both are omitted. `limit` caps how many stories come back.
+  // GET /v1/news — news for a given calendar month (year+month, must be passed together), or
+  // for today when both are omitted. Not portfolio-scoped: one section covering the period's
+  // news plus the news on assets/asset classes held across ALL of the caller's portfolios
+  // together. `limit` caps how many stories come back.
   async getNews(year?: number, month?: number, limit?: number): Promise<NewsItem[]> {
-    const items = await apiFetch<NewsItem[]>(`/v1/news/${buildQuery({ year, month, limit })}`);
+    const items = await apiFetch<NewsItem[]>(`/v1/news${buildQuery({ year, month, limit })}`);
     return items.map(sanitizeNewsItem);
   },
 

@@ -7,10 +7,11 @@ type DocumentStatus = 'UPLOADED' | 'PROCESSING' | 'FAILED';
 // PERIODIC covers a custom period (period_start..period_end)
 type ReportType = 'FULL' | 'PERIODIC';
 
-// Matches DocumentResponse DTO (GET /v1/reports/, GET /v1/reports/{id}/download)
+// Matches DocumentResponse DTO (GET /v1/portfolios/{p}/reports, GET .../reports/{id}/download)
 interface Document {
   document_id: string;
   user_id: string;
+  portfolio_uuid: string;
   job_id: string | null;
   generated_by_uuid: string | null;
   name: string;

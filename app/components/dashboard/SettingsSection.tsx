@@ -11,6 +11,7 @@ import { DeleteAccountModal } from "./DeleteAccountModal";
 import { AlertsSettings } from "./AlertsSettings";
 import { Toggle } from "./Toggle";
 import { useUser } from "../../context/UserContext";
+import { usePortfolio } from "../../context/PortfolioContext";
 
 // Tally form used for tester applications: https://tally.so/r/QKWeYg
 const TESTER_APPLICATION_FORM_ID = "QKWeYg";
@@ -80,7 +81,9 @@ const CURRENCIES = [
 export function SettingsSection() {
   const { user, logout, refreshUser } = useUser();
   // Alerts are rules on the user's own portfolio; advisors don't have one (they manage their
-  // clients' portfolios), so the tab is investor-only.
+  // clients' portfolios), so the tab is investor-only. usePortfolio() is only meaningful for
+  // that role too — see PortfolioContext — so it's safe to call unconditionally here.
+  const { current: portfolio } = usePortfolio();
   const isAdvisor = user?.role === "ADVISOR";
   const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts") : TABS;
   // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
@@ -422,7 +425,7 @@ export function SettingsSection() {
         </div>
       )}
 
-      {activeTab === "alerts" && !isAdvisor && <AlertsSettings />}
+      {activeTab === "alerts" && !isAdvisor && portfolio && <AlertsSettings portfolioUuid={portfolio.uuid} />}
 
       {activeTab === "preferences" && (
         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">

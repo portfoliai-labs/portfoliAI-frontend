@@ -65,10 +65,10 @@ interface DocumentCardProps {
 }
 
 export function ReportsList({
-  forUserUuid,
+  portfolioUuid,
 }: {
-  forUserUuid?: string | null;
-} = {}) {
+  portfolioUuid: string;
+}) {
   const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export function ReportsList({
     try {
       setLoading(true);
       setError(null);
-      const data = await reportService.getAllDocuments(forUserUuid);
+      const data = await reportService.getAllDocuments(portfolioUuid);
       setDocuments(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to sync with server";
@@ -101,20 +101,21 @@ export function ReportsList({
 
   useEffect(() => {
     loadDocuments();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portfolioUuid]);
 
   // --- ACTIONS ---
 
-  // Opens the standalone viewer route (app/(reserved)/reports/[documentId])
+  // Opens the standalone viewer route (app/(reserved)/reports/[portfolioUuid]/[documentId])
   // instead of a throwaway blob URL.
   const handleView = (docId: string) => {
-    window.open(`/reports/${docId}`, "_blank");
+    window.open(`/reports/${portfolioUuid}/${docId}`, "_blank");
   };
 
   const handleDownload = async (docId: string, fileName: string) => {
     try {
       // Step 1: Request the short-lived signed URL from the backend
-      const { url } = await reportService.downloadReport(docId);
+      const { url } = await reportService.downloadReport(portfolioUuid, docId);
 
       if (!url) throw new Error("Invalid URL received from server");
 
@@ -146,7 +147,7 @@ export function ReportsList({
   const handleAddTag = async (docId: string) => {
     if (!newTagName.trim()) return;
     try {
-      await reportService.addTag(docId, newTagName.trim());
+      await reportService.addTag(portfolioUuid, docId, newTagName.trim());
       setDocuments(prev => prev.map(r => 
         r.document_id === docId ? { ...r, tags: [...(r.tags || []), newTagName.trim()] } : r
       ));
@@ -160,7 +161,7 @@ export function ReportsList({
 
   const handleRemoveTag = async (docId: string, tagName: string) => {
     try {
-      await reportService.removeTag(docId, tagName);
+      await reportService.removeTag(portfolioUuid, docId, tagName);
       setDocuments(prev => prev.map(r => 
         r.document_id === docId ? { ...r, tags: (r.tags ?? []).filter((t: string) => t !== tagName) } : r
       ));

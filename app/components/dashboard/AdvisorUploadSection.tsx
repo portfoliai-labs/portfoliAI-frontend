@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, X, ChevronRight, UploadCloud } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
+import { useClientDefaultPortfolio } from "../../hooks/useClientDefaultPortfolio";
 import type { Client } from "../../models/Advisor";
 import { FileUploader } from "./FileUploader";
 
@@ -122,7 +123,26 @@ export function AdvisorUploadSection() {
         </button>
       </div>
 
-      <FileUploader forUserUuid={selected.uuid} />
+      <ClientPortfolioGate clientUuid={selected.uuid} />
     </div>
   );
+}
+
+// Resolves the selected client's default portfolio before handing off to FileUploader, which
+// (like the other portfolio-scoped components) now needs a portfolioUuid rather than a
+// client/user uuid — see useClientDefaultPortfolio.
+function ClientPortfolioGate({ clientUuid }: { clientUuid: string }) {
+  const { portfolio, loading, error } = useClientDefaultPortfolio(clientUuid);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="w-7 h-7 animate-spin text-[#C49A3C]" />
+      </div>
+    );
+  }
+  if (!portfolio) {
+    return <p className="text-sm text-rose-500 py-6">{error ?? "Unable to load this client's portfolio."}</p>;
+  }
+  return <FileUploader portfolioUuid={portfolio.uuid} />;
 }

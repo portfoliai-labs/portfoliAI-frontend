@@ -3,25 +3,24 @@ import type { Document, PresignedUrl } from "../models/Report";
 import { apiFetch } from "./apiClient";
 
 export const reportService = {
-  // GET /v1/reports/?for_user_uuid=... — advisors pass client UUID to fetch their documents
-  async getAllDocuments(forUserUuid?: string | null): Promise<Document[]> {
-    const query = forUserUuid ? `?for_user_uuid=${encodeURIComponent(forUserUuid)}` : '';
-    return apiFetch<Document[]>(`/v1/reports/${query}`);
+  // GET /v1/portfolios/{p}/reports
+  async getAllDocuments(portfolioUuid: string): Promise<Document[]> {
+    return apiFetch<Document[]>(`/v1/portfolios/${portfolioUuid}/reports`);
   },
 
-  async downloadReport(documentId: string): Promise<PresignedUrl> {
-    return apiFetch<PresignedUrl>(`/v1/reports/${documentId}/download`);
+  async downloadReport(portfolioUuid: string, documentId: string): Promise<PresignedUrl> {
+    return apiFetch<PresignedUrl>(`/v1/portfolios/${portfolioUuid}/reports/${documentId}/download`);
   },
 
-  async addTag(documentId: string, tagName: string): Promise<void> {
-    return apiFetch<void>(`/v1/reports/${documentId}/tags`, {
+  async addTag(portfolioUuid: string, documentId: string, tagName: string): Promise<void> {
+    return apiFetch<void>(`/v1/portfolios/${portfolioUuid}/reports/${documentId}/tags`, {
       method: 'POST',
       body: JSON.stringify({ name: tagName }),
     });
   },
 
-  async removeTag(documentId: string, tagName: string): Promise<void> {
-    return apiFetch<void>(`/v1/reports/${documentId}/tags/${encodeURIComponent(tagName)}`, {
+  async removeTag(portfolioUuid: string, documentId: string, tagName: string): Promise<void> {
+    return apiFetch<void>(`/v1/portfolios/${portfolioUuid}/reports/${documentId}/tags/${encodeURIComponent(tagName)}`, {
       method: 'DELETE',
     });
   },

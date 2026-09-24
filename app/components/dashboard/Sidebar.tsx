@@ -2,6 +2,7 @@
 
 import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
+import { PortfolioSwitcher } from "./PortfolioSwitcher";
 
 interface SidebarProps {
   activeSection: string;
@@ -55,7 +56,16 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
         ${isOpen ? "pointer-events-auto" : "pointer-events-none lg:pointer-events-auto"}
       `}>
 
-        <nav className="flex flex-col gap-1 p-5 pt-[100px] flex-1 overflow-y-auto custom-scrollbar">
+        {/* Portfolio switcher — investor-only: an advisor's own portfolio (every account has
+            one) has no UI surface today, since advisor flows pick a client's portfolio
+            per-screen instead (see useClientDefaultPortfolio). */}
+        {role !== 'ADVISOR' && (
+          <div className="mt-[100px]">
+            <PortfolioSwitcher />
+          </div>
+        )}
+
+        <nav className={`flex flex-col gap-1 p-5 flex-1 overflow-y-auto custom-scrollbar ${role !== 'ADVISOR' ? 'pt-3' : 'pt-[100px]'}`}>
           {menuItems.map((item) => {
             const isActive = activeSection === item.id;
             return (

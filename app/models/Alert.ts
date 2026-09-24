@@ -75,9 +75,11 @@ interface AlertRuleResponse {
   updatedAt: string;
 }
 
-// GET /v1/alerts/client-rules (advisors only): a rule the advisor put on a client's portfolio,
-// with the client it watches.
+// GET /v1/advisor/alert-rules (advisors only): a rule the advisor put on a client's portfolio,
+// with the portfolio it watches and the client who owns it.
 interface ClientAlertRuleResponse extends AlertRuleResponse {
+  portfolioUuid: string;
+  portfolioName: string;
   clientUuid: string;
 }
 

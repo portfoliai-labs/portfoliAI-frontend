@@ -21,6 +21,7 @@ import { NoDataEmptyState } from "./NoDataEmptyState";
 import { AlertGaugeCard } from "./AlertGauge";
 import { useAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
+import { usePortfolio } from "../../context/PortfolioContext";
 
 // How often to refetch /today while it comes back `isStale: true` (a transaction edit
 // triggered a rebuild that hasn't landed yet), and how long to keep trying before giving up
@@ -31,6 +32,8 @@ const STALE_POLL_INTERVAL_MS = 15_000;
 const STALE_TIMEOUT_MS = 5 * 60_000;
 
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
+  const { current: portfolio } = usePortfolio();
+  const portfolioUuid = portfolio?.uuid;
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [today, setToday] = useState<TodayDashboard | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -45,14 +48,18 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     onNavigate?.("settings");
   };
 
+  // `portfolioUuid` is null for the brief window PortfolioContext is still resolving which
+  // portfolio to open — `loading` starts (and stays) true until it's known, which already
+  // reads correctly as "still loading" with no extra gate needed.
   useEffect(() => {
+    if (!portfolioUuid) return;
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
         setError(null);
         const [data, todayData] = await Promise.all([
-          portfolioService.getPortfolioOverview(),
-          portfolioService.getTodayDashboard(),
+          portfolioService.getPortfolioOverview(portfolioUuid),
+          portfolioService.getTodayDashboard(portfolioUuid),
         ]);
         setSnapshot(data);
         setToday(todayData);
@@ -64,14 +71,14 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
       }
     };
     fetchDashboardData();
-  }, []);
+  }, [portfolioUuid]);
 
-  // `snapshot` (GET /v1/portfolio/) never mixes history with fresh data, so it has no isStale
-  // and needs no polling — only `today` does. Keyed off `today?.isStale` rather than `today`
-  // itself so a poll's own setToday call (still isStale, next tick due) doesn't reset the
-  // deadline below.
+  // `snapshot` (GET /v1/portfolios/{p}/overview) never mixes history with fresh data, so it
+  // has no isStale and needs no polling — only `today` does. Keyed off `today?.isStale` rather
+  // than `today` itself so a poll's own setToday call (still isStale, next tick due) doesn't
+  // reset the deadline below.
   useEffect(() => {
-    if (!today?.isStale) {
+    if (!today?.isStale || !portfolioUuid) {
       setTodayStaleTimedOut(false);
       return;
     }
@@ -84,14 +91,14 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         return;
       }
       try {
-        const fresh = await portfolioService.getTodayDashboard();
+        const fresh = await portfolioService.getTodayDashboard(portfolioUuid);
         if (!cancelled) setToday(fresh);
       } catch {
         // Transient error while polling — the next tick tries again.
       }
     }, STALE_POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [today?.isStale]);
+  }, [today?.isStale, portfolioUuid]);
 
   if (loading) {
     return (
@@ -146,8 +153,10 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
 
           {/* BLOCK 1.2 — ALERTS. Each alert as a fuel-gauge style dial showing how close it is
               to its limit. Shown only alongside real portfolio data, since an alert with no
-              portfolio to watch has nothing to measure. */}
-          <AlertsModule onManage={openAlertSettings} />
+              portfolio to watch has nothing to measure. portfolioUuid is always defined here in
+              practice (this branch only renders once the fetch above has resolved), the `&&`
+              is just to satisfy the type checker. */}
+          {portfolioUuid && <AlertsModule portfolioUuid={portfolioUuid} onManage={openAlertSettings} />}
         </>
       )}
 
@@ -427,8 +436,8 @@ const SUMMARY_GROUPS: { tone: AlertTone; label: string; dot: string }[] = [
  * a dial until the user asks for all of them. With no rules it invites the user to create one
  * instead of rendering an empty card.
  */
-function AlertsModule({ onManage }: { onManage: () => void }) {
-  const { rules, loading, error } = useAlertRules(60_000);
+function AlertsModule({ portfolioUuid, onManage }: { portfolioUuid: string; onManage: () => void }) {
+  const { rules, loading, error } = useAlertRules(portfolioUuid, 60_000);
   const [showAll, setShowAll] = useState(false);
 
   const sorted = rules === null

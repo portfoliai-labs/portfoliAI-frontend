@@ -32,12 +32,14 @@ const formatDate = (iso: string) =>
  * off, edit, delete) and create new ones. The Dashboard shows the same rules as dials; this is
  * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
  *
- * Without props it's the user's own rules (the Settings tab). With `clientUuid` it's an advisor's
- * rules on that client's portfolio (the Clients section): the asset picker lists the client's
- * holdings, and the advisor is the one notified.
+ * `portfolioUuid` is always required now (every alert-rule route is nested under one). Without
+ * `clientName` it's the caller's own rules (the Settings tab, passed the current portfolio from
+ * PortfolioContext). With `clientName` it's an advisor's rules on that client's portfolio (the
+ * Clients section, passed that client's default portfolio uuid): the asset picker lists the
+ * client's holdings, and the advisor is the one notified.
  */
-export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string; clientName?: string } = {}) {
-  const { rules, setRules, loading, error, reload } = useAlertRules(undefined, clientUuid);
+export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: string; clientName?: string }) {
+  const { rules, setRules, loading, error, reload } = useAlertRules(portfolioUuid);
   // null = form closed; { rule: null } = creating; { rule } = editing that rule.
   const [form, setForm] = useState<{ rule: AlertRuleResponse | null } | null>(null);
   const [assetOptions, setAssetOptions] = useState<AssetOption[] | null>(null);
@@ -50,7 +52,7 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
   useEffect(() => {
     if (form === null || assetOptions !== null) return;
     let cancelled = false;
-    portfolioService.getHoldings(clientUuid)
+    portfolioService.getHoldings(portfolioUuid)
       .then((res) => {
         if (cancelled) return;
         setAssetOptions((res?.holdings ?? []).map((h) => ({
@@ -60,7 +62,7 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
       })
       .catch(() => { if (!cancelled) setAssetOptions([]); });
     return () => { cancelled = true; };
-  }, [form, assetOptions, clientUuid]);
+  }, [form, assetOptions, portfolioUuid]);
 
   useEffect(() => {
     if (!message) return;
@@ -75,7 +77,7 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
     setBusyId(rule.ruleId);
     setMessage(null);
     try {
-      replaceRule(await alertService.updateRule(rule.ruleId, { enabled: !rule.enabled }, clientUuid));
+      replaceRule(await alertService.updateRule(portfolioUuid, rule.ruleId, { enabled: !rule.enabled }));
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Unable to update this alert." });
     } finally {
@@ -87,7 +89,7 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
     if (!toDelete) return;
     setDeleting(true);
     try {
-      await alertService.deleteRule(toDelete.ruleId, clientUuid);
+      await alertService.deleteRule(portfolioUuid, toDelete.ruleId);
       setRules((prev) => (prev ? prev.filter((r) => r.ruleId !== toDelete.ruleId) : prev));
       setMessage({ type: "success", text: "Alert deleted." });
       setToDelete(null);
@@ -158,7 +160,7 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
           <AlertForm
             key={form.rule?.ruleId ?? "new"}
             rule={form.rule}
-            clientUuid={clientUuid}
+            portfolioUuid={portfolioUuid}
             clientName={clientName}
             assetOptions={assetOptions}
             onSaved={handleSaved}
@@ -253,10 +255,10 @@ export function AlertsSettings({ clientUuid, clientName }: { clientUuid?: string
  * are shown as the backend words them.
  */
 function AlertForm({
-  rule, clientUuid, clientName, assetOptions, onSaved, onCancel,
+  rule, portfolioUuid, clientName, assetOptions, onSaved, onCancel,
 }: {
   rule: AlertRuleResponse | null;
-  clientUuid?: string;
+  portfolioUuid: string;
   clientName?: string;
   assetOptions: AssetOption[] | null;
   onSaved: (saved: AlertRuleResponse, created: boolean) => void;
@@ -301,7 +303,7 @@ function AlertForm({
     setFormError(null);
     try {
       if (rule === null) {
-        onSaved(await alertService.createRule({ params, notifyEmail, notifyInApp }, clientUuid), true);
+        onSaved(await alertService.createRule(portfolioUuid, { params, notifyEmail, notifyInApp }), true);
         return;
       }
       const changes: AlertRuleUpdateRequest = {};
@@ -312,7 +314,7 @@ function AlertForm({
         onCancel();
         return;
       }
-      onSaved(await alertService.updateRule(rule.ruleId, changes, clientUuid), false);
+      onSaved(await alertService.updateRule(portfolioUuid, rule.ruleId, changes), false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Unable to save this alert.");
     } finally {

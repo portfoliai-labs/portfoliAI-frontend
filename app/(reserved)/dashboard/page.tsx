@@ -4,6 +4,7 @@
 import { useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useUser } from "../../context/UserContext";
+import { usePortfolio } from "../../context/PortfolioContext";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Sidebar } from "../../components/dashboard/Sidebar";
 import { FileUploader } from "../../components/dashboard/FileUploader";
@@ -34,6 +35,9 @@ const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'news', 
  */
 function DashboardPageContent() {
   const { user, loading, logout } = useUser();
+  // Only meaningful for role USER (see PortfolioContext) — advisor sections resolve a
+  // client's portfolio locally instead, so `current` stays null for an advisor and that's fine.
+  const { current: portfolio, loading: portfolioLoading } = usePortfolio();
   const searchParams = useSearchParams();
   // Lets links into the dashboard land on a specific tab via `?section=...` instead of
   // always resetting to overview.
@@ -47,6 +51,11 @@ function DashboardPageContent() {
   const isAdvisor = user?.role === 'ADVISOR';
 
   const renderContent = useMemo(() => {
+    // Every investor-facing case below needs a resolved portfolio; advisor cases never read
+    // `portfolio` at all (they resolve a client's own via useClientDefaultPortfolio), so this
+    // guard only ever blocks the investor branches while PortfolioContext is still loading.
+    if (!isAdvisor && !portfolio) return null;
+
     switch (activeSection) {
       case 'overview':
         return isAdvisor
@@ -55,11 +64,13 @@ function DashboardPageContent() {
       case 'clients':
         return <ClientsSection />;
       case 'upload':
-        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
+        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader portfolioUuid={portfolio!.uuid} />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList />;
+        return isAdvisor ? <AdvisorReportsList /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
       case 'performance':
-        return isAdvisor ? <AdvisorPerformanceSection /> : <PerformanceSection onNavigate={setActiveSection} />;
+        return isAdvisor
+          ? <AdvisorPerformanceSection />
+          : <PerformanceSection portfolioUuid={portfolio!.uuid} onNavigate={setActiveSection} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
@@ -71,9 +82,9 @@ function DashboardPageContent() {
       default:
         return <DashboardOverview onNavigate={setActiveSection} />;
     }
-  }, [activeSection, isAdvisor]);
+  }, [activeSection, isAdvisor, portfolio]);
 
-  if (loading) {
+  if (loading || (!isAdvisor && portfolioLoading)) {
     return (
       <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

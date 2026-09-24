@@ -105,7 +105,7 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
   };
 }
 
-export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = {}) {
+export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
   const [mappingModalFileId, setMappingModalFileId] = useState<string | null>(null);
@@ -164,7 +164,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   useEffect(() => {
     let cancelled = false;
     setLoadingExisting(true);
-    transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters))
+    transactionService.getUserTransactions(portfolioUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters))
       .then(res => {
         if (cancelled) return;
         setExistingItems(res.items);
@@ -172,13 +172,13 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       })
       .finally(() => { if (!cancelled) setLoadingExisting(false); });
     return () => { cancelled = true; };
-  }, [forUserUuid, existingPage, existingFilters]);
+  }, [portfolioUuid, existingPage, existingFilters]);
 
   // Re-fetches a given page of saved transactions (used after a save/delete changes the underlying data)
   const refreshExisting = async (page: number) => {
     setLoadingExisting(true);
     try {
-      const res = await transactionService.getUserTransactions(forUserUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters));
+      const res = await transactionService.getUserTransactions(portfolioUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters));
       setExistingItems(res.items);
       setExistingTotal(res.total);
     } finally {
@@ -432,7 +432,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       setDeletingKeys(prev => new Set([...prev, ...existingKeys]));
       try {
         const toDelete = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
-        await Promise.all(toDelete.map(tx => transactionService.deleteTransaction(tx.transaction_uuid)));
+        await transactionService.deleteTransactions(portfolioUuid, toDelete.map(tx => tx.transaction_uuid));
         await refreshExisting(existingPage);
       } finally {
         setDeletingKeys(prev => {
@@ -465,7 +465,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
   const handleDeleteAllExisting = async () => {
     setDeletingAllExisting(true);
     try {
-      await transactionService.deleteAllTransactions(forUserUuid, toServiceFilters(existingFilters));
+      await transactionService.deleteAllTransactions(portfolioUuid, toServiceFilters(existingFilters));
       setSelectedKeys(prev => {
         const next = new Set<string>();
         prev.forEach(k => { if (!k.startsWith("existing::")) next.add(k); });
@@ -560,7 +560,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     if (type === "existing") {
       const uuid = rest[0];
       try {
-        await transactionService.updateTransaction(uuid, toTransactionInput(pendingToDisplay(updated)));
+        await transactionService.updateTransaction(portfolioUuid, uuid, toTransactionInput(pendingToDisplay(updated)));
         await refreshExisting(existingPage);
       } catch (error: unknown) {
         setStatus("error");
@@ -612,7 +612,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
       try {
         const toEdit = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
         await Promise.all(
-          toEdit.map(tx => transactionService.updateTransaction(tx.transaction_uuid, toTransactionInput({ ...existingToDisplay(tx), operation }))),
+          toEdit.map(tx => transactionService.updateTransaction(portfolioUuid, tx.transaction_uuid, toTransactionInput({ ...existingToDisplay(tx), operation }))),
         );
         await refreshExisting(existingPage);
       } catch (error: unknown) {
@@ -634,7 +634,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
     try {
       setLoading(true);
       const newTransactions = pendingRows.map(r => toTransactionInput(r.transaction));
-      await transactionService.saveTransactions(newTransactions, forUserUuid);
+      await transactionService.saveTransactions(portfolioUuid, newTransactions);
       if (existingPage === 1) {
         await refreshExisting(1);
       } else {
@@ -725,7 +725,7 @@ export function FileUploader({ forUserUuid }: { forUserUuid?: string | null } = 
         <ImportWizard
           key={wizardQueue[0].name + wizardQueue[0].lastModified}
           file={wizardQueue[0]}
-          forUserUuid={forUserUuid}
+          portfolioUuid={portfolioUuid}
           onClose={advanceWizardQueue}
           onImported={() => {
             // Only refreshes the saved-transactions list — the wizard stays open on its

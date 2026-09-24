@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Plus, Trash2, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle, BellRing } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
 import { useClientAlertRules } from "../../hooks/useAlertRules";
+import { useClientDefaultPortfolio } from "../../hooks/useClientDefaultPortfolio";
 import { alertState } from "../../lib/alerts";
 import { AlertsSettings } from "./AlertsSettings";
 import { TONE_STYLES } from "./AlertGauge";
@@ -329,6 +330,7 @@ function ClientPanel({
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const name = clientDisplayName(client);
   const dirty = form.currency !== (client.currency ?? "EUR") || form.language !== (client.language ?? "it");
+  const { portfolio, loading: portfolioLoading, error: portfolioError } = useClientDefaultPortfolio(client.uuid);
 
   const set = (field: keyof typeof form) => (v: string) =>
     setForm((prev) => ({ ...prev, [field]: v }));
@@ -378,7 +380,15 @@ function ClientPanel({
           </button>
         </div>
 
-        <AlertsSettings clientUuid={client.uuid} clientName={name} />
+        {portfolioLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
+          </div>
+        ) : portfolio ? (
+          <AlertsSettings portfolioUuid={portfolio.uuid} clientName={name} />
+        ) : (
+          <p className="text-sm text-rose-500">{portfolioError ?? "Unable to load this client's portfolio."}</p>
+        )}
 
         <div className="bg-white p-6 rounded-[2rem] border border-[rgba(196,154,60,0.2)] space-y-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Client settings</p>

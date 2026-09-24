@@ -12,34 +12,32 @@ import type {
 import { apiFetch, apiFetchForm } from "./apiClient";
 
 export const importService = {
-  // POST /v1/transactions/import/analyze-columns — headers + structural sample + full
-  // per-column profiles, never the raw file.
-  async analyzeColumns(payload: AnalyzeColumnsRequest): Promise<ColumnMappingResponse> {
-    return apiFetch<ColumnMappingResponse>("/v1/transactions/import/analyze-columns", {
+  // POST /v1/portfolios/{p}/transactions/import/analyze-columns — headers + structural sample
+  // + full per-column profiles, never the raw file.
+  async analyzeColumns(portfolioUuid: string, payload: AnalyzeColumnsRequest): Promise<ColumnMappingResponse> {
+    return apiFetch<ColumnMappingResponse>(`/v1/portfolios/${portfolioUuid}/transactions/import/analyze-columns`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  // POST /v1/transactions/import/analyze-values — every distinct value of the one column
-  // mapped to `type`.
-  async analyzeValues(payload: AnalyzeValuesRequest): Promise<ValueMappingResponse> {
-    return apiFetch<ValueMappingResponse>("/v1/transactions/import/analyze-values", {
+  // POST /v1/portfolios/{p}/transactions/import/analyze-values — every distinct value of the
+  // one column mapped to `type`.
+  async analyzeValues(portfolioUuid: string, payload: AnalyzeValuesRequest): Promise<ValueMappingResponse> {
+    return apiFetch<ValueMappingResponse>(`/v1/portfolios/${portfolioUuid}/transactions/import/analyze-values`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  // POST /v1/transactions/import/commit — the confirmed mapping plus the original file. The
-  // frontend never sends pre-transformed rows: the authoritative transform runs on the
-  // backend so the saved data can never drift from what analyze-columns/analyze-values
-  // reasoned about. `forUserUuid` mirrors transactionService — an advisor importing on
-  // behalf of a client.
-  async commit(file: File, payload: CommitMappingPayload, forUserUuid?: string | null): Promise<CommitImportResponse> {
+  // POST /v1/portfolios/{p}/transactions/import/commit — the confirmed mapping plus the
+  // original file. The frontend never sends pre-transformed rows: the authoritative transform
+  // runs on the backend so the saved data can never drift from what analyze-columns/
+  // analyze-values reasoned about.
+  async commit(portfolioUuid: string, file: File, payload: CommitMappingPayload): Promise<CommitImportResponse> {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("mapping", JSON.stringify(payload));
-    const query = forUserUuid ? `?for_user_uuid=${encodeURIComponent(forUserUuid)}` : "";
-    return apiFetchForm<CommitImportResponse>(`/v1/transactions/import/commit${query}`, formData, { method: "POST" });
+    return apiFetchForm<CommitImportResponse>(`/v1/portfolios/${portfolioUuid}/transactions/import/commit`, formData, { method: "POST" });
   },
 };

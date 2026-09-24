@@ -1,0 +1,57 @@
+// services/portfoliosService.ts
+// The portfolio-IDENTITY endpoints (list/create/rename/delete a Portfolio itself), as opposed
+// to portfolioService.ts, which reads the DASHBOARD DATA inside one already-known portfolio.
+import type { Portfolio } from "../models/Portfolio";
+import { apiFetch } from "./apiClient";
+
+export const portfoliosService = {
+  // GET /v1/portfolios — the caller's own portfolios, default one first.
+  async list(): Promise<Portfolio[]> {
+    return apiFetch<Portfolio[]>("/v1/portfolios");
+  },
+
+  // POST /v1/portfolios {name} — 201. name is trimmed, 1-80 chars; 409 if the caller already
+  // has a portfolio with that name.
+  async create(name: string): Promise<Portfolio> {
+    return apiFetch<Portfolio>("/v1/portfolios", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  // GET /v1/portfolios/{p} — same access rule as every portfolio-scoped route: the caller's
+  // own, or one of a client's for their advisor.
+  async get(portfolioUuid: string): Promise<Portfolio> {
+    return apiFetch<Portfolio>(`/v1/portfolios/${portfolioUuid}`);
+  },
+
+  // PATCH /v1/portfolios/{p} {name} — rename.
+  async rename(portfolioUuid: string, name: string): Promise<Portfolio> {
+    return apiFetch<Portfolio>(`/v1/portfolios/${portfolioUuid}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  // DELETE /v1/portfolios/{p} — 204; deletes its transactions and all its data. 409 for the
+  // default portfolio, which can never be deleted.
+  async remove(portfolioUuid: string): Promise<void> {
+    return apiFetch<void>(`/v1/portfolios/${portfolioUuid}`, { method: "DELETE" });
+  },
+
+  // GET /v1/advisor/clients/{client_uuid}/portfolios — a client's portfolios, default one
+  // first. The advisor then reaches each through the same /v1/portfolios/{p}/... paths the
+  // client would.
+  async listForClient(clientUuid: string): Promise<Portfolio[]> {
+    return apiFetch<Portfolio[]>(`/v1/advisor/clients/${clientUuid}/portfolios`);
+  },
+
+  // POST /v1/advisor/clients/{client_uuid}/portfolios {name} — a new, empty portfolio for
+  // that client.
+  async createForClient(clientUuid: string, name: string): Promise<Portfolio> {
+    return apiFetch<Portfolio>(`/v1/advisor/clients/${clientUuid}/portfolios`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+};

@@ -70,7 +70,7 @@ export function useNotifications() {
         const ticket = await notificationService.getTicket();
         if (cancelled) return;
 
-        const url = `${API_BASE_URL}/notifications/stream?ticket=${encodeURIComponent(ticket)}`;
+        const url = `${API_BASE_URL}/v1/notifications/stream?ticket=${encodeURIComponent(ticket)}`;
         console.info("[useNotifications] Connecting to SSE with ticket");
 
         const es = new EventSource(url);

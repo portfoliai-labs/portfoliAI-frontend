@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Download, ExternalLink, FileText, Loader2 } from "lucide-react";
-import { reportService } from "../../../services/reportService";
-import { DisclaimerBanner } from "../../../components/legal/DisclaimerBanner";
+import { reportService } from "../../../../services/reportService";
+import { DisclaimerBanner } from "../../../../components/legal/DisclaimerBanner";
 
 // Shareable, auth-gated single-report view: the (reserved) layout's UserProvider
 // already redirects unauthenticated visitors before this page can fetch anything,
-// and the backend's /download endpoint is expected to scope documentId to its owner.
+// and the backend's /download endpoint is expected to scope documentId to its owner
+// (or their advisor) within the given portfolioUuid.
 export default function ReportViewerPage() {
-  const { documentId } = useParams<{ documentId: string }>();
+  const { portfolioUuid, documentId } = useParams<{ portfolioUuid: string; documentId: string }>();
   const router = useRouter();
 
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -26,7 +27,7 @@ export default function ReportViewerPage() {
         setLoading(true);
         setError(null);
 
-        const { url } = await reportService.downloadReport(documentId);
+        const { url } = await reportService.downloadReport(portfolioUuid, documentId);
         if (!url) throw new Error("Invalid URL received from server");
 
         const response = await fetch(url);
@@ -49,7 +50,7 @@ export default function ReportViewerPage() {
       cancelled = true;
       if (objectUrl) window.URL.revokeObjectURL(objectUrl);
     };
-  }, [documentId]);
+  }, [portfolioUuid, documentId]);
 
   return (
     <div className="min-h-screen bg-[#F7F5EF] flex flex-col">

@@ -59,13 +59,13 @@ interface ImportWizardProps {
   file: File;
   onClose: () => void;
   onImported: () => void;
-  forUserUuid?: string | null;
+  portfolioUuid: string;
   // Lets the user fall back to the legacy manual column-by-column mapper when AI analysis
   // fails outright (e.g. the file really is malformed).
   onFallbackToManual?: () => void;
 }
 
-export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbackToManual }: ImportWizardProps) {
+export function ImportWizard({ file, onClose, onImported, portfolioUuid, onFallbackToManual }: ImportWizardProps) {
   const [phase, setPhase] = useState<Phase>("parsing");
   const [tab, setTab] = useState<Tab>("columns");
   const [errorMessage, setErrorMessage] = useState("");
@@ -94,7 +94,7 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
     const distinct = allDistinctValues(column, rows);
     const counts = valueCounts(column, rows);
     try {
-      const response = await importService.analyzeValues({ column_name: column, distinct_values: distinct, sample_rows: sampleRows });
+      const response = await importService.analyzeValues(portfolioUuid, { column_name: column, distinct_values: distinct, sample_rows: sampleRows });
       const byValue = new Map(response.values.map((v) => [v.raw_value, v]));
       setValueColumn(column);
       setValueMapping(
@@ -130,7 +130,7 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
         }
         setSampleRowsForRequests(sample.sampleRows);
 
-        const response = await importService.analyzeColumns({
+        const response = await importService.analyzeColumns(portfolioUuid, {
           headers: parsed.headers,
           sample_rows: sample.sampleRows,
           column_profiles: buildColumnProfilesForRequest(parsed.headers, parsed.rows),
@@ -182,6 +182,9 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
     return () => {
       cancelled = true;
     };
+    // Runs once per file: portfolioUuid doesn't change during one wizard's lifetime, and
+    // loadValueMapping is stable in every way that matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   const valueMap = useMemo<Record<string, TransactionTarget | null>>(
@@ -279,7 +282,7 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
         },
         proposed_column_mapping: proposedMapping ?? undefined,
       };
-      const result = await importService.commit(file, payload, forUserUuid);
+      const result = await importService.commit(portfolioUuid, file, payload);
       setCommitResult(result);
       setPhase("done");
       onImported();
@@ -314,7 +317,7 @@ export function ImportWizard({ file, onClose, onImported, forUserUuid, onFallbac
         manual_instrument_overrides: merged,
         only_row_indexes: onlyRowIndexes,
       };
-      const result = await importService.commit(file, payload, forUserUuid);
+      const result = await importService.commit(portfolioUuid, file, payload);
       setCommitResult(result);
       // A recommit persists new rows just like the initial commit does — the caller's list
       // needs telling again, or rows resolved in this round never show up without a reload.

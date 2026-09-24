@@ -65,12 +65,75 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
-export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: string | null; onNavigate?: (section: string) => void } = {}) {
-  const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, forUserUuid);
+export function PerformanceSection({ portfolioUuid, onNavigate }: { portfolioUuid: string; onNavigate?: (section: string) => void }) {
+  const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
+
+  // Sub-tab (Overview/Composition/Risk) and month-drilldown state live here rather than in
+  // HistoryPage below, even though only HistoryPage's content depends on them: the tab
+  // switcher itself sits in the masthead right next to the "Insights" title (see the header
+  // below) rather than on its own row, so the title and the tabs need to be siblings in the
+  // same returned tree. Kept here rather than duplicating the masthead per HistoryPage branch.
+  const [subTab, setSubTab] = useState<HistorySubTabId>("overview");
+  const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
+  const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
+  const [monthLoading, setMonthLoading] = useState(false);
+  const [monthError, setMonthError] = useState<string | null>(null);
+
+  const handleSelectMonth = async (year: number, month: number) => {
+    setSelected({ year, month });
+    if (monthCache[year]) return;
+    setMonthLoading(true);
+    setMonthError(null);
+    try {
+      const periods = await portfolioService.getMonthlyDashboard(portfolioUuid, year);
+      setMonthCache(prev => ({ ...prev, [year]: periods }));
+    } catch (err) {
+      setMonthError(err instanceof Error ? err.message : "Failed to load that month's detail");
+    } finally {
+      setMonthLoading(false);
+    }
+  };
+
+  // Same isStale contract as useAnalytics, applied to the currently-open month's cached
+  // /monthly?year= response (same value on every entry of that response, so the first one
+  // speaks for all): poll every STALE_POLL_INTERVAL_MS while stale, stop after
+  // STALE_TIMEOUT_MS. Keyed off the derived `selectedYearStale` boolean rather than
+  // `monthCache` itself so a poll's own setMonthCache call doesn't reset the deadline.
+  const selectedYear = selected?.year;
+  const selectedYearStale = selectedYear !== undefined ? (monthCache[selectedYear]?.[0]?.isStale ?? false) : false;
+  const [monthStaleTimedOut, setMonthStaleTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!selectedYearStale || selectedYear === undefined) {
+      setMonthStaleTimedOut(false);
+      return;
+    }
+    let cancelled = false;
+    const deadline = Date.now() + STALE_TIMEOUT_MS;
+    const timer = setInterval(async () => {
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        if (!cancelled) setMonthStaleTimedOut(true);
+        return;
+      }
+      try {
+        const fresh = await portfolioService.getMonthlyDashboard(portfolioUuid, selectedYear);
+        if (!cancelled) setMonthCache(prev => ({ ...prev, [selectedYear]: fresh }));
+      } catch {
+        // Transient error while polling — the next tick tries again.
+      }
+    }, STALE_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [selectedYearStale, selectedYear, portfolioUuid]);
+
+  // Tabs only make sense once there's an actual Overview/Composition/Risk to switch between:
+  // hidden while loading/failed/empty (nothing to show in any of them) and while a month
+  // drilldown is open (that view has its own "All time" back link instead).
+  const showTabs = !loading && !failed && history !== null && !isHistoryEmpty(history) && !selected;
 
   return (
     <div className="px-0 py-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
           <h1
@@ -81,6 +144,7 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           </h1>
           <p className="text-slate-500 font-medium mt-1">Your portfolio&apos;s lifetime performance, risk and composition.</p>
         </div>
+        {showTabs && <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />}
       </div>
 
       {failed && (
@@ -101,7 +165,21 @@ export function PerformanceSection({ forUserUuid, onNavigate }: { forUserUuid?: 
           onNavigate={onNavigate}
         />
       ) : (
-        <HistoryPage key={forUserUuid ?? "self"} data={history} historyUpdating={updating} forUserUuid={forUserUuid} />
+        <HistoryPage
+          key={portfolioUuid}
+          data={history}
+          historyUpdating={updating}
+          portfolioUuid={portfolioUuid}
+          subTab={subTab}
+          selected={selected}
+          setSelected={setSelected}
+          monthCache={monthCache}
+          monthLoading={monthLoading}
+          monthError={monthError}
+          onSelectMonth={handleSelectMonth}
+          selectedYearStale={selectedYearStale}
+          monthStaleTimedOut={monthStaleTimedOut}
+        />
       )}
     </div>
   );
@@ -355,11 +433,11 @@ function ChartCard({ chart, currency, title, desc }: { chart: PortfolioSnapshot[
   );
 }
 
-function ViewReportLink({ documentId }: { documentId: string | null }) {
+function ViewReportLink({ portfolioUuid, documentId }: { portfolioUuid: string; documentId: string | null }) {
   if (!documentId) return null;
   return (
     <a
-      href={`/reports/${documentId}`}
+      href={`/reports/${portfolioUuid}/${documentId}`}
       target="_blank"
       rel="noreferrer"
       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-blue-600 transition-colors shrink-0"
@@ -491,18 +569,25 @@ interface SubTab<T extends string> {
   icon: typeof Sun;
 }
 
-/** SUB-TAB SWITCHER — the small pill switcher under Insights' masthead. */
+/**
+ * SUB-TAB SWITCHER — sits in the masthead beside the "Insights" title (see PerformanceSection),
+ * not on its own row below it. Underline style rather than the pill/segmented-control look it
+ * used to have: a boxed, shadowed control read fine as a standalone row of its own, but next to
+ * a serif page title it looked like a form control bolted onto a page header. Plain text with a
+ * colored underline on the active tab reads as page-level navigation instead, in keeping with
+ * the title next to it.
+ */
 function SubTabSwitcher<T extends string>({
   tabs, active, onChange,
 }: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
   return (
-    <div className="flex bg-slate-100/80 p-1 rounded-lg border border-slate-200 w-fit">
+    <div className="flex items-center gap-6">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
-            active === t.id ? "bg-white shadow-sm text-[#C49A3C]" : "text-slate-500 hover:text-slate-700"
+          className={`flex items-center gap-1.5 pb-1 text-[13px] font-bold border-b-2 transition-colors ${
+            active === t.id ? "border-[#C49A3C] text-[#C49A3C]" : "border-transparent text-slate-400 hover:text-slate-600"
           }`}
         >
           <t.icon className="h-3.5 w-3.5" /> {t.label}
@@ -800,8 +885,8 @@ function riskModelUnavailableMessage(model: RiskModelResponse): string {
  * Everything on the page is built from past returns, so it says so up front and avoids
  * recommendation wording.
  */
-function RiskModelTab({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed, updating } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, forUserUuid);
+function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, portfolioUuid);
 
   if (loading || failed || data === null || updating) {
     return (
@@ -1350,7 +1435,7 @@ function PeriodHero({
  * these are risk figures, not performance, and mixing them read as one undifferentiated wall
  * of tiles (see the Monthly/Annual detail view this replaces).
  */
-function MonthDetail({ period }: { period: PeriodDashboard }) {
+function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portfolioUuid: string }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
@@ -1363,7 +1448,7 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
         eyebrow={period.currency}
         title={title}
         desc={rangeLabel}
-        right={<ViewReportLink documentId={period.reportDocumentId} />}
+        right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={period.reportDocumentId} />}
       />
       {isPeriodEmpty(period) ? (
         <EmptyPeriodState message="No portfolio activity recorded for this month yet." />
@@ -1689,8 +1774,8 @@ const formatPctOrDash = (pct: number | null) => (pct === null ? "—" : formatPc
  * hint instead of the updating state" (see UpdatingNote's call sites).
  */
 function useAnalytics<T extends { isStale: boolean }>(
-  load: (forUserUuid?: string | null) => Promise<T | null>,
-  forUserUuid?: string | null,
+  load: (portfolioUuid: string) => Promise<T | null>,
+  portfolioUuid: string,
 ) {
   const [state, setState] = useState<{ data: T | null; loading: boolean; failed: boolean; updating: boolean }>({
     data: null, loading: true, failed: false, updating: false,
@@ -1704,7 +1789,7 @@ function useAnalytics<T extends { isStale: boolean }>(
     const tick = async (isFirst: boolean) => {
       if (isFirst) setState({ data: null, loading: true, failed: false, updating: false });
       try {
-        const data = await load(forUserUuid);
+        const data = await load(portfolioUuid);
         if (cancelled) return;
         if (data?.isStale) {
           staleSince ??= Date.now();
@@ -1725,7 +1810,7 @@ function useAnalytics<T extends { isStale: boolean }>(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [load, forUserUuid]);
+  }, [load, portfolioUuid]);
 
   return state;
 }
@@ -1799,8 +1884,8 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
  * the rolling series behind it. The document is null until the first analytics run, and
  * "insufficient_history" (nothing to show but a message) under a year of history.
  */
-function VolatilityModule({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed, updating } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, forUserUuid);
+function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, portfolioUuid);
 
   const showFigure = data !== null && !updating && data.status !== "insufficient_history";
 
@@ -1966,8 +2051,8 @@ function BenchmarkComposition({ components }: { components: BenchmarkComponentEn
  * over the days the portfolio and benchmark share, and any of them can be null. Its
  * composition is shown under the chart (see BenchmarkComposition).
  */
-function BenchmarkModule({ forUserUuid }: { forUserUuid?: string | null }) {
-  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, forUserUuid);
+function BenchmarkModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, portfolioUuid);
 
   const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
   const outperformed = data?.outperformed ?? null;
@@ -2065,15 +2150,21 @@ interface PortfolioComposition {
  * session doesn't refetch.
  */
 function HistoryPage({
-  data, historyUpdating, forUserUuid,
-}: { data: FullHistoryDashboard; historyUpdating: boolean; forUserUuid?: string | null }) {
+  data, historyUpdating, portfolioUuid, subTab, selected, setSelected,
+  monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut,
+}: {
+  data: FullHistoryDashboard; historyUpdating: boolean; portfolioUuid: string;
+  subTab: HistorySubTabId;
+  selected: { year: number; month: number } | null;
+  setSelected: (s: { year: number; month: number } | null) => void;
+  monthCache: Record<number, PeriodDashboard[]>;
+  monthLoading: boolean;
+  monthError: string | null;
+  onSelectMonth: (year: number, month: number) => void;
+  selectedYearStale: boolean;
+  monthStaleTimedOut: boolean;
+}) {
   const unrealizedIsGain = data.totalUnrealizedPnl >= 0;
-
-  const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
-  const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
-  const [monthLoading, setMonthLoading] = useState(false);
-  const [monthError, setMonthError] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<HistorySubTabId>("overview");
 
   // Composition (current holdings/currency breakdown plus sector/region exposure) used to live
   // on Insights' own Today page, fetched from the today dashboard's own `summary` field —
@@ -2093,9 +2184,9 @@ function HistoryPage({
       setCompositionError(null);
       try {
         const [summary, sector, region] = await Promise.all([
-          portfolioService.getPortfolioSummary(forUserUuid),
-          portfolioService.getSectorExposure(forUserUuid),
-          portfolioService.getRegionExposure(forUserUuid),
+          portfolioService.getPortfolioSummary(portfolioUuid),
+          portfolioService.getSectorExposure(portfolioUuid),
+          portfolioService.getRegionExposure(portfolioUuid),
         ]);
         if (cancelled) return;
         setComposition({ summary, sector: sector?.entries ?? null, region: region?.entries ?? null });
@@ -2107,54 +2198,7 @@ function HistoryPage({
     };
     loadComposition();
     return () => { cancelled = true; };
-  }, [subTab, composition, forUserUuid]);
-
-  const handleSelectMonth = async (year: number, month: number) => {
-    setSelected({ year, month });
-    if (monthCache[year]) return;
-    setMonthLoading(true);
-    setMonthError(null);
-    try {
-      const periods = await portfolioService.getMonthlyDashboard(forUserUuid, year);
-      setMonthCache(prev => ({ ...prev, [year]: periods }));
-    } catch (err) {
-      setMonthError(err instanceof Error ? err.message : "Failed to load that month's detail");
-    } finally {
-      setMonthLoading(false);
-    }
-  };
-
-  // Same isStale contract as useAnalytics, applied to the currently-open month's cached
-  // /monthly?year= response (same value on every entry of that response, so the first one
-  // speaks for all): poll every STALE_POLL_INTERVAL_MS while stale, stop after
-  // STALE_TIMEOUT_MS. Keyed off the derived `selectedYearStale` boolean rather than
-  // `monthCache` itself so a poll's own setMonthCache call doesn't reset the deadline.
-  const selectedYear = selected?.year;
-  const selectedYearStale = selectedYear !== undefined ? (monthCache[selectedYear]?.[0]?.isStale ?? false) : false;
-  const [monthStaleTimedOut, setMonthStaleTimedOut] = useState(false);
-
-  useEffect(() => {
-    if (!selectedYearStale || selectedYear === undefined) {
-      setMonthStaleTimedOut(false);
-      return;
-    }
-    let cancelled = false;
-    const deadline = Date.now() + STALE_TIMEOUT_MS;
-    const timer = setInterval(async () => {
-      if (Date.now() >= deadline) {
-        clearInterval(timer);
-        if (!cancelled) setMonthStaleTimedOut(true);
-        return;
-      }
-      try {
-        const fresh = await portfolioService.getMonthlyDashboard(forUserUuid, selectedYear);
-        if (!cancelled) setMonthCache(prev => ({ ...prev, [selectedYear]: fresh }));
-      } catch {
-        // Transient error while polling — the next tick tries again.
-      }
-    }, STALE_POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [selectedYearStale, selectedYear, forUserUuid]);
+  }, [subTab, composition, portfolioUuid]);
 
   if (selected) {
     const yearData = monthCache[selected.year];
@@ -2182,7 +2226,7 @@ function HistoryPage({
         ) : period ? (
           <>
             {period.isStale && <UpdatingNote />}
-            <MonthDetail period={period} />
+            <MonthDetail period={period} portfolioUuid={portfolioUuid} />
           </>
         ) : (
           <EmptyPeriodState message="No detail available for this month." />
@@ -2201,12 +2245,10 @@ function HistoryPage({
 
   return (
     <div className="space-y-6">
-      <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />
-
       {subTab === "risk" ? (
         <>
-          <VolatilityModule forUserUuid={forUserUuid} />
-          <RiskModelTab forUserUuid={forUserUuid} />
+          <VolatilityModule portfolioUuid={portfolioUuid} />
+          <RiskModelTab portfolioUuid={portfolioUuid} />
         </>
       ) : subTab === "composition" ? (
         compositionLoading && !composition ? (
@@ -2267,7 +2309,7 @@ function HistoryPage({
               />
             </>
           )}
-          <BenchmarkModule forUserUuid={forUserUuid} />
+          <BenchmarkModule portfolioUuid={portfolioUuid} />
           {!historyUpdating && (
             <>
               <Module>
@@ -2276,7 +2318,7 @@ function HistoryPage({
                   title="Monthly Returns"
                   desc="Market effect by month, since inception. Click a month for its full detail."
                 />
-                <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={handleSelectMonth} />
+                <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={onSelectMonth} />
               </Module>
               <RealizedPnLCard trades={data.realizedTradesByAsset} />
             </>

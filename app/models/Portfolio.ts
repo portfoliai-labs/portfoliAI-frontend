@@ -1,5 +1,21 @@
 // models/Portfolio.ts
-// Matches TransactionsSummaryResponse / PortfolioOverviewResponse DTOs (GET /v1/portfolio/)
+// Matches TransactionsSummaryResponse / PortfolioOverviewResponse DTOs (GET /v1/portfolios/{p}/overview)
+
+// Matches PortfolioResponse (GET/POST/PATCH /v1/portfolios, GET /v1/portfolios/{p},
+// GET/POST /v1/advisor/clients/{client_uuid}/portfolios) — a user can own several of these
+// (e.g. "Main portfolio", "Pensione", "Trading"); every dashboard/transactions/alerts/reports
+// endpoint is scoped to one via its uuid in the path. Every user (including advisor-created
+// clients, advisors themselves, and demo accounts) has exactly one `isDefault` portfolio,
+// created at registration and never deletable (DELETE on it is a 409). GET /v1/portfolios
+// returns the caller's own, default first; an advisor lists a client's the same way via
+// GET /v1/advisor/clients/{client_uuid}/portfolios, then reaches each through the same
+// /v1/portfolios/{p}/... paths the client would.
+interface Portfolio {
+  uuid: string;
+  name: string;
+  isDefault: boolean;
+  createdAt: string;
+}
 
 // A single asset currently held, aggregated across all of the user's processed transactions.
 // Every field here is derived purely from transaction input data (quantity, price paid, fees,
@@ -211,7 +227,7 @@ interface FullHistoryDashboard {
 }
 
 export type {
-  Holding, PortfolioSummary, PortfolioSnapshot, DailyValueChange,
+  Portfolio, Holding, PortfolioSummary, PortfolioSnapshot, DailyValueChange,
   CurrencyBreakdown, BrokerTotal, AssetClassTotal, BrokerFeesTotal, AssetRealizedTrade,
   TodayDashboard, PeriodDashboard, FullHistoryDashboard, MonthlyMarketEffectEntry,
 };
