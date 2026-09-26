@@ -7,10 +7,10 @@ import {
   Sun,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
-  Search, ChevronDown,
+  Search, ChevronDown, Percent,
 } from "lucide-react";
 import {
-  AreaChart, Area, LineChart, Line, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
@@ -18,7 +18,7 @@ import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import type {
-  PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary,
+  PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
 } from "../../models/Portfolio";
 import type {
@@ -65,7 +65,9 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
-export function PerformanceSection({ portfolioUuid, onNavigate }: { portfolioUuid: string; onNavigate?: (section: string) => void }) {
+export function PerformanceSection({
+  portfolioUuid, portfolioName, onNavigate,
+}: { portfolioUuid: string; portfolioName?: string; onNavigate?: (section: string) => void }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
   // Sub-tab (Overview/Composition/Risk) and month-drilldown state live here rather than in
@@ -135,7 +137,7 @@ export function PerformanceSection({ portfolioUuid, onNavigate }: { portfolioUui
     <div className="px-0 py-6 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">{portfolioName ?? "Portfolio"}</p>
           <h1
             className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
             style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
@@ -2149,6 +2151,105 @@ interface PortfolioComposition {
  * request per year, cached in `monthCache` so re-opening a month already visited this
  * session doesn't refetch.
  */
+/**
+ * MONTH TO DATE MODULE — how the portfolio has moved this month: its value on the 1st, the
+ * day-over-day and month-to-date changes, and a bar per day of the day-over-day change. Deltas,
+ * not raw values: a stable portfolio's value line is visually flat at this timescale. /today
+ * carries isStale like the analytics documents, so useAnalytics polls it the same way.
+ */
+function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow={data?.currency ?? "This month"}
+        title="This month"
+        desc="Day-over-day and month-to-date moves, from daily market prices."
+      />
+      {AnalyticsPlaceholder({
+        loading, failed, hasData: data !== null, updating,
+        preparingMessage: "Not enough history yet to show this month's moves.",
+      }) ?? (data && <MonthToDateBody data={data} />)}
+    </Module>
+  );
+}
+
+function MonthToDateBody({ data }: { data: TodayDashboard }) {
+  const isDayGain = data.deltaDayValue >= 0;
+  const isMtdGain = data.deltaMtdValue >= 0;
+  const points = [...data.chart]
+    .sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime())
+    .map((s) => ({ date: s.snapshotAt, deltaValue: s.deltaValue, deltaValuePct: s.deltaValuePct }));
+
+  return (
+    <>
+      {data.isStale && <div className="px-6 md:px-7 pt-6"><UpdatingNote /></div>}
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+        <StatContent
+          title="Month Start Value"
+          value={formatCurrency(data.monthStartValue, data.currency, 0)}
+          icon={<Wallet className="h-4 w-4 text-blue-600" />}
+          info="Market value on the 1st of this month."
+          color="blue"
+        />
+        <StatContent
+          title="Day Change"
+          value={<AmountWithDelta amount={`${isDayGain ? "+" : ""}${formatCurrency(data.deltaDayValue, data.currency, 0)}`} pct={data.deltaDayValuePct} />}
+          icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+          info="How much the portfolio moved since the previous day."
+          color={isDayGain ? "emerald" : "red"}
+        />
+        <StatContent
+          title="Month-to-Date Change"
+          value={<AmountWithDelta amount={`${isMtdGain ? "+" : ""}${formatCurrency(data.deltaMtdValue, data.currency, 0)}`} pct={data.deltaMtdValuePct} />}
+          icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+          info="How much the portfolio moved since the 1st of this month."
+          color={isMtdGain ? "emerald" : "red"}
+        />
+      </div>
+      {points.length === 0 ? (
+        <p className="text-sm text-slate-400 p-6 md:p-7 border-t border-slate-100">Not enough history yet to chart.</p>
+      ) : (
+        <div className="p-6 md:p-7 h-64 border-t border-slate-100">
+          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+            <BarChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+              <XAxis
+                dataKey="date"
+                tickFormatter={chartDateLabel}
+                tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={30}
+              />
+              <YAxis
+                tickFormatter={(v) => formatCurrency(v, data.currency, 0)}
+                tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                axisLine={false}
+                tickLine={false}
+                width={80}
+              />
+              <Tooltip
+                labelFormatter={(label) => fullDateLabel(label as string)}
+                formatter={(value, name, props) => [
+                  `${formatCurrency(Number(value), data.currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
+                  "Day change",
+                ]}
+                contentStyle={TOOLTIP_STYLE}
+              />
+              <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
+                {points.map((d) => (
+                  <Cell key={d.date} fill={d.deltaValue >= 0 ? "#10b981" : "#f43f5e"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </>
+  );
+}
+
 function HistoryPage({
   data, historyUpdating, portfolioUuid, subTab, selected, setSelected,
   monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut,
@@ -2268,11 +2369,12 @@ function HistoryPage({
         ) : null
       ) : (
         <>
-          {/* data.isStale here means the same edit-triggered rebuild covers everything below
-              (chart, heatmap, lifetime totals, realized P&L) — hide it all behind one
-              StaleUpdatingState while historyUpdating, or show it with one hint once that
-              window times out, rather than repeating the check per module. BenchmarkModule is
-              unaffected: it's its own document/fetch with its own isStale. */}
+          {/* data.isStale here means the same edit-triggered rebuild covers every /history
+              figure on this tab (lifetime totals, chart, heatmap, realized P&L) — hide them
+              behind one StaleUpdatingState while historyUpdating, or show them with one hint
+              once that window times out, rather than repeating the check per module.
+              MonthToDateModule and BenchmarkModule are unaffected: each is its own fetch with
+              its own isStale. */}
           {historyUpdating ? (
             <Module><StaleUpdatingState /></Module>
           ) : (
@@ -2293,21 +2395,32 @@ function HistoryPage({
                   description="Open positions vs. invested capital"
                   color={unrealizedIsGain ? "emerald" : "red"}
                 />
+                {/* Same ROI the backend computes for the portfolio and for each holding
+                    (unrealized_roi_pct / roiPct): unrealized P&L over the cost basis of the
+                    open positions, which is what totalInvestedCapital is. "—" when nothing is
+                    held (a fully sold-out portfolio). */}
                 <StatContent
-                  title="Lifetime Dividends"
-                  value={formatCurrency(data.lifetimeDividends, data.currency, 0)}
-                  icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                  description="All dividend cash flows recorded"
-                  color="blue"
+                  title="ROI"
+                  value={
+                    data.totalInvestedCapital > 0
+                      ? formatPct((data.totalUnrealizedPnl / data.totalInvestedCapital) * 100)
+                      : "—"
+                  }
+                  icon={<Percent className={`h-4 w-4 ${unrealizedIsGain ? "text-emerald-600" : "text-rose-600"}`} />}
+                  description="Return on the capital in your open positions"
+                  color={unrealizedIsGain ? "emerald" : "red"}
                 />
               </StatCardGroup>
-              <ChartCard
-                chart={data.chart}
-                currency={data.currency}
-                title="Value Since Inception"
-                desc="Daily portfolio market value across your full history."
-              />
             </>
+          )}
+          <MonthToDateModule portfolioUuid={portfolioUuid} />
+          {!historyUpdating && (
+            <ChartCard
+              chart={data.chart}
+              currency={data.currency}
+              title="Value Since Inception"
+              desc="Daily portfolio market value across your full history."
+            />
           )}
           <BenchmarkModule portfolioUuid={portfolioUuid} />
           {!historyUpdating && (

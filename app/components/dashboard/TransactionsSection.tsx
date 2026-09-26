@@ -56,6 +56,9 @@ interface TransactionsSectionProps {
   // (not just the current page) — omit to hide the action entirely (e.g. pending rows).
   onDeleteAll?: () => void;
   deletingAll?: boolean;
+  // No selection, no row click: for the aggregate portfolio, whose transactions can only be
+  // edited from the portfolio they belong to. Saved rows then show their sourceLabel too.
+  readOnly?: boolean;
 }
 
 const OPERATION_STYLES: Record<string, { icon: typeof ArrowUpRight; classes: string }> = {
@@ -81,7 +84,7 @@ function rowIdentifier(tx: DisplayTransaction): string {
 export function TransactionsSection({
   title, rows, totalCount, page, pageSize, onPageChange, loading,
   selectedKeys, onToggleRow, onToggleAll, onDeleteSelected, onBulkEditOperation, onRowClick, deletingKeys,
-  emptyMessage, headerAction, filterBar, onDeleteAll, deletingAll,
+  emptyMessage, headerAction, filterBar, onDeleteAll, deletingAll, readOnly = false,
 }: TransactionsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pageKeys = rows.map(r => r.key);
@@ -111,7 +114,7 @@ export function TransactionsSection({
 
       {filterBar}
 
-      {rows.length > 0 && (
+      {rows.length > 0 && !readOnly && (
         <div className="flex items-center justify-between px-5 md:px-6 py-2.5 border-b border-slate-100 bg-slate-50/50 gap-4 flex-wrap">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
@@ -179,14 +182,14 @@ export function TransactionsSection({
               tx.isin && `ISIN ${tx.isin}`,
               tx.broker,
               tx.fees > 0 && `fees ${formatMoney(tx.fees, tx.currency)}`,
-              !isExisting && row.sourceLabel,
+              (!isExisting || readOnly) && row.sourceLabel,
             ].filter(Boolean).join(" · ");
 
             return (
               <div
                 key={row.key}
-                onClick={() => !isDeleting && onRowClick(row.key)}
-                className={`flex items-center gap-3 px-5 md:px-6 py-3.5 transition-colors cursor-pointer ${
+                onClick={() => !isDeleting && !readOnly && onRowClick(row.key)}
+                className={`flex items-center gap-3 px-5 md:px-6 py-3.5 transition-colors ${readOnly ? "" : "cursor-pointer"} ${
                   isDeleting
                     ? "opacity-40 pointer-events-none"
                     : selectedKeys.has(row.key)
@@ -196,13 +199,15 @@ export function TransactionsSection({
                     : "hover:bg-slate-50/60"
                 }`}
               >
-                <input
-                  type="checkbox"
-                  className="accent-blue-600 w-4 h-4 cursor-pointer shrink-0"
-                  checked={selectedKeys.has(row.key)}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={() => onToggleRow(row.key)}
-                />
+                {!readOnly && (
+                  <input
+                    type="checkbox"
+                    className="accent-blue-600 w-4 h-4 cursor-pointer shrink-0"
+                    checked={selectedKeys.has(row.key)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggleRow(row.key)}
+                  />
+                )}
 
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${opStyle.classes}`}>
                   <OpIcon className="h-4 w-4" />

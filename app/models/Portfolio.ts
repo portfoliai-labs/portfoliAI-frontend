@@ -6,14 +6,19 @@
 // (e.g. "Main portfolio", "Pensione", "Trading"); every dashboard/transactions/alerts/reports
 // endpoint is scoped to one via its uuid in the path. Every user (including advisor-created
 // clients, advisors themselves, and demo accounts) has exactly one `isDefault` portfolio,
-// created at registration and never deletable (DELETE on it is a 409). GET /v1/portfolios
-// returns the caller's own, default first; an advisor lists a client's the same way via
+// created at registration and never deletable (DELETE on it is a 409). While a user owns 2+
+// portfolios they also get an automatic `isAggregate` one ("All portfolios"): its figures are
+// recomputed from every portfolio's transactions combined, it's readable everywhere (incl.
+// alert rules) but otherwise read-only — transaction writes, import commit, reports, rename
+// and delete all 409. GET /v1/portfolios returns the aggregate first (if any), then the
+// default, then oldest first; an advisor lists a client's the same way via
 // GET /v1/advisor/clients/{client_uuid}/portfolios, then reaches each through the same
 // /v1/portfolios/{p}/... paths the client would.
 interface Portfolio {
   uuid: string;
   name: string;
   isDefault: boolean;
+  isAggregate: boolean;
   createdAt: string;
 }
 

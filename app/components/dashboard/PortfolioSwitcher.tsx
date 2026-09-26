@@ -2,19 +2,22 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronsUpDown, Plus, Pencil, Trash2, Check, Loader2, Briefcase } from "lucide-react";
+import { ChevronsUpDown, Plus, Pencil, Trash2, Check, Loader2, Briefcase, Layers } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { Portfolio } from "../../models/Portfolio";
 
 /**
- * PORTFOLIO SWITCHER — sits at the top of the investor sidebar (see Sidebar.tsx; not shown for
+ * PORTFOLIO SWITCHER — heads the investor sidebar's portfolio group (see Sidebar.tsx; not shown for
  * ADVISOR, whose flows pick a client's portfolio locally instead — see
  * useClientDefaultPortfolio). Lists every portfolio, default first, lets the user switch,
  * rename or delete one inline, and create a new one. The default portfolio can't be deleted
- * (no delete button on it) — matches the backend's own 409.
+ * (no delete button on it) — matches the backend's own 409. The automatic "All portfolios"
+ * aggregate (listed first while there are 2+) can be neither renamed nor deleted.
  */
-export function PortfolioSwitcher() {
+// onSelect runs after the user picks a portfolio (not after create/delete), so the sidebar can
+// take them to that portfolio's pages.
+export function PortfolioSwitcher({ onSelect }: { onSelect?: (uuid: string) => void } = {}) {
   const { portfolios, current, loading, selectPortfolio, createPortfolio, renamePortfolio, deletePortfolio } = usePortfolio();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -48,9 +51,7 @@ export function PortfolioSwitcher() {
 
   if (loading) {
     return (
-      <div className="px-5 pt-5">
-        <div className="h-[46px] rounded-xl bg-white/5 animate-pulse" />
-      </div>
+      <div className="h-[46px] rounded-xl bg-white/5 animate-pulse" />
     );
   }
   if (!current) return null;
@@ -103,14 +104,16 @@ export function PortfolioSwitcher() {
   };
 
   return (
-    <div className="px-5 pt-5" ref={rootRef}>
+    <div ref={rootRef}>
       <div className="relative">
         <button
           onClick={() => setOpen((o) => !o)}
           className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-[#C49A3C]/30 transition-colors text-left"
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <Briefcase className="h-4 w-4 text-[#C49A3C] shrink-0" />
+            {current.isAggregate
+              ? <Layers className="h-4 w-4 text-[#C49A3C] shrink-0" />
+              : <Briefcase className="h-4 w-4 text-[#C49A3C] shrink-0" />}
             <span className="text-sm font-bold text-white truncate">{current.name}</span>
           </div>
           <ChevronsUpDown className="h-4 w-4 text-[#a8a29e] shrink-0" />
@@ -120,7 +123,7 @@ export function PortfolioSwitcher() {
           <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl bg-[#131210] border border-white/10 shadow-xl overflow-hidden">
             <ul className="max-h-64 overflow-y-auto py-1.5">
               {portfolios.map((p) => (
-                <li key={p.uuid} className="group px-2">
+                <li key={p.uuid} className={`group px-2 ${p.isAggregate ? "pb-1.5 mb-1.5 border-b border-white/10" : ""}`}>
                   {renamingUuid === p.uuid ? (
                     <div className="flex items-center gap-1.5 py-1.5 px-1">
                       <input
@@ -146,7 +149,7 @@ export function PortfolioSwitcher() {
                   ) : (
                     <div className="flex items-center gap-1 rounded-lg hover:bg-white/5">
                       <button
-                        onClick={() => { selectPortfolio(p.uuid); setOpen(false); }}
+                        onClick={() => { selectPortfolio(p.uuid); setOpen(false); onSelect?.(p.uuid); }}
                         className="flex-1 min-w-0 flex items-center gap-2.5 px-2.5 py-2.5 text-left"
                       >
                         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.uuid === current.uuid ? "bg-[#C49A3C]" : "bg-transparent"}`} />
@@ -156,15 +159,20 @@ export function PortfolioSwitcher() {
                         {p.isDefault && (
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[#78716c] shrink-0">Default</span>
                         )}
+                        {p.isAggregate && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[#78716c] shrink-0">All</span>
+                        )}
                       </button>
-                      <button
-                        onClick={() => { setRenamingUuid(p.uuid); setRenameValue(p.name); }}
-                        aria-label={`Rename ${p.name}`}
-                        className="p-1.5 rounded-lg text-[#78716c] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      {!p.isDefault && (
+                      {!p.isAggregate && (
+                        <button
+                          onClick={() => { setRenamingUuid(p.uuid); setRenameValue(p.name); }}
+                          aria-label={`Rename ${p.name}`}
+                          className="p-1.5 rounded-lg text-[#78716c] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {!p.isDefault && !p.isAggregate && (
                         <button
                           onClick={() => setToDelete(p)}
                           aria-label={`Delete ${p.name}`}

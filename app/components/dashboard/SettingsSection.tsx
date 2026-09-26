@@ -80,10 +80,14 @@ const CURRENCIES = [
 
 export function SettingsSection() {
   const { user, logout, refreshUser } = useUser();
-  // Alerts are rules on the user's own portfolio; advisors don't have one (they manage their
-  // clients' portfolios), so the tab is investor-only. usePortfolio() is only meaningful for
-  // that role too — see PortfolioContext — so it's safe to call unconditionally here.
-  const { current: portfolio } = usePortfolio();
+  // Alerts are rules on one of the user's own portfolios; advisors don't have any (they manage
+  // their clients' portfolios), so the tab is investor-only. usePortfolio() is only meaningful
+  // for that role too — see PortfolioContext — so it's safe to call unconditionally here.
+  // Settings isn't tied to the sidebar's portfolio, so the tab picks its own, starting from the
+  // sidebar's.
+  const { portfolios, current } = usePortfolio();
+  const [alertsPortfolioUuid, setAlertsPortfolioUuid] = useState<string | null>(null);
+  const alertsPortfolio = portfolios.find((p) => p.uuid === alertsPortfolioUuid) ?? current;
   const isAdvisor = user?.role === "ADVISOR";
   const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts") : TABS;
   // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
@@ -425,7 +429,27 @@ export function SettingsSection() {
         </div>
       )}
 
-      {activeTab === "alerts" && !isAdvisor && portfolio && <AlertsSettings portfolioUuid={portfolio.uuid} />}
+      {activeTab === "alerts" && !isAdvisor && alertsPortfolio && (
+        <div className="space-y-6">
+          {portfolios.length > 1 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="alerts-portfolio" className="text-xs font-black uppercase tracking-widest text-[#78716c]">
+                Portfolio
+              </label>
+              <select
+                id="alerts-portfolio"
+                value={alertsPortfolio.uuid}
+                onChange={(e) => setAlertsPortfolioUuid(e.target.value)}
+                className="text-sm font-bold text-[#1c1917] bg-white border border-[rgba(196,154,60,0.3)] rounded-xl px-3 py-2 outline-none cursor-pointer focus:ring-4 focus:ring-[#C49A3C]/10"
+              >
+                {portfolios.map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
+          {/* Keyed: AlertsSettings caches the portfolio's holdings for its asset picker. */}
+          <AlertsSettings key={alertsPortfolio.uuid} portfolioUuid={alertsPortfolio.uuid} />
+        </div>
+      )}
 
       {activeTab === "preferences" && (
         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">

@@ -27,6 +27,7 @@ import { ImportWizard } from "./import/ImportWizard";
 import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction, BulkOperation } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
+import { usePortfolio } from "../../context/PortfolioContext";
 
 const EXISTING_PAGE_SIZE = 10;
 const PENDING_PAGE_SIZE = 10;
@@ -105,7 +106,12 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
   };
 }
 
-export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
+// readOnly is for the aggregate "All portfolios": its list merges every portfolio's
+// transactions, and any write on it is a 409, so only browsing/filtering is offered and each
+// row is labelled with the portfolio it comes from.
+export function FileUploader({ portfolioUuid, readOnly = false }: { portfolioUuid: string; readOnly?: boolean }) {
+  // Only the investor's own portfolios — enough, since only an investor can open their aggregate.
+  const { portfolios } = usePortfolio();
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
   const [mappingModalFileId, setMappingModalFileId] = useState<string | null>(null);
@@ -245,10 +251,10 @@ export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
   const existingRows = useMemo<TransactionRow[]>(() => existingItems.map(tx => ({
     key: `existing::${tx.transaction_uuid}`,
     transaction: existingToDisplay(tx),
-    sourceLabel: "Saved",
+    sourceLabel: readOnly ? (portfolios.find(p => p.uuid === tx.portfolio_uuid)?.name ?? "Saved") : "Saved",
     origin: "existing" as const,
     errorFields: new Set<string>(),
-  })), [existingItems]);
+  })), [existingItems, readOnly, portfolios]);
 
   // Resolves the row behind the currently-open edit modal, regardless of its origin
   const editingTransaction = useMemo<StandardTransaction | undefined>(() => {
@@ -668,7 +674,11 @@ export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
           >
             Transactions
           </h1>
-          <p className="text-slate-500 font-medium mt-1">Add, review, and manage every transaction in your portfolio.</p>
+          <p className="text-slate-500 font-medium mt-1">
+            {readOnly
+              ? "Every transaction across your portfolios. To add or change one, switch to the portfolio it belongs to."
+              : "Add, review, and manage every transaction in your portfolio."}
+          </p>
         </div>
       </div>
 
@@ -785,34 +795,36 @@ export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
       )}
 
       {/* TOOLBAR: upload actions, full width */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
-        >
-          <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-            <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
+      {!readOnly && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
+          >
+            <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+              <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
+            </div>
+            <div className="text-left overflow-hidden">
+              <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
+              <p className="text-xs text-slate-400 truncate">Any broker export — AI maps the columns for you</p>
+            </div>
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
           </div>
-          <div className="text-left overflow-hidden">
-            <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
-            <p className="text-xs text-slate-400 truncate">Any broker export — AI maps the columns for you</p>
-          </div>
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
+  
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="p-5 rounded-3xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-4 transition-colors group text-left"
+          >
+            <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+              <PlusCircle className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="overflow-hidden">
+              <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
+              <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
+            </div>
+          </button>
         </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="p-5 rounded-3xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-4 transition-colors group text-left"
-        >
-          <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-            <PlusCircle className="h-5 w-5 text-blue-600" />
-          </div>
-          <div className="overflow-hidden">
-            <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
-            <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
-          </div>
-        </button>
-      </div>
+      )}
 
       {/* File chips: click to (re)open the column mapping modal for that file */}
       {files.length > 0 && (
@@ -894,11 +906,14 @@ export function FileUploader({ portfolioUuid }: { portfolioUuid: string }) {
         emptyMessage={
           hasActiveFilters
             ? "No transactions match the current filters."
+            : readOnly
+            ? "No transactions in any of your portfolios yet."
             : "No transactions yet. Add one manually or upload a file to get started."
         }
         filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} />}
-        onDeleteAll={() => setConfirmDeleteAll(true)}
+        onDeleteAll={readOnly ? undefined : () => setConfirmDeleteAll(true)}
         deletingAll={deletingAllExisting}
+        readOnly={readOnly}
       />
     </div>
   );

@@ -47,17 +47,18 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // No setLoading(true) here: `loading` starts true for the first fetch, and later refetches
+    // (after create/delete) stay silent instead of swapping the dashboard for its loader.
     try {
       const list = await portfoliosService.list();
       setPortfolios(list);
       setCurrentUuid((prevUuid) => {
         if (prevUuid && list.some((p) => p.uuid === prevUuid)) return prevUuid;
         // Open the last one selected in a previous session if it still exists, else the
-        // default portfolio (list is default-first, so list[0] is a safe fallback).
+        // default portfolio — not list[0], which is the aggregate when there is one.
         const lastSelected = typeof window !== "undefined" ? localStorage.getItem(LAST_SELECTED_KEY) : null;
         const remembered = lastSelected ? list.find((p) => p.uuid === lastSelected) : undefined;
-        return (remembered ?? list[0])?.uuid ?? null;
+        return (remembered ?? list.find((p) => p.isDefault) ?? list[0])?.uuid ?? null;
       });
     } finally {
       setLoading(false);
@@ -73,12 +74,14 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") localStorage.setItem(LAST_SELECTED_KEY, uuid);
   }, []);
 
+  // Create and delete refetch the whole list rather than patching it locally: the aggregate
+  // portfolio appears when the 2nd one is created and disappears when back to 1.
   const createPortfolio = useCallback(async (name: string) => {
     const created = await portfoliosService.create(name);
-    setPortfolios((prev) => [...prev, created]);
+    await fetchPortfolios();
     selectPortfolio(created.uuid);
     return created;
-  }, [selectPortfolio]);
+  }, [selectPortfolio, fetchPortfolios]);
 
   const renamePortfolio = useCallback(async (uuid: string, name: string) => {
     const updated = await portfoliosService.rename(uuid, name);
@@ -86,17 +89,12 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     return updated;
   }, []);
 
+  // If the deleted one (or the aggregate, gone once only one portfolio is left) was selected,
+  // fetchPortfolios falls back to the default on its own.
   const deletePortfolio = useCallback(async (uuid: string) => {
     await portfoliosService.remove(uuid);
-    setPortfolios((prev) => {
-      const remaining = prev.filter((p) => p.uuid !== uuid);
-      if (currentUuid === uuid) {
-        const fallback = remaining.find((p) => p.isDefault) ?? remaining[0];
-        if (fallback) selectPortfolio(fallback.uuid);
-      }
-      return remaining;
-    });
-  }, [currentUuid, selectPortfolio]);
+    await fetchPortfolios();
+  }, [fetchPortfolios]);
 
   const current = useMemo(
     () => portfolios.find((p) => p.uuid === currentUuid) ?? null,

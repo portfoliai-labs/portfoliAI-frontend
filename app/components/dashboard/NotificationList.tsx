@@ -62,6 +62,11 @@ function getDocumentId(n: NotificationResponse): string | undefined {
   return n.payload?.document_id as string | undefined;
 }
 
+// Report-status and alert payloads both carry the portfolio they're about.
+function getPortfolioUuid(n: NotificationResponse): string | undefined {
+  return n.payload?.portfolio_uuid as string | undefined;
+}
+
 function getErrorMessage(n: NotificationResponse): string | undefined {
   return n.payload?.error_message as string | undefined;
 }
@@ -72,8 +77,8 @@ function getReportName(n: NotificationResponse): string | undefined {
 
 // An alert firing (type ALERT_TRIGGERED). Its payload is snake_case with numbers already in %:
 // rule_type, threshold_pct, and either asset_id / asset_name / ticker / weight_pct (asset_weight)
-// or direction / window / change_pct (portfolio_change). On an advisor's rule it also carries
-// client_uuid / client_name, the client whose portfolio fired.
+// or direction / window / change_pct (portfolio_change), plus portfolio_uuid / portfolio_name.
+// On an advisor's rule it also carries client_uuid / client_name, the client whose portfolio fired.
 const ALERT_CONFIG = {
   label: "Alert",
   icon: <BellRing className="w-5 h-5 text-amber-500 shrink-0" />,
@@ -84,7 +89,8 @@ function getAlertSummary(n: NotificationResponse): { title: string; detail: stri
   const p = n.payload ?? {};
   const threshold = typeof p.threshold_pct === "number" ? formatAlertPct(p.threshold_pct) : null;
   const client = typeof p.client_name === "string" ? p.client_name : null;
-  const portfolio = client ? `${client}'s portfolio` : "your portfolio";
+  const portfolioName = typeof p.portfolio_name === "string" ? p.portfolio_name : null;
+  const portfolio = client ? `${client}'s ${portfolioName ?? "portfolio"}` : portfolioName ?? "your portfolio";
 
   if (p.rule_type === "asset_weight") {
     const asset = (p.ticker as string | null) ?? (p.asset_name as string | null) ?? "An asset";
@@ -96,9 +102,9 @@ function getAlertSummary(n: NotificationResponse): { title: string; detail: stri
 
   const direction = p.direction === "up" ? "up" : "down";
   const window = WINDOW_LABEL[p.window as AlertWindow];
-  const subject = client ? `${client}'s portfolio` : "Portfolio";
+  const subject = client ? `${client}'s ${portfolioName ?? "portfolio"}` : portfolioName ?? "Portfolio";
   return {
-    title: threshold ? `${subject} ${direction} ${threshold}` : client ? `Alert on ${client}'s portfolio` : "Portfolio alert",
+    title: threshold ? `${subject} ${direction} ${threshold}` : `Alert on ${subject}`,
     detail:
       typeof p.change_pct === "number"
         ? `${formatAlertPct(p.change_pct, true)}${window ? ` over ${window}` : ""}`
@@ -148,6 +154,7 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
         const alertSummary = isAlert ? getAlertSummary(n) : null;
         const jobId = getJobId(n);
         const documentId = getDocumentId(n);
+        const portfolioUuid = getPortfolioUuid(n);
         const errorMessage = getErrorMessage(n);
         const reportName = getReportName(n);
         const isUnread = n.read_at === null;
@@ -191,9 +198,9 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
                 >
                   {cfg.label}
                 </span>
-                {documentId && (
+                {documentId && portfolioUuid && (
                   <Link
-                    href={`/reports/${documentId}`}
+                    href={`/reports/${portfolioUuid}/${documentId}`}
                     target="_blank"
                     className="text-[10px] font-bold text-[#C49A3C] hover:text-[#a87f2f] underline underline-offset-2"
                   >

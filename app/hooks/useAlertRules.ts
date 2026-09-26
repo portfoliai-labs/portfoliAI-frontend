@@ -67,3 +67,24 @@ export function useAlertRules(portfolioUuid: string, pollMs?: number) {
 export function useClientAlertRules(pollMs?: number) {
   return useRuleList<ClientAlertRuleResponse>(() => alertService.listClientRules(), "clients", pollMs);
 }
+
+/** A rule plus the portfolio it's on, for lists that span several portfolios. */
+export type PortfolioAlertRule = AlertRuleResponse & { portfolioUuid: string };
+
+/**
+ * The rules on every one of the given portfolios (the investor's own, aggregate included),
+ * backend order within each portfolio. One portfolio failing to load doesn't hide the others'
+ * rules; only all of them failing counts as an error.
+ */
+export function usePortfoliosAlertRules(portfolioUuids: string[], pollMs?: number) {
+  return useRuleList<PortfolioAlertRule>(async () => {
+    const results = await Promise.allSettled(
+      portfolioUuids.map(async (portfolioUuid) =>
+        (await alertService.listRules(portfolioUuid)).map((rule) => ({ ...rule, portfolioUuid })),
+      ),
+    );
+    const loaded = results.filter((r) => r.status === "fulfilled");
+    if (loaded.length === 0 && results.length > 0) throw (results[0] as PromiseRejectedResult).reason;
+    return loaded.flatMap((r) => r.value);
+  }, portfolioUuids.join(","), pollMs);
+}

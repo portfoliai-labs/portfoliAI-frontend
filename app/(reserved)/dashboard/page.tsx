@@ -64,13 +64,18 @@ function DashboardPageContent() {
       case 'clients':
         return <ClientsSection />;
       case 'upload':
-        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader portfolioUuid={portfolio!.uuid} />;
+        // Keyed by portfolio so switching portfolios drops any unsaved rows instead of
+        // letting "Save" send them to the newly selected one.
+        return isAdvisor
+          ? <AdvisorUploadSection />
+          : <FileUploader key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} readOnly={portfolio!.isAggregate} />;
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
       case 'performance':
         return isAdvisor
           ? <AdvisorPerformanceSection />
-          : <PerformanceSection portfolioUuid={portfolio!.uuid} onNavigate={setActiveSection} />;
+          // Keyed for the same reason: its month-drilldown cache is per year, not per portfolio.
+          : <PerformanceSection key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} portfolioName={portfolio!.name} onNavigate={setActiveSection} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
