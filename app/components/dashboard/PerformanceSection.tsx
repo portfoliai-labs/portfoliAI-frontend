@@ -251,13 +251,10 @@ interface StatProps {
   // needs more than one line.
   value: React.ReactNode;
   icon: React.ReactNode;
-  // Omitted when `info` already covers the same ground — a stat card doesn't need both a
-  // caption sitting under the value at all times and the fuller explanation in the icon's
-  // hover tooltip (see Benchmark Comparison's cards, which carry only `info`).
-  description?: string;
   color: "blue" | "emerald" | "red" | "gold" | "slate";
   // Plain-language explanation of what the figure means, shown in a tooltip when the user
-  // hovers (or focuses) the icon.
+  // hovers (or focuses) the icon — never as a caption under the value, which would crowd
+  // the strip.
   info?: string;
 }
 
@@ -278,7 +275,7 @@ const INFO_TIP_WIDTH = 256;
  * the tip off. It opens below the anchor, flips above when the viewport has no room below, and
  * is clamped horizontally so it never runs off-screen.
  */
-function InfoTip({ text, children }: { text: string; children: React.ReactNode }) {
+export function InfoTip({ text, children }: { text: string; children: React.ReactNode }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [tip, setTip] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
 
@@ -329,11 +326,11 @@ function InfoTip({ text, children }: { text: string; children: React.ReactNode }
 }
 
 /**
- * STAT CONTENT — the icon/title/value/description block, with no card shell of its own,
+ * STAT CONTENT — the icon/title/value block, with no card shell of its own,
  * meant to share a card with siblings via StatCardGroup, divided by internal borders
  * instead of gaps — reads better than each figure getting its own separate card.
  */
-function StatContent({ title, value, icon, description, color, info }: StatProps) {
+function StatContent({ title, value, icon, color, info }: StatProps) {
   const iconBox = (
     <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${STAT_COLOR_MAP[color]} ${info ? "cursor-help" : ""}`}>
       {icon}
@@ -347,7 +344,6 @@ function StatContent({ title, value, icon, description, color, info }: StatProps
       <div className="font-black text-slate-900 text-xl md:text-2xl" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
         {value}
       </div>
-      {description && <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>}
     </div>
   );
 }
@@ -1483,28 +1479,28 @@ function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portf
                 title="Start Value"
                 value={formatCurrency(period.t0Value, period.currency, 0)}
                 icon={<Wallet className="h-4 w-4 text-slate-500" />}
-                description="Market value at the close of the previous month"
+                info="Market value at the close of the previous month."
                 color="slate"
               />
               <StatContent
                 title="Return"
                 value={twr !== null ? formatPct(twr) : "—"}
                 icon={twr === null || twr >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                description={twr !== null ? "Time-weighted, unaffected by money added or withdrawn" : "Not available yet for this month"}
+                info={twr !== null ? "Time-weighted, unaffected by money added or withdrawn." : "Not available yet for this month."}
                 color={twr === null ? "slate" : twr >= 0 ? "emerald" : "red"}
               />
               <StatContent
                 title="Market Effect"
                 value={<AmountWithDelta amount={`${marketIsGain ? "+" : ""}${formatCurrency(period.marketEffect, period.currency, 0)}`} pct={period.marketEffectPct} hasBaseline={hasBaseline} />}
                 icon={marketIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                description="Price movement alone, capital flows excluded"
+                info="Price movement alone, capital flows excluded."
                 color={marketIsGain ? "emerald" : "red"}
               />
               <StatContent
                 title="Dividends"
                 value={formatCurrency(period.dividendsInPeriod, period.currency, 0)}
                 icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                description={period.inProgress ? "Received so far this month" : "Received this month"}
+                info={period.inProgress ? "Received so far this month." : "Received this month."}
                 color="blue"
               />
             </div>
@@ -1520,14 +1516,14 @@ function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portf
                 title="Volatility"
                 value={period.volatilityPct !== null ? `${period.volatilityPct.toFixed(2)}%` : "—"}
                 icon={<Activity className="h-4 w-4 text-slate-500" />}
-                description={period.inProgress ? "Available once the month closes" : "Annualized, from daily returns"}
+                info={period.inProgress ? "Available once the month closes." : "Annualized, from daily returns."}
                 color="slate"
               />
               <StatContent
                 title="Max Drawdown"
                 value={period.maxDrawdownPct !== null ? `${period.maxDrawdownPct.toFixed(2)}%` : "—"}
                 icon={<TrendingDown className="h-4 w-4 text-slate-500" />}
-                description={period.inProgress ? "Available once the month closes" : "Largest peak-to-trough decline"}
+                info={period.inProgress ? "Available once the month closes." : "Largest peak-to-trough decline."}
                 color="slate"
               />
             </div>
@@ -2202,14 +2198,14 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
                   title="Since Inception"
                   value={formatPctOrDash(data.totalReturnPct)}
                   icon={data.totalReturnPct !== null && data.totalReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                  description={`Over ${lifespanLabel(data.lifespanDays)}`}
+                  info={`Total return over ${lifespanLabel(data.lifespanDays)}.`}
                   color={pctColor(data.totalReturnPct)}
                 />
                 <StatContent
                   title="Per Year"
                   value={formatPctOrDash(data.annualizedReturnPct)}
                   icon={data.annualizedReturnPct !== null && data.annualizedReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                  description={data.annualizedReturnPct === null ? "Not enough history yet" : "Annualized"}
+                  info={data.annualizedReturnPct === null ? "Not enough history yet." : "The return since inception, annualized."}
                   color={pctColor(data.annualizedReturnPct)}
                 />
               </div>
@@ -2477,7 +2473,7 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
                   title="Per Trade"
                   value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
                   icon={<Receipt className="h-4 w-4 text-slate-500" />}
-                  description={`Across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}`}
+                  info={`Average cost across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}.`}
                   color="slate"
                 />
                 <StatContent
@@ -2491,8 +2487,7 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
                   title="Yearly Drag"
                   value={data.annualizedCostDragPct === null ? "—" : `${data.annualizedCostDragPct.toFixed(2)}%`}
                   icon={<TrendingDown className="h-4 w-4 text-slate-500" />}
-                  description={data.annualizedCostDragPct === null ? undefined : costDragLabel(data.annualizedCostDragPct)}
-                  info="How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material."
+                  info={`How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material.${data.annualizedCostDragPct === null ? "" : ` Yours is ${costDragLabel(data.annualizedCostDragPct).toLowerCase()}.`}`}
                   color="slate"
                 />
               </div>
@@ -2805,8 +2800,7 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
           title="Market Move This Month"
           value={<AmountWithDelta amount={formatSignedCurrency(data.mtdMarketEffect, data.currency)} pct={data.mtdMarketEffectPct} hasBaseline={data.monthStartValue !== 0} />}
           icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          info="How much prices moved the portfolio since the close of last month, excluding buys, sells, costs and dividends."
-          description={mtdFlowsNote}
+          info={`How much prices moved the portfolio since the close of last month, excluding buys, sells, costs and dividends.${mtdFlowsNote ? ` ${mtdFlowsNote}.` : ""}`}
           color={isMtdGain ? "emerald" : "red"}
         />
       </div>

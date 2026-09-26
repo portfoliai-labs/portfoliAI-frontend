@@ -17,7 +17,7 @@ import { portfolioService } from "../../services/portfolioService";
 import type { Portfolio, PortfolioSnapshot } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { MonthToDateModule } from "./PerformanceSection";
+import { InfoTip, MonthToDateModule } from "./PerformanceSection";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
@@ -255,21 +255,21 @@ function HeadlineModule({
           title="Total Invested"
           value={formatCurrency(snapshot.totalInvestedCapital, currency, 0)}
           icon={<Wallet className="h-4 w-4" />}
-          description="Capital deployed to date"
+          info="Capital deployed to date."
           color="gold"
         />
         <Stat
           title="Market Value"
           value={formatCurrency(snapshot.totalMarketValue, currency, 0)}
           icon={<Coins className="h-4 w-4" />}
-          description="What your positions are worth today"
+          info="What your positions are worth today."
           color="gold"
         />
         <Stat
           title="Unrealized P&L"
           value={<AmountWithDelta amount={signedCurrency(snapshot.totalUnrealizedPnl, currency)} pct={unrealizedPct(snapshot)} />}
           icon={pnlIsGain ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          description="Vs your invested capital"
+          info="Against your invested capital."
           color={pnlIsGain ? "emerald" : "red"}
         />
       </div>
@@ -512,11 +512,12 @@ interface StatProps {
   // that needs more than one line.
   value: React.ReactNode;
   icon: React.ReactNode;
-  description: string;
+  // Shown in a tooltip when the user hovers (or focuses) the icon.
+  info: string;
   color: "emerald" | "red" | "gold";
 }
 
-function Stat({ title, value, icon, description, color }: StatProps) {
+function Stat({ title, value, icon, info, color }: StatProps) {
   const colorMap = {
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
     red: "bg-red-50 text-red-600 border-red-100",
@@ -525,9 +526,11 @@ function Stat({ title, value, icon, description, color }: StatProps) {
 
   return (
     <div className="p-6 md:p-7 flex flex-col gap-2.5">
-      <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${colorMap[color]}`}>
-        {icon}
-      </div>
+      <InfoTip text={info}>
+        <div className={`w-9 h-9 rounded-xl border flex items-center justify-center cursor-help ${colorMap[color]}`}>
+          {icon}
+        </div>
+      </InfoTip>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
       <div
         className="font-black text-slate-900 text-xl md:text-2xl"
@@ -535,7 +538,6 @@ function Stat({ title, value, icon, description, color }: StatProps) {
       >
         {value}
       </div>
-      <p className="text-[13px] font-medium text-slate-500 leading-relaxed">{description}</p>
     </div>
   );
 }
