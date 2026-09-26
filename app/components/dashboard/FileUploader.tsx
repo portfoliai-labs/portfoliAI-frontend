@@ -109,7 +109,10 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
 // readOnly is for the aggregate "All portfolios": its list merges every portfolio's
 // transactions, and any write on it is a 409, so only browsing/filtering is offered and each
 // row is labelled with the portfolio it comes from.
-export function FileUploader({ portfolioUuid, readOnly = false }: { portfolioUuid: string; readOnly?: boolean }) {
+// portfolioBar is the investor's PortfolioBar, drawn above the masthead.
+export function FileUploader({
+  portfolioUuid, readOnly = false, portfolioBar,
+}: { portfolioUuid: string; readOnly?: boolean; portfolioBar?: React.ReactNode }) {
   // Only the investor's own portfolios — enough, since only an investor can open their aggregate.
   const { portfolios } = usePortfolio();
   const [loading, setLoading] = useState(false);
@@ -663,6 +666,7 @@ export function FileUploader({ portfolioUuid, readOnly = false }: { portfolioUui
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12 relative">
+      {portfolioBar}
 
       {/* MASTHEAD */}
       <div className="flex flex-wrap items-end justify-between gap-6">

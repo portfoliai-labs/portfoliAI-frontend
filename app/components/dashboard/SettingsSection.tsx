@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote, Mail, Lock } from "lucide-react";
+import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote, Mail, Lock, Briefcase } from "lucide-react";
 import { userService } from "../../services/userService";
 import { supabase } from "../../lib/supabaseClient";
 import type { SubscriptionResponse, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
 import { AlertsSettings } from "./AlertsSettings";
+import { PortfoliosSettings } from "./PortfoliosSettings";
 import { Toggle } from "./Toggle";
 import { useUser } from "../../context/UserContext";
 import { usePortfolio } from "../../context/PortfolioContext";
@@ -57,6 +58,7 @@ function ReadOnlyField({ label, value, className = "" }: { label: string; value:
 
 const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
+  { id: "portfolios", label: "Portfolios", icon: Briefcase },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "alerts", label: "Alerts", icon: BellRing },
   { id: "preferences", label: "Preferences", icon: Globe },
@@ -89,11 +91,14 @@ export function SettingsSection() {
   const [alertsPortfolioUuid, setAlertsPortfolioUuid] = useState<string | null>(null);
   const alertsPortfolio = portfolios.find((p) => p.uuid === alertsPortfolioUuid) ?? current;
   const isAdvisor = user?.role === "ADVISOR";
-  const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts") : TABS;
-  // Lands on the Alerts tab when arriving via the Dashboard's "Manage alerts" (URL hash #alerts).
-  const [activeTab, setActiveTab] = useState<TabId>(() =>
-    typeof window !== "undefined" && window.location.hash === "#alerts" && !isAdvisor ? "alerts" : "subscription",
-  );
+  // Alerts and Portfolios are about the investor's own portfolios (see above).
+  const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts" && tab.id !== "portfolios") : TABS;
+  // Lands on a tab when arriving via a link that asks for it through the URL hash: #alerts from
+  // the Dashboard's "Manage alerts", #portfolios from the PortfolioBar's "Manage portfolios".
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const requested = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+    return !isAdvisor && (requested === "alerts" || requested === "portfolios") ? requested : "subscription";
+  });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
@@ -141,9 +146,9 @@ export function SettingsSection() {
   }, []);
 
   // The hash only carries the request to open a tab; clear it so opening Settings later, from the
-  // sidebar, doesn't jump to Alerts again.
+  // sidebar, doesn't jump to that tab again.
   useEffect(() => {
-    if (window.location.hash === "#alerts") {
+    if (window.location.hash === "#alerts" || window.location.hash === "#portfolios") {
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
   }, []);
@@ -290,7 +295,7 @@ export function SettingsSection() {
         <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
           {isAdvisor
             ? "Manage your subscription, notification preferences and account"
-            : "Manage your subscription, notification preferences and alerts"}
+            : "Manage your subscription, portfolios, notification preferences and alerts"}
         </p>
       </div>
 
@@ -428,6 +433,8 @@ export function SettingsSection() {
           )}
         </div>
       )}
+
+      {activeTab === "portfolios" && !isAdvisor && <PortfoliosSettings />}
 
       {activeTab === "alerts" && !isAdvisor && alertsPortfolio && (
         <div className="space-y-6">

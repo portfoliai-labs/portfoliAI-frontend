@@ -14,21 +14,21 @@ import { ReportsList } from "../../components/dashboard/ReportsList";
 import { ClientsSection } from "../../components/dashboard/ClientsSection";
 import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
 import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsList";
-import { PerformanceSection } from "../../components/dashboard/PerformanceSection";
 import { AdvisorPerformanceSection } from "../../components/dashboard/AdvisorPerformanceSection";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
-import { CompareSection } from "../../components/dashboard/CompareSection";
+import { InsightsSection } from "../../components/dashboard/InsightsSection";
+import { PortfolioBar, openPortfolioSettings } from "../../components/dashboard/PortfolioBar";
 import { Loader2 } from "lucide-react";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'compare', 'clients', 'upload', 'performance', 'news', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'news', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -62,9 +62,6 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
           : <DashboardOverview onNavigate={setActiveSection} />;
-      case 'compare':
-        // Investor-only: an advisor compares a client's portfolios nowhere yet.
-        return isAdvisor ? <AdvisorDashboardOverview onNavigate={setActiveSection} /> : <CompareSection />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':
@@ -72,14 +69,20 @@ function DashboardPageContent() {
         // letting "Save" send them to the newly selected one.
         return isAdvisor
           ? <AdvisorUploadSection />
-          : <FileUploader key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} readOnly={portfolio!.isAggregate} />;
+          : (
+            <FileUploader
+              key={portfolio!.uuid}
+              portfolioUuid={portfolio!.uuid}
+              readOnly={portfolio!.isAggregate}
+              portfolioBar={<PortfolioBar onManage={() => openPortfolioSettings(setActiveSection)} />}
+            />
+          );
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
       case 'performance':
         return isAdvisor
           ? <AdvisorPerformanceSection />
-          // Keyed for the same reason: its month-drilldown cache is per year, not per portfolio.
-          : <PerformanceSection key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} portfolioName={portfolio!.name} isAggregate={portfolio!.isAggregate} onNavigate={setActiveSection} />;
+          : <InsightsSection onNavigate={setActiveSection} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':

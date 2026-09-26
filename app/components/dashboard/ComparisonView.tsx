@@ -1,19 +1,18 @@
-// components/dashboard/CompareSection.tsx
+// components/dashboard/ComparisonView.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2, Star, Check } from "lucide-react";
+import { AlertCircle, Loader2, Star } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { portfoliosService } from "../../services/portfoliosService";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
+import { MAX_COMPARED } from "./PortfolioBar";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
-// More columns than this stop fitting a table a person can read across.
-const MAX_SELECTED = 4;
 const SELECTION_KEY = "compare_selected_portfolio_uuids";
 // Same isStale contract as the rest of the dashboard (see useAnalytics in PerformanceSection).
 const STALE_POLL_INTERVAL_MS = 15_000;
@@ -43,7 +42,8 @@ const readSelection = (): string[] | null => {
   }
 };
 
-const writeSelection = (uuids: string[]) => {
+/** Remembers the compared portfolios in this browser, for the next time Compare is opened. */
+export const rememberCompareSelection = (uuids: string[]) => {
   try {
     localStorage.setItem(SELECTION_KEY, JSON.stringify(uuids));
   } catch {
@@ -52,53 +52,57 @@ const writeSelection = (uuids: string[]) => {
 };
 
 /**
- * COMPARE SECTION — the user's portfolios side by side (GET /v1/portfolios/comparison). The
- * user picks up to MAX_SELECTED of them, the aggregate "All portfolios" included if they want
- * it (off by default: it's the whole, not a peer); the pick is remembered in this browser.
- * One table of figures with the best of each row starred, then the cumulative returns and the
- * allocation. Each portfolio keeps one colour (see portfolioColorMap), so changing the
- * selection never repaints the others. Only reachable with 2+
- * portfolios (see Sidebar).
+ * What Compare starts from: the portfolio being looked at (unless it's the aggregate, which is
+ * opt-in — it's the whole, not a peer), then the ones remembered from last time, then the
+ * other standard portfolios in list order until there are two. Capped at MAX_COMPARED.
  */
-export function CompareSection() {
-  const { portfolios } = usePortfolio();
-  const peers = useMemo(() => portfolios.filter((p) => !p.isAggregate), [portfolios]);
-
-  const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
-
-  const [selected, setSelected] = useState<string[]>(() => {
-    const known = new Set(portfolios.map((p) => p.uuid));
-    const saved = readSelection()?.filter((u) => known.has(u));
-    return saved && saved.length >= 2 ? saved.slice(0, MAX_SELECTED) : peers.slice(0, MAX_SELECTED).map((p) => p.uuid);
-  });
-
-  // Requested in portfolio-list order, not click order, so the columns don't shuffle.
-  const ordered = useMemo(() => portfolios.filter((p) => selected.includes(p.uuid)).map((p) => p.uuid), [portfolios, selected]);
-  const orderedKey = ordered.join(",");
-
-  const toggle = (uuid: string) => {
-    setSelected((prev) => {
-      const next = prev.includes(uuid) ? prev.filter((u) => u !== uuid) : prev.length >= MAX_SELECTED ? prev : [...prev, uuid];
-      writeSelection(next);
-      return next;
-    });
-  };
-
-  const { entries, loading, failed, timedOut } = useComparison(orderedKey);
-
-  if (peers.length < 2) {
-    return (
-      <Page>
-        <Notice>Create a second portfolio to compare them here.</Notice>
-      </Page>
-    );
+export function initialCompareSelection(portfolios: Portfolio[], currentUuid: string | null): string[] {
+  const known = new Set(portfolios.map((p) => p.uuid));
+  const current = portfolios.find((p) => p.uuid === currentUuid && !p.isAggregate);
+  const picked = [...(current ? [current.uuid] : []), ...(readSelection() ?? []).filter((u) => known.has(u))];
+  const unique = [...new Set(picked)];
+  for (const p of portfolios) {
+    if (unique.length >= 2) break;
+    if (!p.isAggregate && !unique.includes(p.uuid)) unique.push(p.uuid);
   }
+  return unique.slice(0, MAX_COMPARED);
+}
+
+/**
+ * COMPARISON VIEW — Insights in compare mode (see InsightsSection): the picked portfolios side
+ * by side (GET /v1/portfolios/comparison), picked through the same PortfolioBar that selects
+ * one portfolio outside compare mode. One table of figures with the best of each row starred,
+ * then the cumulative returns and the allocation. Each portfolio keeps its colour
+ * (portfolioColorMap), so changing the selection never repaints the others. Columns follow the
+ * portfolio list's order, not the order they were picked in, so they don't shuffle.
+ */
+export function ComparisonView({
+  selection, portfolioBar, onOpen,
+}: {
+  selection: string[];
+  portfolioBar: React.ReactNode;
+  // Opens one portfolio's own Insights, from its column header.
+  onOpen: (uuid: string) => void;
+}) {
+  const { portfolios } = usePortfolio();
+  const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
+  const ordered = useMemo(() => portfolios.filter((p) => selection.includes(p.uuid)).map((p) => p.uuid), [portfolios, selection]);
+  const { entries, loading, failed, timedOut } = useComparison(ordered.join(","));
 
   return (
-    <Page>
-      <PortfolioPicker portfolios={portfolios} selected={selected} colorOf={colorOf} onToggle={toggle} />
+    <div className="px-0 py-6 space-y-6">
+      {portfolioBar}
+      <div>
+        <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Insights</p>
+        <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+          Compare
+        </h1>
+        <p className="text-slate-500 font-medium mt-1">Your portfolios side by side, over the same periods.</p>
+      </div>
       {ordered.length < 2 ? (
-        <Notice>Pick at least two portfolios to compare.</Notice>
+        <div className="flex items-center justify-center text-center py-16 px-6 bg-white border border-slate-200 border-dashed rounded-4xl">
+          <p className="text-slate-500 text-sm max-w-sm">Pick at least two portfolios to compare.</p>
+        </div>
       ) : loading && entries === null ? (
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
@@ -111,10 +115,10 @@ export function CompareSection() {
       ) : (
         // Dimmed while a new selection loads over the previous one.
         <div className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
-          <ComparisonBody entries={entries} colorOf={colorOf} timedOut={timedOut} />
+          <ComparisonBody entries={entries} colorOf={colorOf} timedOut={timedOut} onOpen={onOpen} />
         </div>
       )}
-    </Page>
+    </div>
   );
 }
 
@@ -160,29 +164,6 @@ function useComparison(uuidsKey: string) {
   return state;
 }
 
-function Page({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-0 py-6 space-y-6">
-      <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Your portfolios</p>
-        <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          Compare
-        </h1>
-        <p className="text-slate-500 font-medium mt-1">Your portfolios side by side, over the same periods.</p>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Notice({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-center text-center py-16 px-6 bg-white border border-slate-200 border-dashed rounded-4xl">
-      <p className="text-slate-500 text-sm max-w-sm">{children}</p>
-    </div>
-  );
-}
-
 function Module({ children }: { children: React.ReactNode }) {
   return (
     <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
@@ -205,48 +186,6 @@ function ModuleHead({ eyebrow, title, desc }: { eyebrow: string; title: string; 
 
 function Swatch({ color, dashed = false }: { color: string; dashed?: boolean }) {
   return <span className="w-4 shrink-0 border-t-2" style={{ borderColor: color, borderStyle: dashed ? "dashed" : "solid" }} />;
-}
-
-/**
- * PORTFOLIO PICKER — one toggle per portfolio, in its colour. Unselected ones are disabled
- * once MAX_SELECTED are picked, with the reason spelled out underneath.
- */
-function PortfolioPicker({
-  portfolios, selected, colorOf, onToggle,
-}: { portfolios: Portfolio[]; selected: string[]; colorOf: (uuid: string) => string; onToggle: (uuid: string) => void }) {
-  const full = selected.length >= MAX_SELECTED;
-  return (
-    <div>
-      <div className="flex flex-wrap gap-2">
-        {portfolios.map((p) => {
-          const isOn = selected.includes(p.uuid);
-          const disabled = !isOn && full;
-          return (
-            <button
-              key={p.uuid}
-              onClick={() => onToggle(p.uuid)}
-              disabled={disabled}
-              aria-pressed={isOn}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-[13px] font-bold transition-colors ${
-                isOn
-                  ? "bg-white border-slate-300 text-slate-900 shadow-sm"
-                  : "bg-transparent border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300"
-              } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
-            >
-              <span
-                className="w-3 h-3 rounded-full shrink-0 flex items-center justify-center"
-                style={{ background: isOn ? colorOf(p.uuid) : "transparent", border: `2px solid ${colorOf(p.uuid)}` }}
-              >
-                {isOn && <Check className="h-2 w-2 text-white" strokeWidth={4} />}
-              </span>
-              {p.name}
-            </button>
-          );
-        })}
-      </div>
-      {full && <p className="text-xs text-slate-400 mt-2">Up to {MAX_SELECTED} at a time — deselect one to pick another.</p>}
-    </div>
-  );
 }
 
 type Better = "higher" | "lower";
@@ -361,8 +300,11 @@ function bestColumns(row: MetricRow, entries: PortfolioComparisonEntry[], hidden
 }
 
 function ComparisonBody({
-  entries, colorOf, timedOut,
-}: { entries: PortfolioComparisonEntry[]; colorOf: (uuid: string) => string; timedOut: boolean }) {
+  entries, colorOf, timedOut, onOpen,
+}: {
+  entries: PortfolioComparisonEntry[]; colorOf: (uuid: string) => string; timedOut: boolean;
+  onOpen: (uuid: string) => void;
+}) {
   const groups = useMemo(() => buildGroups(entries), [entries]);
   const currency = entries.find((e) => e.value)?.value?.currency ?? "EUR";
   // A stale column is hidden while its rebuild is expected any moment, then shown with a hint.
@@ -390,10 +332,14 @@ function ComparisonBody({
                 <th className="sticky left-0 z-10 bg-white text-left p-4 pl-6 md:pl-7 w-48" />
                 {entries.map((e) => (
                   <th key={e.portfolio.uuid} scope="col" className="p-4 text-right align-bottom">
-                    <span className="inline-flex items-center gap-2 justify-end">
+                    <button
+                      onClick={() => onOpen(e.portfolio.uuid)}
+                      title={`Open ${e.portfolio.name}'s insights`}
+                      className="inline-flex items-center gap-2 justify-end text-slate-900 hover:text-[#C49A3C] transition-colors"
+                    >
                       <Swatch color={colorOf(e.portfolio.uuid)} dashed={e.portfolio.isAggregate} />
-                      <span className="text-[13px] font-black text-slate-900">{e.portfolio.name}</span>
-                    </span>
+                      <span className="text-[13px] font-black">{e.portfolio.name}</span>
+                    </button>
                     {isUpdating(e) && (
                       <span className="flex items-center gap-1 justify-end text-[11px] font-bold text-amber-600 mt-1">
                         <Loader2 className="h-3 w-3 animate-spin" /> Updating

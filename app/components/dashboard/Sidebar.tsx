@@ -1,9 +1,7 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Columns3 } from "lucide-react";
+import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
-import { PortfolioSwitcher } from "./PortfolioSwitcher";
-import { usePortfolio } from "../../context/PortfolioContext";
 
 interface SidebarProps {
   activeSection: string;
@@ -14,25 +12,15 @@ interface SidebarProps {
   subscriptionTier?: SubscriptionTier | null;
 }
 
-// Sections that belong to the portfolio selected in the sidebar; everything else (Dashboard,
-// News, Settings) is the same whichever portfolio is selected.
-const PORTFOLIO_SECTIONS = ['upload', 'performance'];
-
 type NavItem = { id: string; label: string; icon: typeof LayoutDashboard };
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
-  // Meaningful for investors only (see PortfolioContext), which is the only menu that reads it.
-  const { portfolios } = usePortfolio();
 
-  // Investor: Dashboard (and Compare, once there are 2+ portfolios to compare) on top, then the
-  // portfolio group (switcher + that portfolio's pages), then the sections that aren't about
-  // any one portfolio.
+  // Investor: "which page" only. Which portfolio is picked at the top of the portfolio pages
+  // themselves (see PortfolioBar), where Insights can also switch into comparing several.
   const investorTop: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    ...(portfolios.filter((p) => !p.isAggregate).length >= 2 ? [{ id: 'compare', label: 'Compare', icon: Columns3 }] : []),
-  ];
-  const investorPortfolioItems: NavItem[] = [
     { id: 'performance', label: 'Insights', icon: TrendingUp },
     { id: 'upload', label: 'Transactions', icon: Receipt },
   ];
@@ -41,8 +29,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // Advisors pick a client's portfolio per screen instead (see useClientDefaultPortfolio), so
-  // their menu stays flat.
+  // Advisors pick a client's portfolio per screen instead (see useClientDefaultPortfolio).
   const consultantItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clients', label: 'Clients', icon: Users },
@@ -57,28 +44,20 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     if (onClose) onClose();
   };
 
-  // Picking a portfolio from a section that isn't about one opens that portfolio's Insights;
-  // from Insights/Transactions it just swaps the portfolio in place.
-  const handlePortfolioSelect = () => {
-    if (!PORTFOLIO_SECTIONS.includes(activeSection)) handleNavClick('performance');
-  };
-
-  const renderItem = (item: NavItem, nested = false) => {
+  const renderItem = (item: NavItem) => {
     const isActive = activeSection === item.id;
     return (
       <button
         key={item.id}
         onClick={() => handleNavClick(item.id)}
-        className={`group relative flex items-center justify-between rounded-xl font-semibold transition-all duration-200 active:scale-[0.98] ${
-          nested ? "px-4 py-2.5" : "px-4 py-3"
-        } ${
+        className={`group relative flex items-center justify-between rounded-xl font-semibold transition-all duration-200 active:scale-[0.98] px-4 py-3 ${
           isActive
             ? "bg-[#C49A3C]/15 text-[#C49A3C] border border-[#C49A3C]/30"
             : "text-[#a8a29e] hover:bg-white/5 hover:text-white border border-transparent"
         }`}
       >
         <div className="flex items-center gap-3">
-          <item.icon className={`${nested ? "h-4 w-4" : "h-5 w-5"} transition-transform duration-200 ${isActive ? "" : "group-hover:scale-110"}`} />
+          <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? "" : "group-hover:scale-110"}`} />
           <span className="text-sm">{item.label}</span>
         </div>
         {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
@@ -108,16 +87,6 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           {isAdvisor ? consultantItems.map((item) => renderItem(item)) : (
             <>
               {investorTop.map((item) => renderItem(item))}
-
-              {/* The selected portfolio and its own pages. The switcher's dropdown is
-                  absolutely positioned, so it opens over the items below it. */}
-              <div className="mt-5 mb-1 px-1">
-                <p className="px-3 mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#78716c]">Portfolio</p>
-                <PortfolioSwitcher onSelect={handlePortfolioSelect} />
-              </div>
-              <div className="flex flex-col gap-1 ml-4 pl-3 border-l border-white/10">
-                {investorPortfolioItems.map((item) => renderItem(item, true))}
-              </div>
 
               <div className="my-4 border-t border-white/10" />
               {investorBottom.map((item) => renderItem(item))}

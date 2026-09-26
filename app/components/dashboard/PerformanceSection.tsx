@@ -66,8 +66,12 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({
-  portfolioUuid, portfolioName, isAggregate = false, onNavigate,
-}: { portfolioUuid: string; portfolioName?: string; isAggregate?: boolean; onNavigate?: (section: string) => void }) {
+  portfolioUuid, portfolioName, isAggregate = false, onNavigate, portfolioBar,
+}: {
+  portfolioUuid: string; portfolioName?: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
+  // The investor's PortfolioBar (see InsightsSection), drawn above the masthead.
+  portfolioBar?: React.ReactNode;
+}) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
   // Sub-tab and month-drilldown state live here rather than in
@@ -135,6 +139,7 @@ export function PerformanceSection({
 
   return (
     <div className="px-0 py-6 space-y-6">
+      {portfolioBar}
       <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">{portfolioName ?? "Portfolio"}</p>
