@@ -521,6 +521,8 @@ const isPeriodEmpty = (data: PeriodDashboard) =>
 // percentage display checks this first and falls back to "—".
 const hasPeriodBaseline = (data: PeriodDashboard) => data.t0Value !== 0;
 const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+const formatSignedCurrency = (amount: number, currency: string) =>
+  `${amount >= 0 ? "+" : ""}${formatCurrency(amount, currency, 0)}`;
 
 /**
  * AMOUNT WITH DELTA — an absolute change and its percentage, stacked instead of squeezed into
@@ -555,7 +557,7 @@ function AmountWithDelta({ amount, pct, hasBaseline = true }: { amount: string; 
 const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.currentValue === 0 && data.totalInvestedCapital === 0 && data.totalRealizedPnl === 0 &&
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
-  data.lifetimeDividends === 0 && data.chart.length === 0;
+  data.chart.length === 0;
 
 type HistorySubTabId = "overview" | "composition" | "risk";
 
@@ -1396,14 +1398,15 @@ function FilterSelect({
  * card a clear focal point instead of reading as a flat wall of same-size stats.
  */
 function PeriodHero({
-  currency, endValue, deltaValue, deltaValuePct, isGain, hasBaseline,
+  currency, endValue, deltaValue, deltaValuePct, isGain, hasBaseline, label = "End Value",
 }: {
   currency: string; endValue: number; deltaValue: number; deltaValuePct: number; isGain: boolean; hasBaseline: boolean;
+  label?: string;
 }) {
   const DeltaIcon = isGain ? TrendingUp : TrendingDown;
   return (
     <div className="p-6 md:p-7 pb-5 border-b border-slate-100">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">End Value</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">{label}</p>
       <div className="flex flex-wrap items-baseline gap-3">
         <p className="text-3xl md:text-4xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
           {formatCurrency(endValue, currency, 0)}
@@ -1432,17 +1435,21 @@ function PeriodHero({
 /**
  * MONTH DETAIL — a single month's full breakdown, opened by clicking a cell in the returns
  * heatmap: a Performance card led by End Value as the headline figure (Total Change as a
- * badge next to it) with Start Value / Market Effect / Dividends as supporting figures, plus
+ * badge next to it) with Start Value / Return / Market Effect / Dividends as supporting figures, plus
  * a separate Risk card for Volatility / Max Drawdown — kept apart from Performance since
  * these are risk figures, not performance, and mixing them read as one undifferentiated wall
- * of tiles (see the Monthly/Annual detail view this replaces).
+ * of tiles (see the Monthly/Annual detail view this replaces). The month in progress is
+ * valued as of today, and has no volatility or drawdown until it closes.
  */
 function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portfolioUuid: string }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
   const title = monthYearLabel(period.periodStart);
-  const rangeLabel = `${fullDateLabel(period.periodStart)} – ${fullDateLabel(period.periodEnd)}`;
+  const rangeLabel = period.inProgress
+    ? `${fullDateLabel(period.periodStart)} – today · month in progress`
+    : `${fullDateLabel(period.periodStart)} – ${fullDateLabel(period.periodEnd)}`;
+  const twr = period.timeWeightedReturnPct;
 
   return (
     <div className="space-y-6">
@@ -1464,14 +1471,22 @@ function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portf
               deltaValuePct={period.deltaValuePct}
               isGain={isGain}
               hasBaseline={hasBaseline}
+              label={period.inProgress ? "Value Today" : undefined}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
               <StatContent
                 title="Start Value"
                 value={formatCurrency(period.t0Value, period.currency, 0)}
                 icon={<Wallet className="h-4 w-4 text-slate-500" />}
-                description="Market value at month start"
+                description="Market value at the close of the previous month"
                 color="slate"
+              />
+              <StatContent
+                title="Return"
+                value={twr !== null ? formatPct(twr) : "—"}
+                icon={twr === null || twr >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                description={twr !== null ? "Time-weighted, unaffected by money added or withdrawn" : "Not available yet for this month"}
+                color={twr === null ? "slate" : twr >= 0 ? "emerald" : "red"}
               />
               <StatContent
                 title="Market Effect"
@@ -1484,7 +1499,7 @@ function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portf
                 title="Dividends"
                 value={formatCurrency(period.dividendsInPeriod, period.currency, 0)}
                 icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                description="Received this month"
+                description={period.inProgress ? "Received so far this month" : "Received this month"}
                 color="blue"
               />
             </div>
@@ -1500,14 +1515,14 @@ function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portf
                 title="Volatility"
                 value={period.volatilityPct !== null ? `${period.volatilityPct.toFixed(2)}%` : "—"}
                 icon={<Activity className="h-4 w-4 text-slate-500" />}
-                description="Annualized, from daily returns"
+                description={period.inProgress ? "Available once the month closes" : "Annualized, from daily returns"}
                 color="slate"
               />
               <StatContent
                 title="Max Drawdown"
                 value={period.maxDrawdownPct !== null ? `${period.maxDrawdownPct.toFixed(2)}%` : "—"}
                 icon={<TrendingDown className="h-4 w-4 text-slate-500" />}
-                description="Largest peak-to-trough decline"
+                description={period.inProgress ? "Available once the month closes" : "Largest peak-to-trough decline"}
                 color="slate"
               />
             </div>
@@ -1534,13 +1549,16 @@ function heatmapCellStyle(pct: number): React.CSSProperties {
 
 /**
  * MONTHLY RETURNS HEATMAP — one row per calendar year (most recent first), one column per
- * calendar month, each cell shaded by that month's market effect (green = gain, rose = loss,
+ * calendar month, each cell shaded by that month's time-weighted return, same figure as
+ * /performance (green = gain, rose = loss,
  * intensity scaled by magnitude) and clickable to open MonthDetail. Replaces the old
  * Monthly/Annual tabs' bar chart + card picker: a single grid makes the whole history
  * scannable at once instead of one time horizon at a time. Backed by
  * FullHistoryDashboard.monthlyMarketEffect, a single lightweight all-years fetch — a
- * (year, month) pair simply absent (before inception, or a month too recent to be closed
- * out yet) renders as an empty, non-clickable cell rather than a false zero.
+ * (year, month) pair simply absent (before inception) renders as an empty, non-clickable
+ * cell rather than a false zero. A month without a TWR yet (e.g. under a year of history)
+ * falls back to its market effect ÷ opening value, marked as such in the cell's tooltip. The
+ * month in progress is included, valued as of today, and drawn with a dashed outline.
  */
 function MonthlyReturnsHeatmap({
   entries, onSelectMonth,
@@ -1548,13 +1566,16 @@ function MonthlyReturnsHeatmap({
   entries: MonthlyMarketEffectEntry[]; onSelectMonth: (year: number, month: number) => void;
 }) {
   const byYear = useMemo(() => {
-    const map = new Map<number, Map<number, number>>();
+    const map = new Map<number, Map<number, { pct: number; isTwr: boolean }>>();
     for (const e of entries) {
       if (!map.has(e.year)) map.set(e.year, new Map());
-      map.get(e.year)!.set(e.month, e.marketEffectPct);
+      map.get(e.year)!.set(e.month, e.timeWeightedReturnPct !== null
+        ? { pct: e.timeWeightedReturnPct, isTwr: true }
+        : { pct: e.marketEffectPct, isTwr: false });
     }
     return map;
   }, [entries]);
+  const now = new Date();
 
   const years = useMemo(() => [...byYear.keys()].sort((a, b) => b - a), [byYear]);
 
@@ -1579,21 +1600,23 @@ function MonthlyReturnsHeatmap({
               <td className="text-sm font-bold text-slate-900 pr-3 py-1 tabular-nums">{year}</td>
               {MONTH_LABELS.map((_, i) => {
                 const month = i + 1;
-                const pct = byYear.get(year)?.get(month);
-                if (pct === undefined) {
+                const cell = byYear.get(year)?.get(month);
+                if (cell === undefined) {
                   return (
                     <td key={month} className="p-1">
                       <div className="w-full aspect-square rounded-lg bg-slate-50" />
                     </td>
                   );
                 }
+                const { pct, isTwr } = cell;
+                const inProgress = year === now.getFullYear() && month === now.getMonth() + 1;
                 return (
                   <td key={month} className="p-1">
                     <button
                       onClick={() => onSelectMonth(year, month)}
-                      title={`${MONTH_LABELS[i]} ${year}: ${formatPct(pct)}`}
+                      title={`${MONTH_LABELS[i]} ${year}${inProgress ? " (to date)" : ""}: ${formatPct(pct)}${isTwr ? "" : " market effect"}`}
                       style={heatmapCellStyle(pct)}
-                      className="w-full aspect-square rounded-lg flex items-center justify-center text-[10px] font-bold tabular-nums hover:ring-2 hover:ring-offset-1 hover:ring-[#C49A3C] transition-all cursor-pointer"
+                      className={`w-full aspect-square rounded-lg flex items-center justify-center text-[10px] font-bold tabular-nums hover:ring-2 hover:ring-offset-1 hover:ring-[#C49A3C] transition-all cursor-pointer ${inProgress ? "outline-2 outline-dashed outline-offset-1 outline-slate-400" : ""}`}
                     >
                       {Math.round(pct)}%
                     </button>
@@ -2152,10 +2175,12 @@ interface PortfolioComposition {
  * session doesn't refetch.
  */
 /**
- * MONTH TO DATE MODULE — how the portfolio has moved this month: its value on the 1st, the
- * day-over-day and month-to-date changes, and a bar per day of the day-over-day change. Deltas,
- * not raw values: a stable portfolio's value line is visually flat at this timescale. /today
- * carries isStale like the analytics documents, so useAnalytics polls it the same way.
+ * MONTH TO DATE MODULE — how the market moved the portfolio this month: its value at last
+ * month's close, today's and the month-to-date market effect, and a bar per day of that day's
+ * market effect. Market effect, not raw value change: a purchase isn't a gain, so money added or
+ * withdrawn is kept out of the figures and only mentioned alongside the month-to-date one.
+ * Deltas, not raw values: a stable portfolio's value line is visually flat at this timescale.
+ * /today carries isStale like the analytics documents, so useAnalytics polls it the same way.
  */
 function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
@@ -2165,7 +2190,7 @@ function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
       <ModuleHead
         eyebrow={data?.currency ?? "This month"}
         title="This month"
-        desc="Day-over-day and month-to-date moves, from daily market prices."
+        desc="How the market moved your portfolio, day by day and month to date. Money you added or withdrew is left out."
       />
       {AnalyticsPlaceholder({
         loading, failed, hasData: data !== null, updating,
@@ -2176,11 +2201,18 @@ function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
 }
 
 function MonthToDateBody({ data }: { data: TodayDashboard }) {
-  const isDayGain = data.deltaDayValue >= 0;
-  const isMtdGain = data.deltaMtdValue >= 0;
+  const isDayGain = data.dayMarketEffect >= 0;
+  const isMtdGain = data.mtdMarketEffect >= 0;
+  // A day or month with no opening value has no percentage to show (see hasPeriodBaseline).
   const points = [...data.chart]
     .sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime())
-    .map((s) => ({ date: s.snapshotAt, deltaValue: s.deltaValue, deltaValuePct: s.deltaValuePct }));
+    .map((s) => ({
+      date: s.snapshotAt, marketEffect: s.marketEffect, marketEffectPct: s.marketEffectPct,
+      hasBaseline: s.previousValue !== 0,
+    }));
+  const mtdFlowsNote = data.mtdNetCapitalContributed !== 0
+    ? `Value change ${formatSignedCurrency(data.deltaMtdValue, data.currency)}, with ${formatCurrency(Math.abs(data.mtdNetCapitalContributed), data.currency, 0)} ${data.mtdNetCapitalContributed > 0 ? "added" : "withdrawn"} by you`
+    : undefined;
 
   return (
     <>
@@ -2190,21 +2222,22 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
           title="Month Start Value"
           value={formatCurrency(data.monthStartValue, data.currency, 0)}
           icon={<Wallet className="h-4 w-4 text-blue-600" />}
-          info="Market value on the 1st of this month."
+          info="Market value at the close of last month."
           color="blue"
         />
         <StatContent
-          title="Day Change"
-          value={<AmountWithDelta amount={`${isDayGain ? "+" : ""}${formatCurrency(data.deltaDayValue, data.currency, 0)}`} pct={data.deltaDayValuePct} />}
+          title="Market Move Today"
+          value={<AmountWithDelta amount={formatSignedCurrency(data.dayMarketEffect, data.currency)} pct={data.dayMarketEffectPct} hasBaseline={data.previousDayValue !== 0} />}
           icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          info="How much the portfolio moved since the previous day."
+          info="How much prices moved the portfolio since the previous day, excluding buys, sells, costs and dividends."
           color={isDayGain ? "emerald" : "red"}
         />
         <StatContent
-          title="Month-to-Date Change"
-          value={<AmountWithDelta amount={`${isMtdGain ? "+" : ""}${formatCurrency(data.deltaMtdValue, data.currency, 0)}`} pct={data.deltaMtdValuePct} />}
+          title="Market Move This Month"
+          value={<AmountWithDelta amount={formatSignedCurrency(data.mtdMarketEffect, data.currency)} pct={data.mtdMarketEffectPct} hasBaseline={data.monthStartValue !== 0} />}
           icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-          info="How much the portfolio moved since the 1st of this month."
+          info="How much prices moved the portfolio since the close of last month, excluding buys, sells, costs and dividends."
+          description={mtdFlowsNote}
           color={isMtdGain ? "emerald" : "red"}
         />
       </div>
@@ -2232,14 +2265,14 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
               <Tooltip
                 labelFormatter={(label) => fullDateLabel(label as string)}
                 formatter={(value, name, props) => [
-                  `${formatCurrency(Number(value), data.currency, 0)} (${formatPct(props.payload.deltaValuePct)})`,
-                  "Day change",
+                  `${formatCurrency(Number(value), data.currency, 0)}${props.payload.hasBaseline ? ` (${formatPct(props.payload.marketEffectPct)})` : ""}`,
+                  "Market move",
                 ]}
                 contentStyle={TOOLTIP_STYLE}
               />
-              <Bar dataKey="deltaValue" radius={[4, 4, 4, 4]}>
+              <Bar dataKey="marketEffect" radius={[4, 4, 4, 4]}>
                 {points.map((d) => (
-                  <Cell key={d.date} fill={d.deltaValue >= 0 ? "#10b981" : "#f43f5e"} />
+                  <Cell key={d.date} fill={d.marketEffect >= 0 ? "#10b981" : "#f43f5e"} />
                 ))}
               </Bar>
             </BarChart>
@@ -2429,7 +2462,7 @@ function HistoryPage({
                 <ModuleHead
                   eyebrow={data.currency}
                   title="Monthly Returns"
-                  desc="Market effect by month, since inception. Click a month for its full detail."
+                  desc="Time-weighted return by month, since inception. Click a month for its full detail."
                 />
                 <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={onSelectMonth} />
               </Module>

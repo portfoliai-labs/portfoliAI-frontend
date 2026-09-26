@@ -124,21 +124,33 @@ interface DailyValueChange {
   previousValue: number;
   deltaValue: number;
   deltaValuePct: number;
+  // The day's change net of flows (buys/sells, costs, dividends) — a purchase isn't a gain here.
+  marketEffect: number;
+  marketEffectPct: number;
 }
 
 // Matches TodayDashboardResponse (GET /v1/portfolio/today) — today vs. yesterday, and
-// today vs. the start of the current month (month-to-date), always in the user's
+// today vs. the end of the previous month (month-to-date), always in the user's
 // reference currency. `chart` is the month-to-date day-over-day deltas (one per day,
-// oldest→newest not guaranteed — sort before use). The endpoint returns null (not a
-// zeroed-out object) when there's no snapshot history yet to compute this from.
+// oldest→newest not guaranteed — sort before use); their deltaValue sums to deltaMtdValue.
+// The month-to-date figures equal /monthly's last (in-progress) entry. The endpoint returns
+// null (not a zeroed-out object) when there's no snapshot history yet to compute this from.
 interface TodayDashboard {
   currentValue: number;
   previousDayValue: number;
   deltaDayValue: number;
   deltaDayValuePct: number;
+  // deltaDayValue net of flows — "how much the market moved" today.
+  dayMarketEffect: number;
+  dayMarketEffectPct: number;
+  // Value at the end of the previous month, not on the 1st. 0 for a portfolio created this
+  // month, in which case deltaMtdValuePct / mtdMarketEffectPct have no baseline.
   monthStartValue: number;
   deltaMtdValue: number;
   deltaMtdValuePct: number;
+  mtdNetCapitalContributed: number;
+  mtdMarketEffect: number;
+  mtdMarketEffectPct: number;
   currency: string;
   chart: DailyValueChange[];
   // True while a transaction edit has landed but the rebuild it triggered hasn't yet: today's
@@ -152,14 +164,15 @@ interface TodayDashboard {
 }
 
 // Matches one entry of PeriodDashboardResponse[] (GET /v1/portfolio/monthly, GET
-// /v1/portfolio/annual) — one row per calendar month (since January of the current year,
-// through the most recently *closed* month — the in-progress month isn't included until a
-// monthly cron closes it out early the following month) or per calendar year (since
-// inception, through the current in-progress year), each diffed against the previous one.
+// /v1/portfolio/annual) — one row per calendar month or per calendar year (since inception),
+// each running from the previous period's closing value to its own end. For the current
+// year, /monthly's last entry is the month in progress and /annual's is the year in
+// progress, both valued as of today (`inProgress: true`).
 // No `chart` field: unlike /today and /history, a list entry is one row of a performance
 // table, not its own drill-down. marketEffect isolates price movement from
 // netCapitalContributed (money the user added/withdrew), since deltaValue alone conflates
-// the two. For a portfolio's very first tracked period, t0Value is 0 (no prior baseline)
+// the two; flows are converted at each trade's own date, and costs are commissions + spread.
+// For a portfolio's very first tracked period, t0Value is 0 (no prior baseline)
 // and deltaValuePct/marketEffectPct both come back as exactly 0 rather than a real
 // percentage — see hasPeriodBaseline in PerformanceSection.tsx.
 interface PeriodDashboard {
@@ -179,13 +192,19 @@ interface PeriodDashboard {
   // Risk and Volatility Analysis section uses. Null on /annual entries always (an annual
   // row's underlying data is really just its last MONTHLY row, so its volatility would only
   // describe that one month, not the year — showing it under an "annual" label would be
-  // misleading, so the backend suppresses it there). On /monthly, null until the monthly
-  // cron has processed that particular month since this field shipped (gradual backfill,
-  // not missing data).
+  // misleading, so the backend suppresses it there). On /monthly, null on the month in
+  // progress, and until the monthly cron has processed that particular month since this
+  // field shipped (gradual backfill, not missing data).
   volatilityPct: number | null;
   // Peak-to-trough max drawdown within the period, as a percentage (e.g. -1.46 — always ≤0).
   // Same nullability rules as volatilityPct.
   maxDrawdownPct: number | null;
+  // Time-weighted return for this month/year, same figure as /performance. This is the
+  // "return"; marketEffectPct is market effect ÷ opening value, which diverges from it when
+  // money moves mid-period. Null when /performance has none (e.g. under a year of history).
+  timeWeightedReturnPct: number | null;
+  // True on the period still in progress (valued as of today).
+  inProgress: boolean;
   currency: string;
   // Set only once a report covering this exact period has been generated — null is normal
   // for the current in-progress year (annual) or for a month too recent to have a report yet.
@@ -203,10 +222,14 @@ interface MonthlyMarketEffectEntry {
   year: number;
   month: number;
   marketEffectPct: number;
+  // See PeriodDashboard.timeWeightedReturnPct.
+  timeWeightedReturnPct: number | null;
 }
 
 // Matches FullHistoryDashboardResponse (GET /v1/portfolio/history) — lifetime figures
-// since the portfolio's first recorded transaction (inceptionDate).
+// since the portfolio's first recorded transaction (inceptionDate), as of today:
+// currentValue equals /today.currentValue and /overview. `chart` is the month-end series
+// plus today's point last; monthlyMarketEffect includes the month in progress.
 interface FullHistoryDashboard {
   inceptionDate: string;
   currentValue: number;
@@ -214,8 +237,8 @@ interface FullHistoryDashboard {
   totalRealizedPnl: number;
   totalUnrealizedPnl: number;
   totalDividendIncome: number;
+  // Commissions + spread, same as /trading-costs.totalCosts.
   lifetimeTradingCosts: number;
-  lifetimeDividends: number;
   currency: string;
   chart: PortfolioSnapshot[];
   // Every asset with at least one closed round-trip, lifetime — same shape/semantics as
