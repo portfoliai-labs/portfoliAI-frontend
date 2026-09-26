@@ -19,12 +19,10 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
 
   // Investor: "which page" only. Which portfolio is picked at the top of the portfolio pages
   // themselves (see PortfolioBar), where Insights can also switch into comparing several.
-  const investorTop: NavItem[] = [
+  const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
     { id: 'upload', label: 'Transactions', icon: Receipt },
-  ];
-  const investorBottom: NavItem[] = [
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -84,14 +82,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
       `}>
 
         <nav className="flex flex-col gap-1 p-5 pt-[100px] flex-1 overflow-y-auto custom-scrollbar">
-          {isAdvisor ? consultantItems.map((item) => renderItem(item)) : (
-            <>
-              {investorTop.map((item) => renderItem(item))}
-
-              <div className="my-4 border-t border-white/10" />
-              {investorBottom.map((item) => renderItem(item))}
-            </>
-          )}
+          {(isAdvisor ? consultantItems : investorItems).map((item) => renderItem(item))}
         </nav>
 
         {subscriptionTier !== 'TESTER' && (
