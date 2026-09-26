@@ -28,6 +28,7 @@ import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction, BulkOperation } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
 import { usePortfolio } from "../../context/PortfolioContext";
+import { PortfolioPageHeader, PortfolioPageHeaderNote } from "./PortfolioPageHeader";
 
 const EXISTING_PAGE_SIZE = 10;
 const PENDING_PAGE_SIZE = 10;
@@ -109,7 +110,7 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
 // readOnly is for the aggregate "All portfolios": its list merges every portfolio's
 // transactions, and any write on it is a 409, so only browsing/filtering is offered and each
 // row is labelled with the portfolio it comes from.
-// portfolioBar is the investor's PortfolioBar, drawn above the masthead.
+// portfolioBar is the investor's PortfolioBar, in the masthead's panel (PortfolioPageHeader).
 export function FileUploader({
   portfolioUuid, readOnly = false, portfolioBar,
 }: { portfolioUuid: string; readOnly?: boolean; portfolioBar?: React.ReactNode }) {
@@ -666,25 +667,16 @@ export function FileUploader({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12 relative">
-      {portfolioBar}
-
-      {/* MASTHEAD */}
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Portfolio</p>
-          <h1
-            className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-          >
-            Transactions
-          </h1>
-          <p className="text-slate-500 font-medium mt-1">
-            {readOnly
-              ? "Every transaction across your portfolios. To add or change one, switch to the portfolio it belongs to."
-              : "Add, review, and manage every transaction in your portfolio."}
-          </p>
-        </div>
-      </div>
+      {/* MASTHEAD — the aggregate's list is read-only, which the panel's lower row says. */}
+      <PortfolioPageHeader
+        title="Transactions"
+        bar={portfolioBar}
+        nav={readOnly ? (
+          <PortfolioPageHeaderNote>
+            Every transaction across your portfolios. To add or change one, switch to the portfolio it belongs to.
+          </PortfolioPageHeaderNote>
+        ) : undefined}
+      />
 
       {/* NOTIFICA TOAST (Visualizzata in base allo stato) */}
       {showToast && (

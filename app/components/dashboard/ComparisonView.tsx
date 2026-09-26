@@ -10,6 +10,7 @@ import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { MAX_COMPARED } from "./PortfolioBar";
+import { PortfolioPageHeader, PortfolioPageHeaderNote } from "./PortfolioPageHeader";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -91,14 +92,17 @@ export function ComparisonView({
 
   return (
     <div className="px-0 py-6 space-y-6">
-      {portfolioBar}
-      <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Insights</p>
-        <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          Compare
-        </h1>
-        <p className="text-slate-500 font-medium mt-1">Your portfolios side by side, over the same periods.</p>
-      </div>
+      <PortfolioPageHeader
+        title="Insights"
+        bar={portfolioBar}
+        nav={
+          <PortfolioPageHeaderNote>
+            {ordered.length < 2
+              ? "Pick at least two portfolios to compare."
+              : `Comparing ${ordered.length} portfolios${ordered.length >= MAX_COMPARED ? ` — the most at once; deselect one to pick another` : ` · pick up to ${MAX_COMPARED}`}`}
+          </PortfolioPageHeaderNote>
+        }
+      />
       {ordered.length < 2 ? (
         <div className="flex items-center justify-center text-center py-16 px-6 bg-white border border-slate-200 border-dashed rounded-4xl">
           <p className="text-slate-500 text-sm max-w-sm">Pick at least two portfolios to compare.</p>

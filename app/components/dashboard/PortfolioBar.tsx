@@ -25,7 +25,7 @@ export function openPortfolioSettings(onNavigate: (section: string) => void) {
  * - compare (Insights only, once there are 2+ standard portfolios): the same pills become
  *   toggles for up to MAX_COMPARED portfolios, the aggregate included if picked.
  * Rename/delete aren't here — they're management, not navigation (Settings → Portfolios,
- * which the gear opens).
+ * which the gear opens). Lives in the top row of PortfolioPageHeader's panel.
  */
 export function PortfolioBar({
   comparing = false, compareSelection = [], onToggleCompare, onEnterCompare, onExitCompare, onManage,
@@ -112,13 +112,6 @@ export function PortfolioBar({
           )}
         </div>
       </div>
-      {comparing && (
-        <p className="text-xs text-slate-400 mt-2">
-          {full
-            ? `Up to ${MAX_COMPARED} at a time — deselect one to pick another.`
-            : "Pick the portfolios to compare."}
-        </p>
-      )}
     </div>
   );
 }

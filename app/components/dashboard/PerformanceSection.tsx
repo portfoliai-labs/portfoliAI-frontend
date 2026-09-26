@@ -18,6 +18,7 @@ import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { NoDataEmptyState } from "./NoDataEmptyState";
+import { PortfolioPageHeader } from "./PortfolioPageHeader";
 import type {
   PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
@@ -66,19 +67,17 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({
-  portfolioUuid, portfolioName, isAggregate = false, onNavigate, portfolioBar,
+  portfolioUuid, isAggregate = false, onNavigate, portfolioBar,
 }: {
-  portfolioUuid: string; portfolioName?: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
-  // The investor's PortfolioBar (see InsightsSection), drawn above the masthead.
+  portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
+  // The investor's PortfolioBar (see InsightsSection), in the header panel above the tabs.
   portfolioBar?: React.ReactNode;
 }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
-  // Sub-tab and month-drilldown state live here rather than in
-  // HistoryPage below, even though only HistoryPage's content depends on them: the tab
-  // switcher itself sits in the masthead right next to the "Insights" title (see the header
-  // below) rather than on its own row, so the title and the tabs need to be siblings in the
-  // same returned tree. Kept here rather than duplicating the masthead per HistoryPage branch.
+  // Sub-tab and month-drilldown state live here rather than in HistoryPage below, even though
+  // only HistoryPage's content depends on them: the tabs and the drilldown's way back both sit
+  // in the header panel (PortfolioPageHeader), which is rendered here.
   const [subTab, setSubTab] = useState<HistorySubTabId>("performance");
   const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
   const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
@@ -139,20 +138,20 @@ export function PerformanceSection({
 
   return (
     <div className="px-0 py-6 space-y-6">
-      {portfolioBar}
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">{portfolioName ?? "Portfolio"}</p>
-          <h1
-            className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      <PortfolioPageHeader
+        title="Insights"
+        bar={portfolioBar}
+        nav={selected ? (
+          <button
+            onClick={() => setSelected(null)}
+            className="flex items-center gap-2 py-3 text-[13px] font-bold text-slate-500 hover:text-[#C49A3C] transition-colors"
           >
-            Insights
-          </h1>
-          <p className="text-slate-500 font-medium mt-1">How your portfolio has done, what it earned and cost, what it holds and how much it swings.</p>
-        </div>
-        {showTabs && <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />}
-      </div>
+            <ArrowLeft className="h-4 w-4" /> All time
+          </button>
+        ) : showTabs ? (
+          <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />
+        ) : undefined}
+      />
 
       {failed && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
@@ -179,7 +178,6 @@ export function PerformanceSection({
           portfolioUuid={portfolioUuid}
           subTab={subTab}
           selected={selected}
-          setSelected={setSelected}
           monthCache={monthCache}
           monthLoading={monthLoading}
           monthError={monthError}
@@ -583,23 +581,21 @@ interface SubTab<T extends string> {
 }
 
 /**
- * SUB-TAB SWITCHER — sits in the masthead beside the "Insights" title (see PerformanceSection),
- * not on its own row below it. Underline style rather than the pill/segmented-control look it
- * used to have: a boxed, shadowed control read fine as a standalone row of its own, but next to
- * a serif page title it looked like a form control bolted onto a page header. Plain text with a
- * colored underline on the active tab reads as page-level navigation instead, in keeping with
- * the title next to it.
+ * SUB-TAB SWITCHER — the lower row of the page's header panel (see PortfolioPageHeader), under
+ * the portfolio pills. Plain text with a coloured underline sitting on the row's bottom edge, so
+ * it reads as the panel's own navigation rather than a second set of pills. Wraps on a narrow
+ * screen; nothing here scrolls.
  */
 function SubTabSwitcher<T extends string>({
   tabs, active, onChange,
 }: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-6">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`flex items-center gap-1.5 pb-1 text-[13px] font-bold border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 py-3 text-[13px] font-bold whitespace-nowrap border-b-2 transition-colors ${
             active === t.id ? "border-[#C49A3C] text-[#C49A3C]" : "border-transparent text-slate-400 hover:text-slate-600"
           }`}
         >
@@ -2740,7 +2736,7 @@ interface PortfolioComposition {
  * under Risk. Used to merge what were three separate tabs (Monthly, Annual, Full History) into
  * just Overview. Clicking a heatmap cell swaps the whole page for that month's own detail
  * (MonthDetail) — same "replace, don't stack" pattern the old Monthly/Annual picker used, with
- * a back button to return. Month detail
+ * the way back in the header panel, where the tabs usually are. Month detail
  * needs the richer per-month figures (t0/t1 value, dividends, volatility, drawdown, report)
  * that monthlyMarketEffect doesn't carry, so it's fetched on demand via /monthly?year=, one
  * request per year, cached in `monthCache` so re-opening a month already visited this
@@ -2857,13 +2853,12 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
 }
 
 function HistoryPage({
-  data, historyUpdating, portfolioUuid, subTab, selected, setSelected,
+  data, historyUpdating, portfolioUuid, subTab, selected,
   monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut, isAggregate,
 }: {
   data: FullHistoryDashboard; historyUpdating: boolean; portfolioUuid: string;
   subTab: HistorySubTabId;
   selected: { year: number; month: number } | null;
-  setSelected: (s: { year: number; month: number } | null) => void;
   monthCache: Record<number, PeriodDashboard[]>;
   monthLoading: boolean;
   monthError: string | null;
@@ -2915,12 +2910,6 @@ function HistoryPage({
     const monthUpdating = selectedYearStale && !monthStaleTimedOut;
     return (
       <div className="space-y-6">
-        <button
-          onClick={() => setSelected(null)}
-          className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-[#C49A3C] transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" /> All time
-        </button>
         {monthLoading ? (
           <div className="flex h-64 items-center justify-center">
             <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />

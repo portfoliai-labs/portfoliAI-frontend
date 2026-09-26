@@ -55,7 +55,6 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
     <PerformanceSection
       key={current.uuid}
       portfolioUuid={current.uuid}
-      portfolioName={current.name}
       isAggregate={current.isAggregate}
       onNavigate={onNavigate}
       portfolioBar={bar}
