@@ -358,6 +358,59 @@ interface RiskModelResponse {
   isStale: boolean;
 }
 
+// ---------- aggregate composition ----------
+
+// GET /v1/portfolios/{p}/composition — only for the aggregate (null for a standard portfolio):
+// how the user's portfolios make it up. members is largest market value first. pnlSharePct can
+// exceed 100 or go negative (one portfolio lost while another gained), null when the combined
+// profit is 0. riskContributionPct adds up to 100 across members: above weightPct means the
+// portfolio adds more risk than its size, below 0 that it offsets the others. Under
+// "insufficient_history" (fewer than 60 shared trading days) correlation and every
+// riskContributionPct are null; the rest is always there.
+interface CompositionMemberEntry {
+  portfolioUuid: string;
+  name: string;
+  marketValue: number;
+  weightPct: number;
+  totalPnl: number;
+  pnlSharePct: number | null;
+  riskContributionPct: number | null;
+}
+
+// matrix[i][j] pairs portfolioUuids[i] and [j], -1 to 1 (1 on the diagonal); null for a pair
+// where one portfolio's returns never varied. observations = days every portfolio traded.
+interface PortfolioCorrelationMatrix {
+  portfolioUuids: string[];
+  matrix: (number | null)[][];
+  observations: number;
+}
+
+interface AssetHoldingEntry {
+  portfolioUuid: string;
+  marketValue: number;
+}
+
+// An asset held in 2+ portfolios: exposure each portfolio's own view understates. holdings is
+// largest first.
+interface OverlappingAssetEntry {
+  assetId: string;
+  ticker: string | null;
+  name: string;
+  marketValue: number;
+  weightPct: number;
+  holdings: AssetHoldingEntry[];
+}
+
+interface CompositionResponse {
+  status: AnalyticsStatus;
+  currency: string;
+  members: CompositionMemberEntry[];
+  correlation: PortfolioCorrelationMatrix | null;
+  overlappingAssets: OverlappingAssetEntry[];
+  computedAt: string;
+  isStale: boolean;
+}
+
 // ---------- portfolio comparison ----------
 
 // GET /v1/portfolios/comparison — one entry per compared portfolio, each section a slice of the
@@ -447,4 +500,5 @@ export type {
   CorrelationMatrix, RiskModelResponse,
   ComparisonValue, ComparisonPerformance, ComparisonVolatility, ComparisonAllocationEntry,
   ComparisonDividends, ComparisonTradingCosts, ComparisonBenchmark, PortfolioComparisonEntry,
+  CompositionMemberEntry, PortfolioCorrelationMatrix, AssetHoldingEntry, OverlappingAssetEntry, CompositionResponse,
 };

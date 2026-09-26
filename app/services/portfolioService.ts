@@ -2,7 +2,7 @@
 import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDashboard, PortfolioSummary } from "../models/Portfolio";
 import type {
   HoldingsResponse, ExposureResponse, PerformanceResponse, VolatilityResponse, CategoriesResponse,
-  DividendsResponse, TradingCostsResponse, BenchmarkResponse, RiskModelResponse,
+  DividendsResponse, TradingCostsResponse, BenchmarkResponse, RiskModelResponse, CompositionResponse,
 } from "../models/PortfolioData";
 import { apiFetch } from "./apiClient";
 
@@ -126,5 +126,12 @@ export const portfolioService = {
   // trailing historical means, not forecasts.
   async getRiskModel(portfolioUuid: string): Promise<RiskModelResponse | null> {
     return apiFetch<RiskModelResponse | null>(`/v1/portfolios/${portfolioUuid}/risk-model`);
+  },
+
+  // GET /v1/portfolios/{p}/composition — how the user's portfolios make up the aggregate:
+  // value / profit / risk shares, their correlation and the assets held in more than one.
+  // Null for a standard portfolio (and before the aggregate's first analytics run).
+  async getComposition(portfolioUuid: string): Promise<CompositionResponse | null> {
+    return apiFetch<CompositionResponse | null>(`/v1/portfolios/${portfolioUuid}/composition`);
   },
 };

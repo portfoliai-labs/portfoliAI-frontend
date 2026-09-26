@@ -15,7 +15,8 @@ import {
 import { portfolioService } from "../../services/portfolioService";
 import { formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
-import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
+import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
+import { usePortfolio } from "../../context/PortfolioContext";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import type {
   PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
@@ -23,7 +24,7 @@ import type {
 } from "../../models/Portfolio";
 import type {
   ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
-  BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
+  BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries, CompositionResponse,
   PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse,
 } from "../../models/PortfolioData";
 
@@ -65,8 +66,8 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({
-  portfolioUuid, portfolioName, onNavigate,
-}: { portfolioUuid: string; portfolioName?: string; onNavigate?: (section: string) => void }) {
+  portfolioUuid, portfolioName, isAggregate = false, onNavigate,
+}: { portfolioUuid: string; portfolioName?: string; isAggregate?: boolean; onNavigate?: (section: string) => void }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
   // Sub-tab and month-drilldown state live here rather than in
@@ -180,6 +181,7 @@ export function PerformanceSection({
           onSelectMonth={handleSelectMonth}
           selectedYearStale={selectedYearStale}
           monthStaleTimedOut={monthStaleTimedOut}
+          isAggregate={isAggregate}
         />
       )}
     </div>
@@ -2513,6 +2515,211 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
   );
 }
 
+/**
+ * PORTFOLIOS MIX MODULE — the aggregate's /composition, Composition side: each portfolio's
+ * share of the value, of the profit and of the risk, then the assets held in more than one.
+ * Risk share next to weight is the point: a portfolio carrying more risk than its size, or one
+ * offsetting the rest. Colours match the Compare page (portfolioColorMap).
+ */
+function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<CompositionResponse>(portfolioService.getComposition, portfolioUuid);
+  const { portfolios } = usePortfolio();
+  const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
+  const nameOf = (uuid: string) => data?.members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow={data?.currency ?? "All portfolios"}
+        title="Your Portfolios"
+        desc="How each portfolio makes up the whole: its share of the value, of the profit and of the risk."
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolios has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm min-w-[520px]">
+              <thead>
+                <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="text-left font-black py-3 pl-6 md:pl-7 pr-4">Portfolio</th>
+                  <th className="text-right font-black py-3 px-4">Value</th>
+                  <th className="text-right font-black py-3 px-4">Share of value</th>
+                  <th className="text-right font-black py-3 px-4" title="Its share of the combined profit. Above 100% or below 0 when one portfolio lost while another gained.">
+                    <span className="underline decoration-dotted decoration-slate-300 underline-offset-4 cursor-help">Share of profit</span>
+                  </th>
+                  <th className="text-right font-black py-3 pl-4 pr-6 md:pr-7" title="Its share of the combined risk at today's weights. The shares add up to 100%.">
+                    <span className="underline decoration-dotted decoration-slate-300 underline-offset-4 cursor-help">Share of risk</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m) => (
+                  <tr key={m.portfolioUuid} className="border-t border-slate-100">
+                    <th scope="row" className="text-left py-3 pl-6 md:pl-7 pr-4">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorOf(m.portfolioUuid) }} />
+                        <span className="font-bold text-slate-900">{m.name}</span>
+                      </span>
+                    </th>
+                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatCurrency(m.marketValue, data.currency, 0)}</td>
+                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums">{m.weightPct.toFixed(1)}%</td>
+                    <td className="text-right py-3 px-4 tabular-nums whitespace-nowrap">
+                      <span className="font-bold text-slate-900">{m.pnlSharePct === null ? "—" : `${m.pnlSharePct.toFixed(1)}%`}</span>
+                      <span className={`block text-xs font-semibold ${m.totalPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {formatSignedCurrency(m.totalPnl, data.currency)}
+                      </span>
+                    </td>
+                    <td className="text-right py-3 pl-4 pr-6 md:pr-7 tabular-nums whitespace-nowrap">
+                      <span className="font-bold text-slate-900">{m.riskContributionPct === null ? "—" : `${m.riskContributionPct.toFixed(1)}%`}</span>
+                      {m.riskContributionPct !== null && <RiskShareNote risk={m.riskContributionPct} weight={m.weightPct} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.status === "insufficient_history" && (
+            <p className="px-6 md:px-7 py-4 border-t border-slate-100 text-xs text-slate-400">
+              Risk shares need at least 60 trading days shared by your portfolios — they&apos;ll show up once there are.
+            </p>
+          )}
+          {data.overlappingAssets.length > 0 && (
+            <div className="px-6 md:px-7 py-6 border-t border-slate-100">
+              <h3 className="text-sm font-black text-slate-900">Held in more than one portfolio</h3>
+              <p className="text-xs text-slate-500 mt-1 mb-4 max-w-xl leading-relaxed">
+                Your combined position in these is bigger than any single portfolio shows.
+              </p>
+              <div className="divide-y divide-slate-100">
+                {data.overlappingAssets.slice(0, 10).map((a) => (
+                  <div key={a.assetId} className="py-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-1.5">
+                    <div className="min-w-0">
+                      <p className="truncate">
+                        <span className="text-[13px] font-bold text-slate-900">{a.ticker ?? a.name}</span>
+                        {a.ticker && <span className="text-xs text-slate-400 ml-2">{a.name}</span>}
+                      </p>
+                      <p className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                        {a.holdings.map((h) => (
+                          <span key={h.portfolioUuid} className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorOf(h.portfolioUuid) }} />
+                            {nameOf(h.portfolioUuid)} <span className="tabular-nums">{formatCurrency(h.marketValue, data.currency, 0)}</span>
+                          </span>
+                        ))}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(a.marketValue, data.currency, 0)}</p>
+                      <p className="text-xs text-slate-400 tabular-nums">{a.weightPct.toFixed(1)}% of the total</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
+// How far a risk share has to sit from the value share before it's worth pointing out, in
+// percentage points — closer than that, "about its size" is the honest reading.
+const RISK_SHARE_MARGIN = 5;
+
+function RiskShareNote({ risk, weight }: { risk: number; weight: number }) {
+  if (risk < 0) return <span className="block text-xs font-semibold text-emerald-600">Offsets the others</span>;
+  if (risk > weight + RISK_SHARE_MARGIN) return <span className="block text-xs font-semibold text-amber-600">More than its size</span>;
+  if (risk < weight - RISK_SHARE_MARGIN) return <span className="block text-xs font-semibold text-slate-400">Less than its size</span>;
+  return null;
+}
+
+/**
+ * PORTFOLIO CORRELATION MODULE — the aggregate's /composition, Risk side: how the portfolios'
+ * daily returns move together. Near 1 they rise and fall together (little diversification
+ * between them), near 0 independently, below 0 opposite. Null under "insufficient_history".
+ */
+function PortfolioCorrelationModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<CompositionResponse>(portfolioService.getComposition, portfolioUuid);
+  const { portfolios } = usePortfolio();
+  const nameOf = (uuid: string) => data?.members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
+  const corr = data?.correlation ?? null;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk"
+        title="How Your Portfolios Move Together"
+        desc={corr ? `Correlation of daily returns, over ${corr.observations} shared trading days.` : "Correlation of their daily returns."}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolios has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {corr === null ? (
+            <ModuleMessage>Needs at least 60 trading days shared by your portfolios — it will appear once there are.</ModuleMessage>
+          ) : (
+            <div className="p-6 md:p-7 overflow-x-auto">
+              <table className="border-collapse">
+                <thead>
+                  <tr>
+                    <th />
+                    {corr.portfolioUuids.map((u) => (
+                      <th key={u} scope="col" className="px-1 pb-2 text-[11px] font-bold text-slate-500 text-center max-w-24 truncate">{nameOf(u)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {corr.portfolioUuids.map((rowUuid, i) => (
+                    <tr key={rowUuid}>
+                      <th scope="row" className="pr-3 py-1 text-left text-[11px] font-bold text-slate-500 max-w-32 truncate">{nameOf(rowUuid)}</th>
+                      {corr.portfolioUuids.map((colUuid, j) => {
+                        const v = corr.matrix[i]?.[j] ?? null;
+                        return (
+                          <td key={colUuid} className="p-1">
+                            {i === j || v === null ? (
+                              <div className="w-16 h-12 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-300">—</div>
+                            ) : (
+                              <div
+                                className="w-16 h-12 rounded-lg flex items-center justify-center text-xs font-bold tabular-nums"
+                                style={correlationCellStyle(v)}
+                                title={`${nameOf(rowUuid)} and ${nameOf(colUuid)}: ${v.toFixed(2)}`}
+                              >
+                                {v.toFixed(2)}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex items-center gap-3 mt-5 text-[11px] font-semibold text-slate-500">
+                <span>Move opposite</span>
+                {/* Same scale as the holdings' correlation matrix (correlationCellStyle). */}
+                <span className="h-2 w-40 rounded-full" style={{ background: "linear-gradient(to right, rgb(244,63,94), #f8fafc, rgb(16,185,129))" }} />
+                <span>Move together</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
 // Each is null while the backend hasn't computed it for this user yet; `summary` never is
 // (see portfolioService.getPortfolioSummary).
 interface PortfolioComposition {
@@ -2646,7 +2853,7 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
 
 function HistoryPage({
   data, historyUpdating, portfolioUuid, subTab, selected, setSelected,
-  monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut,
+  monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut, isAggregate,
 }: {
   data: FullHistoryDashboard; historyUpdating: boolean; portfolioUuid: string;
   subTab: HistorySubTabId;
@@ -2658,6 +2865,8 @@ function HistoryPage({
   onSelectMonth: (year: number, month: number) => void;
   selectedYearStale: boolean;
   monthStaleTimedOut: boolean;
+  // "All portfolios": Composition and Risk then also show how the portfolios make it up.
+  isAggregate: boolean;
 }) {
   const unrealizedIsGain = data.totalUnrealizedPnl >= 0;
 
@@ -2751,6 +2960,7 @@ function HistoryPage({
       {subTab === "risk" ? (
         <>
           <VolatilityModule portfolioUuid={portfolioUuid} />
+          {isAggregate && <PortfolioCorrelationModule portfolioUuid={portfolioUuid} />}
           <DrawdownModule portfolioUuid={portfolioUuid} />
           <RiskModelTab portfolioUuid={portfolioUuid} />
         </>
@@ -2766,6 +2976,7 @@ function HistoryPage({
           </div>
         ) : composition ? (
           <>
+            {isAggregate && <PortfoliosMixModule portfolioUuid={portfolioUuid} />}
             <HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} />
             <SectorRegionModule sector={composition.sector} region={composition.region} />
           </>

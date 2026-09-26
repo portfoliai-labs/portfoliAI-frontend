@@ -79,7 +79,7 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorPerformanceSection />
           // Keyed for the same reason: its month-drilldown cache is per year, not per portfolio.
-          : <PerformanceSection key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} portfolioName={portfolio!.name} onNavigate={setActiveSection} />;
+          : <PerformanceSection key={portfolio!.uuid} portfolioUuid={portfolio!.uuid} portfolioName={portfolio!.name} isAggregate={portfolio!.isAggregate} onNavigate={setActiveSection} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
