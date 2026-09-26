@@ -51,6 +51,9 @@ type StandardTransaction = {
   broker: string;
   ticker: string;
   isin?: string;
+  // Frontend-only: the portfolio a not-yet-saved row will be saved into, where the user can
+  // pick one (see FileUploader). Never sent as part of the transaction itself.
+  portfolioUuid?: string;
 };
 
 export type { Document, DocumentStatus, PresignedUrl, ReportType, StandardTransaction };

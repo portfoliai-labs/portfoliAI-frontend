@@ -4,16 +4,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Sun,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
-  Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
+  Loader2, AlertCircle, FileText, ExternalLink, Scale, LayoutGrid, Gauge,
   Search, ChevronDown, Coins, Percent,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
-import { formatCurrency, formatQuantity } from "../../lib/format";
+import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
@@ -31,7 +30,6 @@ import type {
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const fullDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-const monthYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
 // Portfolio-vs-benchmark colours, shared by the chart lines, the Total Return card's markers
 // and the composition bars so one colour always means the same series. The benchmark grey is
@@ -58,10 +56,11 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 /**
- * INSIGHTS SECTION — one portfolio's lifetime figures, as sub-tabs of one page (see
- * HISTORY_SUB_TABS below), each answering one question: Performance (how is it doing —
- * returns, value, the monthly heatmap drilled into via /monthly?year=, the benchmark), Income
- * & Costs (what it earned and cost), Composition (what it holds) and Risk (how much it swings).
+ * INSIGHTS SECTION — one portfolio's lifetime figures, on one scrolling page split into
+ * sections (see HISTORY_SECTIONS below), each answering one question: Income & Costs (what it
+ * earned and cost), Performance (how is it doing — returns, value, the monthly heatmap drilled
+ * into via /monthly?year=, the benchmark), Composition (what it holds) and Risk (how much it
+ * swings).
  * The short-term view (this month) lives on the Dashboard instead. /history returns null rather than a
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
@@ -70,15 +69,14 @@ export function PerformanceSection({
   portfolioUuid, isAggregate = false, onNavigate, portfolioBar,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
-  // The investor's PortfolioBar (see InsightsSection), in the header panel above the tabs.
+  // The investor's PortfolioBar (see InsightsSection), in the header panel.
   portfolioBar?: React.ReactNode;
 }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
-  // Sub-tab and month-drilldown state live here rather than in HistoryPage below, even though
-  // only HistoryPage's content depends on them: the tabs and the drilldown's way back both sit
-  // in the header panel (PortfolioPageHeader), which is rendered here.
-  const [subTab, setSubTab] = useState<HistorySubTabId>("performance");
+  // Month-drilldown state lives here rather than in HistoryPage below, even though only
+  // HistoryPage's content depends on it: while a month is open, its breadcrumb takes the
+  // header's place, and that's rendered here.
   const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
   const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
   const [monthLoading, setMonthLoading] = useState(false);
@@ -131,27 +129,22 @@ export function PerformanceSection({
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedYearStale, selectedYear, portfolioUuid]);
 
-  // Tabs only make sense once there's an actual history to split across them:
-  // hidden while loading/failed/empty (nothing to show in any of them) and while a month
-  // drilldown is open (that view has its own "All time" back link instead).
-  const showTabs = !loading && !failed && history !== null && !isHistoryEmpty(history) && !selected;
+  const selectedPeriod = selected
+    ? monthCache[selected.year]?.find((p) => new Date(p.periodStart).getUTCMonth() + 1 === selected.month)
+    : undefined;
 
   return (
-    <div className="px-0 py-6 space-y-6">
-      <PortfolioPageHeader
-        title="Insights"
-        bar={portfolioBar}
-        nav={selected ? (
-          <button
-            onClick={() => setSelected(null)}
-            className="flex items-center gap-2 py-3 text-[13px] font-bold text-slate-500 hover:text-[#C49A3C] transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> All time
-          </button>
-        ) : showTabs ? (
-          <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />
-        ) : undefined}
-      />
+    <div className="space-y-6 pb-12">
+      {selected ? (
+        <MonthBreadcrumb
+          year={selected.year}
+          month={selected.month}
+          onBack={() => setSelected(null)}
+          right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
+        />
+      ) : (
+        <PortfolioPageHeader bar={portfolioBar} />
+      )}
 
       {failed && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
@@ -176,7 +169,6 @@ export function PerformanceSection({
           data={history}
           historyUpdating={updating}
           portfolioUuid={portfolioUuid}
-          subTab={subTab}
           selected={selected}
           monthCache={monthCache}
           monthLoading={monthLoading}
@@ -187,6 +179,34 @@ export function PerformanceSection({
           isAggregate={isAggregate}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * MONTH BREADCRUMB — stands in for the header while a month from the heatmap is open: "Year /
+ * Month", the year leading back to the full history (the portfolio bar is hidden meanwhile,
+ * since switching portfolio from inside one month's detail would land on a different history).
+ * The month's report link, when it has one, sits at the other end.
+ */
+function MonthBreadcrumb({
+  year, month, onBack, right,
+}: { year: number; month: number; onBack: () => void; right?: React.ReactNode }) {
+  const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 min-h-10">
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-2 text-[13px] font-bold">
+          <li>
+            <button onClick={onBack} className="text-slate-400 hover:text-[#C49A3C] transition-colors">
+              {year}
+            </button>
+          </li>
+          <li aria-hidden className="text-slate-300">/</li>
+          <li aria-current="page" className="text-slate-900">{monthName}</li>
+        </ol>
+      </nav>
+      {right}
     </div>
   );
 }
@@ -217,27 +237,6 @@ function ModuleHead({
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
         {icon ? <div className="flex items-center gap-2.5">{icon}{heading}</div> : heading}
-        {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
-      </div>
-      {right}
-    </div>
-  );
-}
-
-/**
- * PAGE HEADER — the plain (no card) title block above a page's stat grid, mirroring the
- * section's own masthead further up rather than sitting inside a bordered box. The stat
- * cards below already carry the visual weight; a boxed header on top of boxed cards read
- * as one more layer of nesting for no reason.
- */
-function PageHeader({ eyebrow, title, desc, right }: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-4 px-1">
-      <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-        <h2 className="text-xl md:text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          {title}
-        </h2>
         {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
       </div>
       {right}
@@ -400,14 +399,17 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
             tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
+            tickMargin={8}
             minTickGap={30}
+            padding={{ left: 12 }}
           />
           <YAxis
-            tickFormatter={(v) => formatCurrency(v, currency, 0)}
+            tickFormatter={formatCompact}
             tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
-            width={80}
+            tickMargin={8}
+            width={56}
           />
           <Tooltip
             labelFormatter={(label) => fullDateLabel(label as string)}
@@ -561,44 +563,126 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.chart.length === 0;
 
-type HistorySubTabId = "performance" | "income" | "composition" | "risk";
+type HistorySectionId = "performance" | "income" | "composition" | "risk";
 
-const HISTORY_SUB_TABS: SubTab<HistorySubTabId>[] = [
-  { id: "performance", label: "Performance", icon: TrendingUp },
+const HISTORY_SECTIONS: { id: HistorySectionId; label: string; icon: typeof Coins }[] = [
   { id: "income", label: "Income & Costs", icon: Coins },
+  { id: "performance", label: "Performance", icon: TrendingUp },
   { id: "composition", label: "Composition", icon: LayoutGrid },
   { id: "risk", label: "Risk", icon: Gauge },
 ];
 
-interface SubTab<T extends string> {
-  id: T;
-  label: string;
-  icon: typeof Sun;
+const sectionAnchor = (id: HistorySectionId) => `insights-${id}`;
+
+/**
+ * HISTORY SECTION — one of the page's sections: just its modules, with no heading of its own
+ * (SectionNav names it). `scroll-mt` keeps its top clear of the dashboard's sticky header when
+ * SectionNav scrolls to it.
+ */
+function HistorySection({ id, children }: { id: HistorySectionId; children: React.ReactNode }) {
+  return (
+    <section id={sectionAnchor(id)} className="scroll-mt-28 space-y-6">
+      {children}
+    </section>
+  );
 }
 
 /**
- * SUB-TAB SWITCHER — the lower row of the page's header panel (see PortfolioPageHeader), under
- * the portfolio pills. Plain text with a coloured underline sitting on the row's bottom edge, so
- * it reads as the panel's own navigation rather than a second set of pills. Wraps on a narrow
- * screen; nothing here scrolls.
+ * SECTION NAV — a timeline down the side of the page, pinned while the page scrolls and as
+ * tall as the viewport allows. The line stands for the whole page: it fills in gold as the
+ * reader moves down, reaching the bottom at the end of the page, and each section's dot sits
+ * where the fill will be as that section's top crosses the reading line — so a long section
+ * gets a long stretch of line, and a dot lights up exactly as its section comes into view. The
+ * dots are the sections' icons, with the name shown on hover; a click scrolls to the section. Listens with capture on window so it follows whatever ends up
+ * scrolling the page, the window or a container (scroll events don't bubble, but they can be
+ * captured), and re-measures when a section changes height (Composition loads on its own).
+ * Wide screens only; narrower ones just scroll.
  */
-function SubTabSwitcher<T extends string>({
-  tabs, active, onChange,
-}: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
+function SectionNav() {
+  const [dots, setDots] = useState<number[]>(() => HISTORY_SECTIONS.map((_, i) => i / (HISTORY_SECTIONS.length - 1)));
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const els = HISTORY_SECTIONS.map(({ id }) => document.getElementById(sectionAnchor(id)));
+    if (els.some((el) => !el)) return;
+    const sections = els as HTMLElement[];
+
+    const update = () => {
+      const rects = sections.map((el) => el.getBoundingClientRect());
+      const first = rects[0].top;
+      const total = rects[rects.length - 1].bottom - first;
+      // The reading line: a third of the way down the viewport. Scrolling runs from the first
+      // section's top on that line to the last one's bottom at the viewport's bottom, the
+      // same span the fill covers.
+      const line = window.innerHeight / 3;
+      const span = Math.max(total - window.innerHeight + line, 1);
+      const clamp = (v: number) => Math.min(Math.max(v, 0), 1);
+      setDots(rects.map((r) => clamp((r.top - first) / span)));
+      setProgress(clamp((line - first) / span));
+    };
+
+    update();
+    const resize = new ResizeObserver(update);
+    sections.forEach((el) => resize.observe(el));
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      resize.disconnect();
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  // The section in view: the last one whose dot the fill has reached.
+  const active = dots.reduce((acc, pos, i) => (progress >= pos - 0.001 ? i : acc), 0);
+
   return (
-    <div className="flex flex-wrap items-center gap-x-6">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`flex items-center gap-1.5 py-3 text-[13px] font-bold whitespace-nowrap border-b-2 transition-colors ${
-            active === t.id ? "border-[#C49A3C] text-[#C49A3C]" : "border-transparent text-slate-400 hover:text-slate-600"
-          }`}
-        >
-          <t.icon className="h-3.5 w-3.5" /> {t.label}
-        </button>
-      ))}
-    </div>
+    <nav aria-label="Insights sections" className="hidden lg:block sticky top-28 self-start h-[calc(100vh-10rem)]">
+      {/* Inset so the first and last icons, centred on their points, stay inside the nav. */}
+      <div className="absolute inset-x-0 inset-y-4">
+        <span aria-hidden className="absolute left-1/2 -translate-x-1/2 inset-y-0 w-px bg-slate-200">
+          <span
+            className="absolute inset-x-0 top-0 bg-[#C49A3C] transition-[height] duration-150 ease-out"
+            style={{ height: `${progress * 100}%` }}
+          />
+        </span>
+        <ol>
+          {HISTORY_SECTIONS.map(({ id, label, icon: Icon }, i) => {
+            const reached = i <= active;
+            const isActive = i === active;
+            return (
+              <li
+                key={id}
+                className="group absolute left-1/2 -translate-x-1/2 -translate-y-1/2 transition-[top] duration-150 ease-out"
+                style={{ top: `${dots[i] * 100}%` }}
+              >
+                <button
+                  onClick={() => document.getElementById(sectionAnchor(id))?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  aria-label={label}
+                  aria-current={isActive ? "true" : undefined}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40 ${
+                    isActive
+                      ? "bg-[#C49A3C] border-[#C49A3C] text-white shadow-sm ring-4 ring-[#C49A3C]/15"
+                      : reached
+                        ? "bg-white border-[#C49A3C] text-[#C49A3C]"
+                        : "bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+                {/* The section's name, to the left of its icon while hovered or focused. */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 mr-2.5 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  {label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </nav>
   );
 }
 
@@ -913,14 +997,6 @@ function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
   return (
     <div className="space-y-6">
       {data.isStale && <UpdatingNote />}
-      <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-slate-600">
-        <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-        <p className="text-xs font-medium leading-relaxed">
-          Everything on this page is based on the past returns of your holdings, over the history they share. It
-          describes what happened, not what will happen, and it isn&apos;t a recommendation.
-        </p>
-      </div>
-
       {built ? (
         <>
           <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />
@@ -1442,24 +1518,14 @@ function PeriodHero({
  * of tiles (see the Monthly/Annual detail view this replaces). The month in progress is
  * valued as of today, and has no volatility or drawdown until it closes.
  */
-function MonthDetail({ period, portfolioUuid }: { period: PeriodDashboard; portfolioUuid: string }) {
+function MonthDetail({ period }: { period: PeriodDashboard }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
-  const title = monthYearLabel(period.periodStart);
-  const rangeLabel = period.inProgress
-    ? `${fullDateLabel(period.periodStart)} – today · month in progress`
-    : `${fullDateLabel(period.periodStart)} – ${fullDateLabel(period.periodEnd)}`;
   const twr = period.timeWeightedReturnPct;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={period.currency}
-        title={title}
-        desc={rangeLabel}
-        right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={period.reportDocumentId} />}
-      />
       {isPeriodEmpty(period) ? (
         <EmptyPeriodState message="No portfolio activity recorded for this month yet." />
       ) : (
@@ -2193,27 +2259,31 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>Not enough history yet to measure returns — they&apos;ll show up here soon.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
-                <StatContent
-                  title="Since Inception"
-                  value={formatPctOrDash(data.totalReturnPct)}
-                  icon={data.totalReturnPct !== null && data.totalReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                  info={`Total return over ${lifespanLabel(data.lifespanDays)}.`}
-                  color={pctColor(data.totalReturnPct)}
-                />
-                <StatContent
-                  title="Per Year"
-                  value={formatPctOrDash(data.annualizedReturnPct)}
-                  icon={data.annualizedReturnPct !== null && data.annualizedReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                  info={data.annualizedReturnPct === null ? "Not enough history yet." : "The return since inception, annualized."}
-                  color={pctColor(data.annualizedReturnPct)}
-                />
-              </div>
-              {horizons.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-t border-slate-100">
-                  {horizons.map((h) => <HorizonCell key={h.period} horizon={h} />)}
+              {/* Two columns: the since-inception figures side by side on one row on the left,
+                  the recent horizons two by two on the right. */}
+              <div className={`grid grid-cols-1 divide-y divide-slate-100 ${horizons.length > 0 ? "lg:grid-cols-2 lg:divide-y-0 lg:divide-x" : ""}`}>
+                <div className="grid grid-cols-2 items-center divide-x divide-slate-100">
+                  <StatContent
+                    title="Since Inception"
+                    value={formatPctOrDash(data.totalReturnPct)}
+                    icon={data.totalReturnPct !== null && data.totalReturnPct < 0 ? FALL_ICON : RISE_ICON}
+                    info={`Total return over ${lifespanLabel(data.lifespanDays)}.`}
+                    color={pctColor(data.totalReturnPct)}
+                  />
+                  <StatContent
+                    title="Per Year"
+                    value={formatPctOrDash(data.annualizedReturnPct)}
+                    icon={data.annualizedReturnPct !== null && data.annualizedReturnPct < 0 ? FALL_ICON : RISE_ICON}
+                    info={data.annualizedReturnPct === null ? "Not enough history yet." : "The return since inception, annualized."}
+                    color={pctColor(data.annualizedReturnPct)}
+                  />
                 </div>
-              )}
+                {horizons.length > 0 && (
+                  <div className="grid grid-cols-2 auto-rows-fr gap-px bg-slate-100">
+                    {horizons.map((h) => <HorizonCell key={h.period} horizon={h} />)}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </>
@@ -2225,7 +2295,7 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
 function HorizonCell({ horizon }: { horizon: HorizonEntry }) {
   const pct = horizon.totalReturnPct;
   return (
-    <div className="bg-white px-5 md:px-6 py-4">
+    <div className="bg-white px-5 md:px-6 py-4 flex flex-col justify-center">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last {horizon.period.toLowerCase()}</p>
       <p className={`text-lg font-black tabular-nums mt-1 ${pct === null ? "text-slate-400" : pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
         {formatPctOrDash(pct)}
@@ -2819,11 +2889,12 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
                 minTickGap={30}
               />
               <YAxis
-                tickFormatter={(v) => formatCurrency(v, data.currency, 0)}
+                tickFormatter={formatCompact}
                 tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
                 axisLine={false}
                 tickLine={false}
-                width={80}
+                tickMargin={8}
+                width={56}
               />
               <Tooltip
                 labelFormatter={(label) => fullDateLabel(label as string)}
@@ -2847,11 +2918,10 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
 }
 
 function HistoryPage({
-  data, historyUpdating, portfolioUuid, subTab, selected,
+  data, historyUpdating, portfolioUuid, selected,
   monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut, isAggregate,
 }: {
   data: FullHistoryDashboard; historyUpdating: boolean; portfolioUuid: string;
-  subTab: HistorySubTabId;
   selected: { year: number; month: number } | null;
   monthCache: Record<number, PeriodDashboard[]>;
   monthLoading: boolean;
@@ -2867,18 +2937,15 @@ function HistoryPage({
   // Composition (current holdings/currency breakdown plus sector/region exposure) used to live
   // on Insights' own Today page, fetched from the today dashboard's own `summary` field —
   // that endpoint no longer carries it (see GET /v1/portfolio/summary), so this fetches it
-  // directly instead. Lazy, same as before: nothing loads until this tab is actually opened,
-  // and the result is cached in this component's own state (not re-fetched on switching sub-
-  // tabs back and forth) since HistoryPage itself doesn't unmount between them.
+  // directly instead. Cached in this component's own state, so opening a month's detail and
+  // coming back doesn't fetch it again.
   const [composition, setComposition] = useState<PortfolioComposition | null>(null);
-  const [compositionLoading, setCompositionLoading] = useState(false);
   const [compositionError, setCompositionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (subTab !== "composition" || composition !== null) return;
+    if (composition !== null) return;
     let cancelled = false;
     const loadComposition = async () => {
-      setCompositionLoading(true);
       setCompositionError(null);
       try {
         const [summary, sector, region] = await Promise.all([
@@ -2890,13 +2957,11 @@ function HistoryPage({
         setComposition({ summary, sector: sector?.entries ?? null, region: region?.entries ?? null });
       } catch (err) {
         if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
-      } finally {
-        if (!cancelled) setCompositionLoading(false);
       }
     };
     loadComposition();
     return () => { cancelled = true; };
-  }, [subTab, composition, portfolioUuid]);
+  }, [composition, portfolioUuid]);
 
   if (selected) {
     const yearData = monthCache[selected.year];
@@ -2918,7 +2983,7 @@ function HistoryPage({
         ) : period ? (
           <>
             {period.isStale && <UpdatingNote />}
-            <MonthDetail period={period} portfolioUuid={portfolioUuid} />
+            <MonthDetail period={period} />
           </>
         ) : (
           <EmptyPeriodState message="No detail available for this month." />
@@ -2937,40 +3002,16 @@ function HistoryPage({
 
   // The /history figures (lifetime totals, chart, heatmap) all come from the one document, so
   // one isStale check covers them: hidden behind one StaleUpdatingState while historyUpdating,
-  // or shown with one hint once that window times out. The analytics modules on each tab are
-  // their own fetches with their own isStale.
+  // or shown with one hint once that window times out. The analytics modules in each section
+  // are their own fetches with their own isStale.
   const historyFigures = (content: React.ReactNode) => historyUpdating
     ? <Module><StaleUpdatingState /></Module>
     : <>{data.isStale && <UpdatingNote />}{content}</>;
 
   return (
-    <div className="space-y-6">
-      {subTab === "risk" ? (
-        <>
-          <VolatilityModule portfolioUuid={portfolioUuid} />
-          {isAggregate && <PortfolioCorrelationModule portfolioUuid={portfolioUuid} />}
-          <DrawdownModule portfolioUuid={portfolioUuid} />
-          <RiskModelTab portfolioUuid={portfolioUuid} />
-        </>
-      ) : subTab === "composition" ? (
-        compositionLoading && !composition ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-          </div>
-        ) : compositionError ? (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <p className="text-sm font-bold">{compositionError}</p>
-          </div>
-        ) : composition ? (
-          <>
-            {isAggregate && <PortfoliosMixModule portfolioUuid={portfolioUuid} />}
-            <HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} />
-            <SectorRegionModule sector={composition.sector} region={composition.region} />
-          </>
-        ) : null
-      ) : subTab === "income" ? (
-        <>
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_2rem] gap-6">
+      <div className="space-y-6 min-w-0">
+        <HistorySection id="income">
           {historyFigures(
             <StatCardGroup gridClassName="grid-cols-2 lg:grid-cols-4 divide-y divide-slate-100 lg:divide-y-0 lg:divide-x">
               <StatContent
@@ -3012,9 +3053,8 @@ function HistoryPage({
           <DividendsModule portfolioUuid={portfolioUuid} />
           {!historyUpdating && <RealizedPnLCard trades={data.realizedTradesByAsset} />}
           <TradingCostsModule portfolioUuid={portfolioUuid} />
-        </>
-      ) : (
-        <>
+        </HistorySection>
+        <HistorySection id="performance">
           <ReturnsModule portfolioUuid={portfolioUuid} />
           {historyFigures(
             <>
@@ -3043,8 +3083,33 @@ function HistoryPage({
             </>,
           )}
           <BenchmarkModule portfolioUuid={portfolioUuid} />
-        </>
-      )}
+        </HistorySection>
+        <HistorySection id="composition">
+          {compositionError ? (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <p className="text-sm font-bold">{compositionError}</p>
+            </div>
+          ) : composition ? (
+            <>
+              {isAggregate && <PortfoliosMixModule portfolioUuid={portfolioUuid} />}
+              <HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} />
+              <SectorRegionModule sector={composition.sector} region={composition.region} />
+            </>
+          ) : (
+            <div className="flex h-64 items-center justify-center">
+              <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
+            </div>
+          )}
+        </HistorySection>
+        <HistorySection id="risk">
+          <VolatilityModule portfolioUuid={portfolioUuid} />
+          {isAggregate && <PortfolioCorrelationModule portfolioUuid={portfolioUuid} />}
+          <DrawdownModule portfolioUuid={portfolioUuid} />
+          <RiskModelTab portfolioUuid={portfolioUuid} />
+        </HistorySection>
+      </div>
+      <SectionNav />
     </div>
   );
 }

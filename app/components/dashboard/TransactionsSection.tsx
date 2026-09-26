@@ -25,6 +25,8 @@ export interface TransactionRow {
   sourceLabel: string;
   origin: "existing" | "pending";
   errorFields: Set<string>;
+  // The portfolio the row belongs to (saved) or will be saved into (pending).
+  portfolioUuid?: string;
 }
 
 // The three operations a user can bulk-reassign selected rows to — "other" is deliberately
@@ -56,8 +58,7 @@ interface TransactionsSectionProps {
   // (not just the current page) — omit to hide the action entirely (e.g. pending rows).
   onDeleteAll?: () => void;
   deletingAll?: boolean;
-  // No selection, no row click: for the aggregate portfolio, whose transactions can only be
-  // edited from the portfolio they belong to. Saved rows then show their sourceLabel too.
+  // No selection, no row click: for a list whose rows can't be edited from here.
   readOnly?: boolean;
 }
 
@@ -182,7 +183,7 @@ export function TransactionsSection({
               tx.isin && `ISIN ${tx.isin}`,
               tx.broker,
               tx.fees > 0 && `fees ${formatMoney(tx.fees, tx.currency)}`,
-              (!isExisting || readOnly) && row.sourceLabel,
+              row.sourceLabel,
             ].filter(Boolean).join(" · ");
 
             return (

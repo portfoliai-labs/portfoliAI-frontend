@@ -21,7 +21,6 @@ import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { InsightsSection } from "../../components/dashboard/InsightsSection";
-import { PortfolioBar, openPortfolioSettings } from "../../components/dashboard/PortfolioBar";
 import { Loader2 } from "lucide-react";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
@@ -65,18 +64,8 @@ function DashboardPageContent() {
       case 'clients':
         return <ClientsSection />;
       case 'upload':
-        // Keyed by portfolio so switching portfolios drops any unsaved rows instead of
-        // letting "Save" send them to the newly selected one.
-        return isAdvisor
-          ? <AdvisorUploadSection />
-          : (
-            <FileUploader
-              key={portfolio!.uuid}
-              portfolioUuid={portfolio!.uuid}
-              readOnly={portfolio!.isAggregate}
-              portfolioBar={<PortfolioBar onManage={() => openPortfolioSettings(setActiveSection)} />}
-            />
-          );
+        // Every portfolio at once: the list filters by portfolio, and new rows say where they go.
+        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
       case 'reports':
         return isAdvisor ? <AdvisorReportsList /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
       case 'performance':
@@ -121,7 +110,11 @@ function DashboardPageContent() {
         onNavigate={setActiveSection}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      {/* The window scrolls the page (the header above is sticky to it), so nothing between it
+          and the content may be a scroll container: one that never scrolls would pin every
+          sticky element inside it (Insights' section timeline) in place.
+          Hence overflow-x-clip here rather than overflow-hidden, and no overflow on <main>. */}
+      <div className="flex flex-1 overflow-x-clip">
         <Sidebar
           activeSection={activeSection}
           setActiveSection={setActiveSection}
@@ -131,7 +124,7 @@ function DashboardPageContent() {
           subscriptionTier={user.subscription_tier}
         />
 
-        <main className="flex-1 overflow-y-auto lg:ml-72 bg-[#F7F5EF] p-4 md:p-12 transition-all duration-300">
+        <main className="flex-1 min-w-0 lg:ml-72 bg-[#F7F5EF] p-4 md:p-12 transition-all duration-300">
           <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
             {renderContent}
           </div>

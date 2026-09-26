@@ -576,16 +576,8 @@ export function ClientsSection() {
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Client Management</p>
-          <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Your Clients
-          </h1>
-          <p className="text-sm text-[#78716c] mt-1">Open a client to set alerts on their portfolio.</p>
-        </div>
+    <div className="space-y-6 pb-12">
+      <div className="flex justify-end">
         <button
           onClick={() => setShowAdd(true)}
           className="flex items-center gap-2 px-5 py-2.5 bg-[#1c1917] text-white rounded-xl font-bold text-sm hover:bg-[#C49A3C] transition-colors shadow-sm shrink-0"

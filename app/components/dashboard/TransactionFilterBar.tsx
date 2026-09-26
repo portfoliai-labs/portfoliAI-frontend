@@ -3,8 +3,12 @@
 import { useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import type { TransactionOperation } from "../../models/Transaction";
+import type { Portfolio } from "../../models/Portfolio";
 
 export interface TransactionFilterState {
+  // A portfolio's uuid, or "" for every portfolio. Picks which list is fetched rather than
+  // being a query param (see FileUploader).
+  portfolio: string;
   ticker: string;
   isin: string;
   broker: string;
@@ -14,6 +18,7 @@ export interface TransactionFilterState {
 }
 
 export const EMPTY_TRANSACTION_FILTERS: TransactionFilterState = {
+  portfolio: "",
   ticker: "",
   isin: "",
   broker: "",
@@ -63,9 +68,11 @@ function DateFilterInput({
 interface TransactionFilterBarProps {
   filters: TransactionFilterState;
   onChange: (filters: TransactionFilterState) => void;
+  // The user's own portfolios; the portfolio filter only shows with two or more.
+  portfolios?: Portfolio[];
 }
 
-export function TransactionFilterBar({ filters, onChange }: TransactionFilterBarProps) {
+export function TransactionFilterBar({ filters, onChange, portfolios = [] }: TransactionFilterBarProps) {
   const set = <K extends keyof TransactionFilterState>(key: K) => (value: TransactionFilterState[K]) =>
     onChange({ ...filters, [key]: value });
 
@@ -73,6 +80,20 @@ export function TransactionFilterBar({ filters, onChange }: TransactionFilterBar
 
   return (
     <div className="flex items-center gap-2 px-5 md:px-6 py-3 border-b border-slate-200 flex-wrap bg-slate-50/40">
+      {portfolios.length > 1 && (
+        <div className="relative w-full sm:w-40">
+          <select
+            value={filters.portfolio}
+            onChange={(e) => set("portfolio")(e.target.value)}
+            aria-label="Portfolio"
+            className="h-9 pl-3 pr-8 w-full rounded-lg bg-white border border-slate-200 text-slate-900 text-xs font-semibold outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-300 transition-all appearance-none"
+          >
+            <option value="">All portfolios</option>
+            {portfolios.map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+          </select>
+          <ChevronDown className="h-3.5 w-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+      )}
       <FilterInput placeholder="Ticker" value={filters.ticker} onChange={set("ticker")} />
       <FilterInput placeholder="ISIN" value={filters.isin} onChange={set("isin")} />
       <FilterInput placeholder="Broker" value={filters.broker} onChange={set("broker")} />

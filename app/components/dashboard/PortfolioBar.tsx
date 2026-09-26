@@ -2,9 +2,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Plus, Check, Loader2, Layers, Columns3, X, Settings2 } from "lucide-react";
+import { Plus, Check, Loader2, Layers, Columns3, X, Settings2, MoreHorizontal, FileText } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfolioColorMap } from "../../lib/chartColors";
+import { useGenerateReport } from "./GenerateReport";
 
 // More columns than this stop fitting a comparison table a person can read across.
 export const MAX_COMPARED = 4;
@@ -16,16 +17,16 @@ export function openPortfolioSettings(onNavigate: (section: string) => void) {
 }
 
 /**
- * PORTFOLIO BAR — "which portfolio" at the top of the portfolio pages (Insights,
- * Transactions), kept apart from the sidebar, which only says "which page". One pill per
+ * PORTFOLIO BAR — "which portfolio" at the top of Insights, kept apart from the sidebar, which only says "which page". One pill per
  * portfolio, in its colour (portfolioColorMap, the same as in every chart).
  *
  * Two modes, one control:
  * - single: the pills pick the selected portfolio (PortfolioContext), and "+" creates one;
  * - compare (Insights only, once there are 2+ standard portfolios): the same pills become
  *   toggles for up to MAX_COMPARED portfolios, the aggregate included if picked.
- * Rename/delete aren't here — they're management, not navigation (Settings → Portfolios,
- * which the gear opens). Lives in the top row of PortfolioPageHeader's panel.
+ * Everything else is behind the "…" menu at the end (PortfolioMenu): comparing this portfolio,
+ * managing portfolios (Settings → Portfolios, where rename/delete live) and generating a report.
+ * Lives in the top row of PortfolioPageHeader's panel.
  */
 export function PortfolioBar({
   comparing = false, compareSelection = [], onToggleCompare, onEnterCompare, onExitCompare, onManage,
@@ -33,7 +34,7 @@ export function PortfolioBar({
   comparing?: boolean;
   compareSelection?: string[];
   onToggleCompare?: (uuid: string) => void;
-  // Omitted where comparing makes no sense (Transactions): no Compare button then.
+  // Omitted where comparing makes no sense: no "Compare" entry in the menu then.
   onEnterCompare?: () => void;
   onExitCompare?: () => void;
   onManage?: () => void;
@@ -92,26 +93,88 @@ export function PortfolioBar({
             >
               <X className="h-3.5 w-3.5" /> Compare
             </button>
-          ) : canCompare && (
-            <button
-              onClick={onEnterCompare}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[13px] font-bold text-slate-600 border border-slate-200 bg-white hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
-            >
-              <Columns3 className="h-3.5 w-3.5" /> Compare
-            </button>
-          )}
-          {onManage && !comparing && (
-            <button
-              onClick={onManage}
-              aria-label="Manage portfolios"
-              title="Manage portfolios"
-              className="p-2 rounded-full text-slate-400 border border-transparent hover:text-slate-700 hover:border-slate-200 hover:bg-white transition-colors"
-            >
-              <Settings2 className="h-4 w-4" />
-            </button>
+          ) : (
+            <PortfolioMenu onCompare={canCompare ? onEnterCompare : undefined} onManage={onManage} />
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * PORTFOLIO MENU — the "…" button at the end of the bar and the small menu it opens. Entries
+ * whose action isn't available on this page (comparing where the page doesn't offer it, or with
+ * fewer than two portfolios) are left out. "Generate report" queues a full-history report on the selected
+ * portfolio right away (useGenerateReport, which also shows how it went); the backend doesn't
+ * report on the aggregate, so there it's disabled with a hint.
+ * Closes on a pick, a click outside or Escape.
+ */
+function PortfolioMenu({ onCompare, onManage }: { onCompare?: () => void; onManage?: () => void }) {
+  const { current } = usePortfolio();
+  const [open, setOpen] = useState(false);
+  const { generate, sending, toast } = useGenerateReport();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const pick = (action?: () => void) => () => {
+    setOpen(false);
+    action?.();
+  };
+
+  const itemClass =
+    "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-700";
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Portfolio actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`p-2 rounded-full border transition-colors ${
+          open ? "bg-white border-slate-200 text-slate-700" : "border-transparent text-slate-400 hover:text-slate-700 hover:border-slate-200 hover:bg-white"
+        }`}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-2 z-30 w-56 p-1.5 bg-white rounded-xl border border-slate-200 shadow-xl">
+          {onCompare && (
+            <button role="menuitem" onClick={pick(onCompare)} className={itemClass}>
+              <Columns3 className="h-4 w-4 text-slate-400" /> Compare this portfolio
+            </button>
+          )}
+          {onManage && (
+            <button role="menuitem" onClick={pick(onManage)} className={itemClass}>
+              <Settings2 className="h-4 w-4 text-slate-400" /> Manage portfolios
+            </button>
+          )}
+          <button
+            role="menuitem"
+            onClick={pick(() => current && generate(current))}
+            disabled={current?.isAggregate || sending}
+            title={current?.isAggregate ? "Pick a single portfolio to generate its report" : undefined}
+            className={itemClass}
+          >
+            <FileText className="h-4 w-4 text-slate-400" /> Generate report
+          </button>
+        </div>
+      )}
+      {toast}
     </div>
   );
 }

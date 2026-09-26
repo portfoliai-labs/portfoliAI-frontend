@@ -154,7 +154,7 @@ export function NewsPageSection() {
   const { items, loading, error, notFound } = useNews(undefined, undefined, INSIGHTS_NEWS_LIMIT);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500">
       {/* The daily article used to sit on the investor Dashboard, right under the news
           carousel — moved here so both news surfaces (carousel snippet aside, this is the
           dedicated one) live in one place. Leads the page, ahead of the headlines grid, since

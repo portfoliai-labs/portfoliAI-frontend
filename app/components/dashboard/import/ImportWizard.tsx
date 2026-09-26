@@ -34,6 +34,8 @@ import { AnomaliesBlock } from "./AnomaliesBlock";
 import { CommitSummary } from "./CommitSummary";
 import { UnresolvedInstrumentsBlock } from "./UnresolvedInstrumentsBlock";
 import { NUMERIC_TARGETS } from "./types";
+import type { Portfolio } from "../../../models/Portfolio";
+import { PortfolioSelect } from "../PortfolioSelect";
 
 type Phase = "parsing" | "analyzing" | "confirm" | "committing" | "done" | "error";
 type Tab = "columns" | "values" | "preview" | "issues";
@@ -59,14 +61,21 @@ interface ImportWizardProps {
   file: File;
   onClose: () => void;
   onImported: () => void;
+  // The portfolio the file is analyzed against and, unless the user picks another from
+  // `portfolios`, imported into.
   portfolioUuid: string;
+  // With two or more, the wizard asks which portfolio to import into, until the import runs.
+  portfolios?: Portfolio[];
   // Lets the user fall back to the legacy manual column-by-column mapper when AI analysis
   // fails outright (e.g. the file really is malformed).
   onFallbackToManual?: () => void;
 }
 
-export function ImportWizard({ file, onClose, onImported, portfolioUuid, onFallbackToManual }: ImportWizardProps) {
+export function ImportWizard({ file, onClose, onImported, portfolioUuid, portfolios, onFallbackToManual }: ImportWizardProps) {
   const [phase, setPhase] = useState<Phase>("parsing");
+  // Where the rows go. Fixed once the first commit runs: a recommit (manual instrument
+  // overrides) has to land in the same portfolio as the rows already imported.
+  const [targetUuid, setTargetUuid] = useState(portfolioUuid);
   const [tab, setTab] = useState<Tab>("columns");
   const [errorMessage, setErrorMessage] = useState("");
   const [parsedFile, setParsedFile] = useState<ParsedFile | null>(null);
@@ -282,7 +291,7 @@ export function ImportWizard({ file, onClose, onImported, portfolioUuid, onFallb
         },
         proposed_column_mapping: proposedMapping ?? undefined,
       };
-      const result = await importService.commit(portfolioUuid, file, payload);
+      const result = await importService.commit(targetUuid, file, payload);
       setCommitResult(result);
       setPhase("done");
       onImported();
@@ -317,7 +326,7 @@ export function ImportWizard({ file, onClose, onImported, portfolioUuid, onFallb
         manual_instrument_overrides: merged,
         only_row_indexes: onlyRowIndexes,
       };
-      const result = await importService.commit(portfolioUuid, file, payload);
+      const result = await importService.commit(targetUuid, file, payload);
       setCommitResult(result);
       // A recommit persists new rows just like the initial commit does — the caller's list
       // needs telling again, or rows resolved in this round never show up without a reload.
@@ -360,6 +369,18 @@ export function ImportWizard({ file, onClose, onImported, portfolioUuid, onFallb
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {portfolios && portfolios.length > 1 && phase !== "error" && (
+          <div className="max-w-xs">
+            <PortfolioSelect
+              portfolios={portfolios}
+              value={targetUuid}
+              onChange={setTargetUuid}
+              disabled={phase === "committing" || commitResult !== null}
+              label={commitResult ? "Imported into" : "Import into portfolio"}
+            />
+          </div>
+        )}
 
         {(phase === "parsing" || phase === "analyzing") && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">

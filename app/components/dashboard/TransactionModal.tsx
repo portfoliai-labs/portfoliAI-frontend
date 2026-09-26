@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { X, AlertCircle, PlusCircle, Pencil, Trash2, TrendingUp, TrendingDown, Coins, type LucideIcon } from "lucide-react";
 import { StandardTransaction } from "../../models/Report";
 import { validateTransactions } from "../../lib/parser";
+import type { Portfolio } from "../../models/Portfolio";
+import { PortfolioSelect } from "./PortfolioSelect";
 
 interface TransactionModalProps {
   mode: "add" | "edit";
@@ -12,6 +14,11 @@ interface TransactionModalProps {
   onClose: () => void;
   onSave: (transaction: StandardTransaction) => void;
   onDelete?: () => void;
+  // Where the transaction will be saved: with two or more portfolios the form asks, and the
+  // pick comes back as the saved transaction's portfolioUuid. Omit for a saved transaction,
+  // which stays in the portfolio it's in.
+  portfolios?: Portfolio[];
+  defaultPortfolioUuid?: string;
 }
 
 // Colors mirror the operation badges in TransactionsSection.tsx (OPERATION_STYLES)
@@ -143,8 +150,9 @@ function PillButton({
   );
 }
 
-export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: TransactionModalProps) {
+export function TransactionModal({ mode, initial, onClose, onSave, onDelete, portfolios, defaultPortfolioUuid }: TransactionModalProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(initial));
+  const [portfolioUuid, setPortfolioUuid] = useState(initial?.portfolioUuid ?? defaultPortfolioUuid ?? portfolios?.[0]?.uuid);
   const [errors, setErrors] = useState<string[]>([]);
   const isEdit = mode === "edit";
 
@@ -201,6 +209,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
       broker: form.broker.trim() || "Manual",
       ticker,
       ...(isin ? { isin } : {}),
+      ...(portfolios && portfolioUuid ? { portfolioUuid } : {}),
     };
 
     const { errors: validationErrors } = validateTransactions([transaction]);
@@ -246,6 +255,10 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete }: T
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {portfolios && portfolios.length > 1 && portfolioUuid && (
+          <PortfolioSelect portfolios={portfolios} value={portfolioUuid} onChange={setPortfolioUuid} label={isEdit ? "Portfolio" : "Add to portfolio"} />
+        )}
 
         <div className="flex flex-wrap gap-3">
           {OPERATION_OPTIONS.map((op) => (

@@ -91,9 +91,8 @@ export function ComparisonView({
   const { entries, loading, failed, timedOut } = useComparison(ordered.join(","));
 
   return (
-    <div className="px-0 py-6 space-y-6">
+    <div className="space-y-6 pb-12">
       <PortfolioPageHeader
-        title="Insights"
         bar={portfolioBar}
         nav={
           <PortfolioPageHeaderNote>

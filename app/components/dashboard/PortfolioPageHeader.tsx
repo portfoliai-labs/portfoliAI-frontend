@@ -2,28 +2,18 @@
 "use client";
 
 /**
- * PORTFOLIO PAGE HEADER — the top of a portfolio page (Insights, Transactions), read from the
- * general to the particular: the page's title, then one panel holding "which portfolio" (the
- * PortfolioBar, investor only) over "which part of it" (`nav`: Insights' section tabs, the
- * month drilldown's way back, compare mode's status). Everything under the panel is the
- * page's content, so the panel is where every control lives. It stays pinned while the page
- * scrolls, since Insights' pages run long.
+ * PORTFOLIO PAGE HEADER — the top of Insights (single portfolio and compare mode): one panel
+ * holding "which portfolio" (the PortfolioBar, investor only) over a line of context (`nav`:
+ * the month drilldown's way back, compare mode's status). No page title: the sidebar already
+ * says which page this is. It scrolls away with the page rather than staying pinned.
  */
-export function PortfolioPageHeader({
-  title, bar, nav,
-}: { title: string; bar?: React.ReactNode; nav?: React.ReactNode }) {
+export function PortfolioPageHeader({ bar, nav }: { bar?: React.ReactNode; nav?: React.ReactNode }) {
+  if (!bar && !nav) return null;
   return (
-    <>
-      <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-        {title}
-      </h1>
-      {(bar || nav) && (
-        <div className="sticky top-3 z-20 bg-white/95 backdrop-blur rounded-2xl border border-slate-200 shadow-sm">
-          {bar && <div className="px-4 md:px-5 py-3">{bar}</div>}
-          {nav && <div className={`px-4 md:px-5 ${bar ? "border-t border-slate-100" : ""}`}>{nav}</div>}
-        </div>
-      )}
-    </>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+      {bar && <div className="px-4 md:px-5 py-3">{bar}</div>}
+      {nav && <div className={`px-4 md:px-5 ${bar ? "border-t border-slate-100" : ""}`}>{nav}</div>}
+    </div>
   );
 }
 

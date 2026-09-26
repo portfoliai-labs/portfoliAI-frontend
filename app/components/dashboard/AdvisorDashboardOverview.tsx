@@ -6,7 +6,6 @@ import {
   ArrowRight, BellRing, ChevronRight,
   Loader2, Crown,
 } from "lucide-react";
-import { useUser } from "../../context/UserContext";
 import { advisorService } from "../../services/advisorService";
 import { useClientAlertRules } from "../../hooks/useAlertRules";
 import { alertFigures, alertState, alertUrgency, describeAlert, type AlertTone } from "../../lib/alerts";
@@ -242,7 +241,6 @@ export default function AdvisorDashboardOverview({
 }: {
   onNavigate?: (section: string) => void;
 }) {
-  const { user } = useUser();
   const [clients, setClients] = useState<Client[]>([]);
   const [advisorProfile, setAdvisorProfile] = useState<AdvisorProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,10 +263,6 @@ export default function AdvisorDashboardOverview({
     load();
   }, []);
 
-  const firstName = user?.first_name ?? user?.email?.split("@")[0] ?? "Advisor";
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-
   // AUM: prefer advisor-set value; fallback to sum of client wealth
   const totalAum =
     advisorProfile?.aum != null
@@ -288,21 +282,7 @@ export default function AdvisorDashboardOverview({
   }
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Header */}
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">
-          {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })}
-        </p>
-        <h1
-          className="text-3xl font-bold text-[#1c1917]"
-          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-        >
-          {greeting}, {firstName}
-        </h1>
-        <p className="text-sm text-[#78716c] mt-1">Here&apos;s a summary of your activity.</p>
-      </div>
-
+    <div className="space-y-6 pb-12">
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         <StatCard

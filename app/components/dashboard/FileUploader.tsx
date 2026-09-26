@@ -28,7 +28,6 @@ import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction, BulkOperation } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
 import { usePortfolio } from "../../context/PortfolioContext";
-import { PortfolioPageHeader, PortfolioPageHeaderNote } from "./PortfolioPageHeader";
 
 const EXISTING_PAGE_SIZE = 10;
 const PENDING_PAGE_SIZE = 10;
@@ -107,15 +106,36 @@ function toTransactionInput(tx: DisplayTransaction): TransactionInput {
   };
 }
 
-// readOnly is for the aggregate "All portfolios": its list merges every portfolio's
-// transactions, and any write on it is a 409, so only browsing/filtering is offered and each
-// row is labelled with the portfolio it comes from.
-// portfolioBar is the investor's PortfolioBar, in the masthead's panel (PortfolioPageHeader).
-export function FileUploader({
-  portfolioUuid, readOnly = false, portfolioBar,
-}: { portfolioUuid: string; readOnly?: boolean; portfolioBar?: React.ReactNode }) {
-  // Only the investor's own portfolios — enough, since only an investor can open their aggregate.
-  const { portfolios } = usePortfolio();
+// Groups items by the portfolio they belong to, for writes that have to go portfolio by portfolio.
+function groupByPortfolio<T>(items: T[], portfolioOf: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const key = portfolioOf(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return groups;
+}
+
+// Two ways in:
+// - the investor (no portfolioUuid): every portfolio at once. The saved list is read from the
+//   aggregate "All portfolios" (which merges them all, each row carrying its own
+//   portfolio_uuid), or from one portfolio when the filter picks it; writes on a saved row go
+//   to the portfolio it belongs to, and new rows to the portfolio picked where they're added.
+// - the advisor (portfolioUuid: a client's portfolio): that one portfolio, nothing to pick.
+export function FileUploader({ portfolioUuid: fixedPortfolioUuid }: { portfolioUuid?: string } = {}) {
+  const { portfolios: allPortfolios, current } = usePortfolio();
+  const isFixed = fixedPortfolioUuid !== undefined;
+  // The portfolios that hold transactions — the aggregate only lists them.
+  const ownPortfolios = useMemo(() => (isFixed ? [] : allPortfolios.filter(p => !p.isAggregate)), [isFixed, allPortfolios]);
+  const aggregate = isFixed ? undefined : allPortfolios.find(p => p.isAggregate);
+  // Pickers and portfolio labels only make sense with a choice to make.
+  const pickable = ownPortfolios.length > 1 ? ownPortfolios : undefined;
+  // Where new rows go unless the user picks otherwise: the portfolio open elsewhere in the
+  // app, or the default one while that's the aggregate.
+  const defaultTarget = fixedPortfolioUuid
+    ?? (current && !current.isAggregate ? current.uuid : (ownPortfolios.find(p => p.isDefault) ?? ownPortfolios[0])?.uuid)
+    ?? "";
+  const portfolioName = (uuid?: string) => allPortfolios.find(p => p.uuid === uuid)?.name ?? "";
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFileState[]>([]);
   const [mappingModalFileId, setMappingModalFileId] = useState<string | null>(null);
@@ -162,6 +182,10 @@ export function FileUploader({
     dateTo: filters.dateTo || null,
   });
 
+  // Which list the saved section shows: the picked portfolio, else every portfolio (the
+  // aggregate, or the only portfolio when there's no aggregate).
+  const listUuid = fixedPortfolioUuid ?? (existingFilters.portfolio || aggregate?.uuid || ownPortfolios[0]?.uuid || "");
+
   const hasActiveFilters = Object.values(existingFilters).some(Boolean);
 
   // Applies a new filter selection and jumps back to page 1, so we don't land on an out-of-range page
@@ -174,7 +198,8 @@ export function FileUploader({
   useEffect(() => {
     let cancelled = false;
     setLoadingExisting(true);
-    transactionService.getUserTransactions(portfolioUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters))
+    if (!listUuid) return;
+    transactionService.getUserTransactions(listUuid, EXISTING_PAGE_SIZE, (existingPage - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters))
       .then(res => {
         if (cancelled) return;
         setExistingItems(res.items);
@@ -182,13 +207,13 @@ export function FileUploader({
       })
       .finally(() => { if (!cancelled) setLoadingExisting(false); });
     return () => { cancelled = true; };
-  }, [portfolioUuid, existingPage, existingFilters]);
+  }, [listUuid, existingPage, existingFilters]);
 
   // Re-fetches a given page of saved transactions (used after a save/delete changes the underlying data)
   const refreshExisting = async (page: number) => {
     setLoadingExisting(true);
     try {
-      const res = await transactionService.getUserTransactions(portfolioUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters));
+      const res = await transactionService.getUserTransactions(listUuid, EXISTING_PAGE_SIZE, (page - 1) * EXISTING_PAGE_SIZE, toServiceFilters(existingFilters));
       setExistingItems(res.items);
       setExistingTotal(res.total);
     } finally {
@@ -223,12 +248,15 @@ export function FileUploader({
 
   // New transactions not yet saved: manual entries + rows from confirmed files
   const pendingRows = useMemo<TransactionRow[]>(() => {
+    // With a choice of portfolios, each new row says where it's going.
+    const withTarget = (label: string, uuid: string) => (pickable ? `${label} → ${portfolioName(uuid)}` : label);
     const manualRows = manualTransactions.map(tx => ({
       key: `manual::${tx.id}`,
       transaction: pendingToDisplay(tx),
-      sourceLabel: "Manual",
+      sourceLabel: withTarget("Manual", tx.portfolioUuid ?? defaultTarget),
       origin: "pending" as const,
       errorFields: new Set<string>(),
+      portfolioUuid: tx.portfolioUuid ?? defaultTarget,
     }));
 
     const fileRows = files.filter(f => f.confirmed).flatMap(f => {
@@ -236,14 +264,17 @@ export function FileUploader({
       return f.previewData.map((tx, idx) => ({
         key: `file::${f.id}::${idx}`,
         transaction: pendingToDisplay(tx),
-        sourceLabel: f.fileName,
+        sourceLabel: withTarget(f.fileName, f.portfolioUuid),
         origin: "pending" as const,
         errorFields: new Set(ALL_FIELDS.filter(field => errSet.has(`${idx}_${field}`))),
+        portfolioUuid: f.portfolioUuid,
       }));
     });
 
     return [...manualRows, ...fileRows];
-  }, [manualTransactions, files, fileErrorSets]);
+    // portfolioName reads allPortfolios, already covered by pickable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualTransactions, files, fileErrorSets, pickable, defaultTarget]);
 
   // Pending rows are paginated client-side (e.g. a large file upload), independently of the saved-transactions pagination
   const pendingTotalPages = Math.max(1, Math.ceil(pendingRows.length / PENDING_PAGE_SIZE));
@@ -255,10 +286,12 @@ export function FileUploader({
   const existingRows = useMemo<TransactionRow[]>(() => existingItems.map(tx => ({
     key: `existing::${tx.transaction_uuid}`,
     transaction: existingToDisplay(tx),
-    sourceLabel: readOnly ? (portfolios.find(p => p.uuid === tx.portfolio_uuid)?.name ?? "Saved") : "Saved",
+    // Saved rows name their portfolio when there's more than one to tell apart.
+    sourceLabel: pickable ? (pickable.find(p => p.uuid === tx.portfolio_uuid)?.name ?? "") : "",
     origin: "existing" as const,
     errorFields: new Set<string>(),
-  })), [existingItems, readOnly, portfolios]);
+    portfolioUuid: tx.portfolio_uuid,
+  })), [existingItems, pickable]);
 
   // Resolves the row behind the currently-open edit modal, regardless of its origin
   const editingTransaction = useMemo<StandardTransaction | undefined>(() => {
@@ -267,7 +300,9 @@ export function FileUploader({
     if (type === "manual") return manualTransactions.find(t => t.id === rest[0]);
     if (type === "file") {
       const [fileId, idxStr] = rest;
-      return files.find(f => f.id === fileId)?.previewData[Number(idxStr)];
+      const file = files.find(f => f.id === fileId);
+      const tx = file?.previewData[Number(idxStr)];
+      return tx && file ? { ...tx, portfolioUuid: file.portfolioUuid } : undefined;
     }
     if (type === "existing") {
       const tx = existingItems.find(t => t.transaction_uuid === rest[0]);
@@ -324,6 +359,7 @@ export function FileUploader({
       detectedBroker: broker, dateFormat: "auto", resolvedDateFormat, dateFormatAmbiguous,
       isValid, missingFields: missingFields.map(String),
       hasOrdersWithoutTime, validationErrors, confirmed: false,
+      portfolioUuid: defaultTarget,
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -442,7 +478,11 @@ export function FileUploader({
       setDeletingKeys(prev => new Set([...prev, ...existingKeys]));
       try {
         const toDelete = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
-        await transactionService.deleteTransactions(portfolioUuid, toDelete.map(tx => tx.transaction_uuid));
+        await Promise.all(
+          Array.from(groupByPortfolio(toDelete, tx => tx.portfolio_uuid)).map(([uuid, txs]) =>
+            transactionService.deleteTransactions(uuid, txs.map(tx => tx.transaction_uuid)),
+          ),
+        );
         await refreshExisting(existingPage);
       } finally {
         setDeletingKeys(prev => {
@@ -472,10 +512,15 @@ export function FileUploader({
 
   // Deletes every saved transaction matching the active filters directly in the backend —
   // not just the current page. With no filters active, this wipes all saved transactions.
+  // Across every portfolio unless the filter picks one: the aggregate takes no writes, so
+  // that's one call per portfolio.
   const handleDeleteAllExisting = async () => {
     setDeletingAllExisting(true);
     try {
-      await transactionService.deleteAllTransactions(portfolioUuid, toServiceFilters(existingFilters));
+      const targets = fixedPortfolioUuid
+        ? [fixedPortfolioUuid]
+        : existingFilters.portfolio ? [existingFilters.portfolio] : ownPortfolios.map(p => p.uuid);
+      await Promise.all(targets.map(uuid => transactionService.deleteAllTransactions(uuid, toServiceFilters(existingFilters))));
       setSelectedKeys(prev => {
         const next = new Set<string>();
         prev.forEach(k => { if (!k.startsWith("existing::")) next.add(k); });
@@ -569,8 +614,9 @@ export function FileUploader({
 
     if (type === "existing") {
       const uuid = rest[0];
+      const owner = existingItems.find(tx => tx.transaction_uuid === uuid)?.portfolio_uuid ?? listUuid;
       try {
-        await transactionService.updateTransaction(portfolioUuid, uuid, toTransactionInput(pendingToDisplay(updated)));
+        await transactionService.updateTransaction(owner, uuid, toTransactionInput(pendingToDisplay(updated)));
         await refreshExisting(existingPage);
       } catch (error: unknown) {
         setStatus("error");
@@ -622,7 +668,7 @@ export function FileUploader({
       try {
         const toEdit = existingItems.filter(tx => existingIds.has(tx.transaction_uuid));
         await Promise.all(
-          toEdit.map(tx => transactionService.updateTransaction(portfolioUuid, tx.transaction_uuid, toTransactionInput({ ...existingToDisplay(tx), operation }))),
+          toEdit.map(tx => transactionService.updateTransaction(tx.portfolio_uuid, tx.transaction_uuid, toTransactionInput({ ...existingToDisplay(tx), operation }))),
         );
         await refreshExisting(existingPage);
       } catch (error: unknown) {
@@ -643,8 +689,12 @@ export function FileUploader({
     if (!canSubmit) return;
     try {
       setLoading(true);
-      const newTransactions = pendingRows.map(r => toTransactionInput(r.transaction));
-      await transactionService.saveTransactions(portfolioUuid, newTransactions);
+      // One save per destination portfolio.
+      await Promise.all(
+        Array.from(groupByPortfolio(pendingRows, r => r.portfolioUuid ?? defaultTarget)).map(([uuid, rows]) =>
+          transactionService.saveTransactions(uuid, rows.map(r => toTransactionInput(r.transaction))),
+        ),
+      );
       if (existingPage === 1) {
         await refreshExisting(1);
       } else {
@@ -667,17 +717,6 @@ export function FileUploader({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12 relative">
-      {/* MASTHEAD — the aggregate's list is read-only, which the panel's lower row says. */}
-      <PortfolioPageHeader
-        title="Transactions"
-        bar={portfolioBar}
-        nav={readOnly ? (
-          <PortfolioPageHeaderNote>
-            Every transaction across your portfolios. To add or change one, switch to the portfolio it belongs to.
-          </PortfolioPageHeaderNote>
-        ) : undefined}
-      />
-
       {/* NOTIFICA TOAST (Visualizzata in base allo stato) */}
       {showToast && (
         <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-100 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${
@@ -712,6 +751,8 @@ export function FileUploader({
           mode="add"
           onClose={() => setShowAddModal(false)}
           onSave={handleAddManualTransaction}
+          portfolios={pickable}
+          defaultPortfolioUuid={defaultTarget}
         />
       )}
 
@@ -720,6 +761,9 @@ export function FileUploader({
         <TransactionModal
           mode="edit"
           initial={editingTransaction}
+          // A saved row stays in its portfolio; a new one can still be sent elsewhere.
+          portfolios={editingKey.startsWith("existing::") ? undefined : pickable}
+          defaultPortfolioUuid={defaultTarget}
           onClose={() => setEditingKey(null)}
           onSave={(transaction) => { void handleUpdateTransaction(editingKey, transaction); setEditingKey(null); }}
           onDelete={() => { confirmAndDeleteKeys([editingKey]); setEditingKey(null); }}
@@ -731,7 +775,8 @@ export function FileUploader({
         <ImportWizard
           key={wizardQueue[0].name + wizardQueue[0].lastModified}
           file={wizardQueue[0]}
-          portfolioUuid={portfolioUuid}
+          portfolioUuid={defaultTarget}
+          portfolios={pickable}
           onClose={advanceWizardQueue}
           onImported={() => {
             // Only refreshes the saved-transactions list — the wizard stays open on its
@@ -768,6 +813,8 @@ export function FileUploader({
           description={
             hasActiveFilters
               ? `Delete all ${existingTotal} transactions matching the current filters? This cannot be undone.`
+              : pickable && !existingFilters.portfolio
+              ? `Delete all ${existingTotal} saved transactions, across all your portfolios? This cannot be undone.`
               : `Delete all ${existingTotal} saved transactions? This cannot be undone.`
           }
           confirming={deletingAllExisting}
@@ -787,40 +834,40 @@ export function FileUploader({
           onDateFormatChange={(dateFormat) => handleDateFormatChange(mappingFile.id, dateFormat)}
           onConfirm={() => confirmMapping(mappingFile.id)}
           onClose={() => setMappingModalFileId(null)}
+          portfolios={pickable}
+          onPortfolioChange={(uuid) => setFiles(prev => prev.map(f => f.id === mappingFile.id ? { ...f, portfolioUuid: uuid } : f))}
         />
       )}
 
       {/* TOOLBAR: upload actions, full width */}
-      {!readOnly && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
-          >
-            <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-              <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
-            </div>
-            <div className="text-left overflow-hidden">
-              <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
-              <p className="text-xs text-slate-400 truncate">Any broker export — AI maps the columns for you</p>
-            </div>
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className="p-5 border-2 border-dashed border-slate-200/80 rounded-3xl bg-white/50 hover:bg-slate-50 cursor-pointer transition-all flex items-center gap-4 group"
+        >
+          <div className="bg-slate-100 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <UploadCloud className="h-5 w-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
           </div>
-  
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="p-5 rounded-3xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-4 transition-colors group text-left"
-          >
-            <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-              <PlusCircle className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="overflow-hidden">
-              <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
-              <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
-            </div>
-          </button>
+          <div className="text-left overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Browse Files</span>
+            <p className="text-xs text-slate-400 truncate">Any broker export — AI maps the columns for you</p>
+          </div>
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
         </div>
-      )}
+
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="p-5 rounded-3xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-4 transition-colors group text-left"
+        >
+          <div className="bg-blue-50 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+            <PlusCircle className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="overflow-hidden">
+            <span className="text-sm font-bold text-slate-700 block">Add transaction</span>
+            <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
+          </div>
+        </button>
+      </div>
 
       {/* File chips: click to (re)open the column mapping modal for that file */}
       {files.length > 0 && (
@@ -902,14 +949,11 @@ export function FileUploader({
         emptyMessage={
           hasActiveFilters
             ? "No transactions match the current filters."
-            : readOnly
-            ? "No transactions in any of your portfolios yet."
             : "No transactions yet. Add one manually or upload a file to get started."
         }
-        filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} />}
-        onDeleteAll={readOnly ? undefined : () => setConfirmDeleteAll(true)}
+        filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} portfolios={pickable} />}
+        onDeleteAll={() => setConfirmDeleteAll(true)}
         deletingAll={deletingAllExisting}
-        readOnly={readOnly}
       />
     </div>
   );

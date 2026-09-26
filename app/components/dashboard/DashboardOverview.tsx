@@ -95,23 +95,7 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   }
 
   return (
-    <div className="px-0 py-6 space-y-8">
-
-      {/* MASTHEAD */}
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#C49A3C] mb-1.5">Overview</p>
-          <h1
-            className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-          >
-            Dashboard
-          </h1>
-          <p className="text-slate-500 font-medium mt-1">
-            {aggregate ? "All your portfolios at a glance." : "Your portfolio at a glance."}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6 pb-12">
 
       {/* HEADLINE — the aggregate (or the only portfolio). A lone portfolio with no data yet
           gets the full-page "no data" window, since there's nothing else on the page; the

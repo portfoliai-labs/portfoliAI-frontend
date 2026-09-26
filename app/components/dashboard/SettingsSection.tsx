@@ -282,22 +282,8 @@ export function SettingsSection() {
   };
 
   return (
-    <div className="space-y-8 pb-12 animate-in fade-in duration-500">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500">
       <Script src="https://tally.so/widgets/embed.js" strategy="lazyOnload" />
-
-      <div>
-        <h2
-          className="text-2xl md:text-3xl font-bold text-[#1c1917] tracking-tight"
-          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-        >
-          Settings
-        </h2>
-        <p className="text-sm md:text-base text-[#78716c] font-medium mt-1">
-          {isAdvisor
-            ? "Manage your subscription, notification preferences and account"
-            : "Manage your subscription, portfolios, notification preferences and alerts"}
-        </p>
-      </div>
 
       {/* Tab bar — a full-width 2-column grid on mobile (so the selector never
           scrolls sideways), the original inline pill row from sm and up. */}

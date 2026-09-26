@@ -21,15 +21,7 @@ function ClientPicker({
   onSelect: (client: Client) => void;
 }) {
   return (
-    <div className="space-y-8 pb-12">
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C49A3C] mb-1">Transactions</p>
-        <h1 className="text-3xl font-bold text-[#1c1917]" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          Select a Client
-        </h1>
-        <p className="text-sm text-[#78716c] mt-2">Choose the client you want to upload documents for.</p>
-      </div>
-
+    <div className="space-y-6 pb-12">
       {clients.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#1c1917] flex items-center justify-center mb-4">

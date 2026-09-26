@@ -11,3 +11,9 @@ export function formatQuantity(value: string | number): string {
   if (!s.includes(".")) return s;
   return s.replace(/0+$/, "").replace(/\.$/, "");
 }
+
+// Short figure for chart axes, e.g. 1,250 → "1.3K", 2,400,000 → "2.4M". No currency code: the
+// chart's header already names it, and a code on every tick makes the labels wide enough to wrap.
+export function formatCompact(value: number): string {
+  return value.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
+}

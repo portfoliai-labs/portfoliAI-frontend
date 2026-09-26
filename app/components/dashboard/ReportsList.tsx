@@ -250,7 +250,7 @@ export function ReportsList({
   }
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-12">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500">
       
       {/* Error Feedback */}
       {error && (
@@ -263,10 +263,7 @@ export function ReportsList({
       {/* Header & Controls */}
       <div className="flex flex-col xl:flex-row justify-between gap-6 xl:items-end">
         <div className="w-full xl:w-auto">
-          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Reports</h2>
-          <p className="text-sm md:text-base text-slate-500 font-medium mt-1">Manage, download, and organize your generated analyses.</p>
-
-          <div className="flex items-center gap-3 mt-4">
+          <div className="flex items-center gap-3">
             <div className="relative w-full md:w-96 group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
               <input
