@@ -31,9 +31,9 @@ type SnapshotState =
   | { status: "ready"; snapshot: PortfolioSnapshot | null };
 
 /**
- * DASHBOARD — every portfolio at a glance, not tied to the one selected in the sidebar: the
+ * DASHBOARD — every portfolio at a glance, not tied to the selected portfolio: the
  * aggregate "All portfolios" on top (or the only portfolio, for a user with just one), then a
- * card per portfolio, with every portfolio's alerts in between. Headline figures (invested,
+ * card per portfolio, then every portfolio's alerts. Headline figures (invested,
  * market value, unrealized P&L) and the headline's moves this month; the longer-term figures
  * and the charts live in each portfolio's Insights, which a card opens. The overview endpoint
  * never mixes history with fresh data (no isStale); this month's module polls on its own.
@@ -138,14 +138,6 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         <MonthToDateModule portfolioUuid={headline.uuid} />
       )}
 
-      {/* ALERTS — every portfolio's, aggregate included, as one list sorted by urgency. */}
-      {!noDataAtAll && (
-        <AlertsModule
-          portfolios={portfolios}
-          onManage={onNavigate ? openAlertSettings : undefined}
-        />
-      )}
-
       {/* EACH PORTFOLIO */}
       {others.length > 0 && (
         <div className="space-y-4">
@@ -166,6 +158,14 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
             ))}
           </div>
         </div>
+      )}
+
+      {/* ALERTS — every portfolio's, aggregate included, as one list sorted by urgency. */}
+      {!noDataAtAll && (
+        <AlertsModule
+          portfolios={portfolios}
+          onManage={onNavigate ? openAlertSettings : undefined}
+        />
       )}
     </div>
   );
