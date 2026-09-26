@@ -21,13 +21,14 @@ import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboar
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
+import { CompareSection } from "../../components/dashboard/CompareSection";
 import { Loader2 } from "lucide-react";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'news', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'compare', 'clients', 'upload', 'performance', 'news', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -61,6 +62,9 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
           : <DashboardOverview onNavigate={setActiveSection} />;
+      case 'compare':
+        // Investor-only: an advisor compares a client's portfolios nowhere yet.
+        return isAdvisor ? <AdvisorDashboardOverview onNavigate={setActiveSection} /> : <CompareSection />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':

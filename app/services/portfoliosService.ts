@@ -2,6 +2,7 @@
 // The portfolio-IDENTITY endpoints (list/create/rename/delete a Portfolio itself), as opposed
 // to portfolioService.ts, which reads the DASHBOARD DATA inside one already-known portfolio.
 import type { Portfolio } from "../models/Portfolio";
+import type { PortfolioComparisonEntry } from "../models/PortfolioData";
 import { apiFetch } from "./apiClient";
 
 export const portfoliosService = {
@@ -17,6 +18,15 @@ export const portfoliosService = {
       method: "POST",
       body: JSON.stringify({ name }),
     });
+  },
+
+  // GET /v1/portfolios/comparison?portfolio=…&portfolio=… — side-by-side figures, one entry
+  // per portfolio in the order given (without any, all of the caller's, aggregate first). 404
+  // if one isn't the caller's. Lives here rather than in portfolioService since it spans
+  // several portfolios.
+  async compare(portfolioUuids: string[] = []): Promise<PortfolioComparisonEntry[]> {
+    const query = new URLSearchParams(portfolioUuids.map((uuid) => ["portfolio", uuid])).toString();
+    return apiFetch<PortfolioComparisonEntry[]>(`/v1/portfolios/comparison${query ? `?${query}` : ""}`);
   },
 
   // GET /v1/portfolios/{p} — same access rule as every portfolio-scoped route: the caller's

@@ -15,6 +15,8 @@
 // - `isStale: true` means the user edited transactions after the numbers were computed: keep
 //   showing them, with an "updating" hint. holdings / exposure carry neither status nor isStale.
 
+import type { Portfolio } from "./Portfolio";
+
 // "unavailable" only ever appears on /risk-model.
 type AnalyticsStatus = "ok" | "insufficient_history" | "unavailable";
 
@@ -79,8 +81,8 @@ interface ExposureResponse {
 
 // ---------- performance ----------
 
-// windowDays counts calendar days — "1 Year" currently covers 252 of them, not a year — so
-// it is what gets shown next to a horizon, not a hand-written "1 year" label.
+// `period` is "1 Month", "6 Months", "1 Year", "3 Years" or "Inception"; a horizon longer than
+// the portfolio's history isn't returned at all. windowDays counts the calendar days it covers.
 interface HorizonEntry {
   period: string;
   windowDays: number;
@@ -356,6 +358,81 @@ interface RiskModelResponse {
   isStale: boolean;
 }
 
+// ---------- portfolio comparison ----------
+
+// GET /v1/portfolios/comparison — one entry per compared portfolio, each section a slice of the
+// matching single-portfolio document above, all in the user's reference currency. A section is
+// null until that portfolio has been computed. The aggregate is recomputed from the combined
+// transactions, so its column isn't the sum of the others. Compare returns through `horizons`,
+// matched by `period` (same window for every portfolio); cumulativeReturnPct starts on each
+// portfolio's own first day.
+interface ComparisonValue {
+  valuedAt: string;
+  currency: string;
+  marketValue: number;
+  investedCapital: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+  dividendIncome: number;
+  netContributed: number;
+  tradingCosts: number;
+}
+
+interface ComparisonPerformance {
+  status: AnalyticsStatus;
+  lifespanDays: number;
+  totalReturnPct: number | null;
+  annualizedReturnPct: number | null;
+  maxDrawdownPct: number | null;
+  horizons: HorizonEntry[];
+  cumulativeReturnPct: TimeSeries | null;
+}
+
+interface ComparisonVolatility {
+  status: AnalyticsStatus;
+  annualizedVolatilityPct: number | null;
+}
+
+interface ComparisonAllocationEntry {
+  assetClass: string;
+  weightPct: number;
+  marketValue: number;
+}
+
+interface ComparisonDividends {
+  totalTrailing12MIncome: number;
+  wholePortfolioYieldPct: number | null;
+  portfolioYieldOnCostPct: number | null;
+}
+
+interface ComparisonTradingCosts {
+  totalCosts: number;
+  costRatioBps: number | null;
+  annualizedCostDragPct: number | null;
+}
+
+interface ComparisonBenchmark {
+  status: AnalyticsStatus;
+  excessReturnPct: number | null;
+  alphaPct: number | null;
+  beta: number | null;
+  trackingErrorPct: number | null;
+  informationRatio: number | null;
+}
+
+// isStale is per portfolio, same handling as every other document.
+interface PortfolioComparisonEntry {
+  portfolio: Portfolio;
+  isStale: boolean;
+  value: ComparisonValue | null;
+  performance: ComparisonPerformance | null;
+  volatility: ComparisonVolatility | null;
+  allocation: ComparisonAllocationEntry[] | null;
+  dividends: ComparisonDividends | null;
+  tradingCosts: ComparisonTradingCosts | null;
+  benchmark: ComparisonBenchmark | null;
+}
+
 export type {
   AnalyticsStatus, RiskModelUnavailableReason, WeightGapDirection, TimeSeries,
   PortfolioHoldingResponse, HoldingsResponse,
@@ -368,4 +445,6 @@ export type {
   BenchmarkComponentEntry, BenchmarkResponse,
   RiskAssetEntry, PortfolioWeightEntry, RiskPortfolioEntry, FrontierPointEntry, WeightGapEntry,
   CorrelationMatrix, RiskModelResponse,
+  ComparisonValue, ComparisonPerformance, ComparisonVolatility, ComparisonAllocationEntry,
+  ComparisonDividends, ComparisonTradingCosts, ComparisonBenchmark, PortfolioComparisonEntry,
 };

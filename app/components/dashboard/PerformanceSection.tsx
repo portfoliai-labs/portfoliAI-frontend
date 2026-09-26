@@ -7,7 +7,7 @@ import {
   Sun,
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, ArrowLeft, LayoutGrid, Scale, Gauge, Info,
-  Search, ChevronDown, Percent,
+  Search, ChevronDown, Coins, Percent,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -24,6 +24,7 @@ import type {
 import type {
   ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
   BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries,
+  PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse,
 } from "../../models/PortfolioData";
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -55,13 +56,11 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 /**
- * INSIGHTS SECTION — lifetime portfolio figures: performance since inception, a month-by-month
- * returns heatmap (drilled into per-month via /monthly?year=), risk, benchmark comparison and
- * current composition, as sub-tabs of one page (see HISTORY_SUB_TABS below) rather than a
- * Today/All Time switcher — Today's own figures moved to the Dashboard (PortfolioTodayModule)
- * once composition stopped depending on the today dashboard for its data (GET
- * /v1/portfolio/summary, not /today's own `summary` field anymore), which was the only reason
- * this page ever needed Today's data in the first place. /history returns null rather than a
+ * INSIGHTS SECTION — one portfolio's lifetime figures, as sub-tabs of one page (see
+ * HISTORY_SUB_TABS below), each answering one question: Performance (how is it doing —
+ * returns, value, the monthly heatmap drilled into via /monthly?year=, the benchmark), Income
+ * & Costs (what it earned and cost), Composition (what it holds) and Risk (how much it swings).
+ * The short-term view (this month) lives on the Dashboard instead. /history returns null rather than a
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
@@ -70,12 +69,12 @@ export function PerformanceSection({
 }: { portfolioUuid: string; portfolioName?: string; onNavigate?: (section: string) => void }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
-  // Sub-tab (Overview/Composition/Risk) and month-drilldown state live here rather than in
+  // Sub-tab and month-drilldown state live here rather than in
   // HistoryPage below, even though only HistoryPage's content depends on them: the tab
   // switcher itself sits in the masthead right next to the "Insights" title (see the header
   // below) rather than on its own row, so the title and the tabs need to be siblings in the
   // same returned tree. Kept here rather than duplicating the masthead per HistoryPage branch.
-  const [subTab, setSubTab] = useState<HistorySubTabId>("overview");
+  const [subTab, setSubTab] = useState<HistorySubTabId>("performance");
   const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
   const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
   const [monthLoading, setMonthLoading] = useState(false);
@@ -128,7 +127,7 @@ export function PerformanceSection({
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedYearStale, selectedYear, portfolioUuid]);
 
-  // Tabs only make sense once there's an actual Overview/Composition/Risk to switch between:
+  // Tabs only make sense once there's an actual history to split across them:
   // hidden while loading/failed/empty (nothing to show in any of them) and while a month
   // drilldown is open (that view has its own "All time" back link instead).
   const showTabs = !loading && !failed && history !== null && !isHistoryEmpty(history) && !selected;
@@ -144,7 +143,7 @@ export function PerformanceSection({
           >
             Insights
           </h1>
-          <p className="text-slate-500 font-medium mt-1">Your portfolio&apos;s lifetime performance, risk and composition.</p>
+          <p className="text-slate-500 font-medium mt-1">How your portfolio has done, what it earned and cost, what it holds and how much it swings.</p>
         </div>
         {showTabs && <SubTabSwitcher tabs={HISTORY_SUB_TABS} active={subTab} onChange={setSubTab} />}
       </div>
@@ -396,7 +395,7 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
           </defs>
           <XAxis
             dataKey="date"
-            tickFormatter={chartDateLabel}
+            tickFormatter={monthShortYearLabel}
             tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
             axisLine={false}
             tickLine={false}
@@ -426,10 +425,12 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
  * Keeping it in its own card gives it visual room to breathe and makes clear it's a
  * different kind of information — a trend over time vs. point-in-time figures.
  */
-function ChartCard({ chart, currency, title, desc }: { chart: PortfolioSnapshot[]; currency: string; title: string; desc: string }) {
+function ChartCard({
+  chart, currency, title, desc, right,
+}: { chart: PortfolioSnapshot[]; currency: string; title: string; desc: string; right?: React.ReactNode }) {
   return (
     <Module>
-      <ModuleHead eyebrow={currency} title={title} desc={desc} />
+      <ModuleHead eyebrow={currency} title={title} desc={desc} right={right} />
       <SnapshotChart chart={chart} currency={currency} />
     </Module>
   );
@@ -559,10 +560,11 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
   data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
   data.chart.length === 0;
 
-type HistorySubTabId = "overview" | "composition" | "risk";
+type HistorySubTabId = "performance" | "income" | "composition" | "risk";
 
 const HISTORY_SUB_TABS: SubTab<HistorySubTabId>[] = [
-  { id: "overview", label: "Overview", icon: TrendingUp },
+  { id: "performance", label: "Performance", icon: TrendingUp },
+  { id: "income", label: "Income & Costs", icon: Coins },
   { id: "composition", label: "Composition", icon: LayoutGrid },
   { id: "risk", label: "Risk", icon: Gauge },
 ];
@@ -585,7 +587,7 @@ function SubTabSwitcher<T extends string>({
   tabs, active, onChange,
 }: { tabs: SubTab<T>[]; active: T; onChange: (id: T) => void }) {
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -2153,6 +2155,364 @@ function BenchmarkModule({ portfolioUuid }: { portfolioUuid: string }) {
   );
 }
 
+const RISE_ICON = <TrendingUp className="h-4 w-4 text-emerald-600" />;
+const FALL_ICON = <TrendingDown className="h-4 w-4 text-rose-600" />;
+const pctColor = (pct: number | null) => (pct === null ? "slate" : pct >= 0 ? "emerald" : "red");
+
+const lifespanLabel = (days: number) =>
+  days >= 365 ? `${(days / 365).toFixed(1)} years` : `${days} ${days === 1 ? "day" : "days"}`;
+
+/**
+ * RETURNS MODULE — /performance: the time-weighted return since inception and per year, then
+ * the trailing horizons. Time-weighted, so money added or withdrawn is neither a gain nor a
+ * loss — the same figure the monthly heatmap uses. The "Inception" horizon is left out of the
+ * row below, since it's the headline already; a horizon longer than the portfolio's history
+ * isn't returned at all.
+ */
+function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
+  const horizons = data?.horizons.filter((h) => h.period !== "Inception") ?? [];
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Performance"
+        title="Returns"
+        desc="Time-weighted: money you add or withdraw doesn't count as a gain or a loss."
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {data.status === "insufficient_history" ? (
+            <ModuleMessage>Not enough history yet to measure returns — they&apos;ll show up here soon.</ModuleMessage>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+                <StatContent
+                  title="Since Inception"
+                  value={formatPctOrDash(data.totalReturnPct)}
+                  icon={data.totalReturnPct !== null && data.totalReturnPct < 0 ? FALL_ICON : RISE_ICON}
+                  description={`Over ${lifespanLabel(data.lifespanDays)}`}
+                  color={pctColor(data.totalReturnPct)}
+                />
+                <StatContent
+                  title="Per Year"
+                  value={formatPctOrDash(data.annualizedReturnPct)}
+                  icon={data.annualizedReturnPct !== null && data.annualizedReturnPct < 0 ? FALL_ICON : RISE_ICON}
+                  description={data.annualizedReturnPct === null ? "Not enough history yet" : "Annualized"}
+                  color={pctColor(data.annualizedReturnPct)}
+                />
+              </div>
+              {horizons.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-t border-slate-100">
+                  {horizons.map((h) => <HorizonCell key={h.period} horizon={h} />)}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
+function HorizonCell({ horizon }: { horizon: HorizonEntry }) {
+  const pct = horizon.totalReturnPct;
+  return (
+    <div className="bg-white px-5 md:px-6 py-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last {horizon.period.toLowerCase()}</p>
+      <p className={`text-lg font-black tabular-nums mt-1 ${pct === null ? "text-slate-400" : pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+        {formatPctOrDash(pct)}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * DRAWDOWN MODULE — /performance's drawdown series: how far below its previous high the
+ * portfolio stood on each day (0 at a new high, always ≤0), with the deepest fall as the
+ * headline. Same document as ReturnsModule, fetched on its own since it's on another tab.
+ */
+function DrawdownModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
+  const points = useMemo(() => (data?.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
+  const showFigure = data !== null && !updating && data.status !== "insufficient_history";
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow="Risk"
+        title="Drawdown"
+        desc="How far the portfolio stood below its previous high, day by day."
+        right={showFigure ? (
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deepest fall</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {data.maxDrawdownPct === null ? "—" : `${data.maxDrawdownPct.toFixed(2)}%`}
+            </p>
+          </div>
+        ) : undefined}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {points.length < 2 ? (
+            <ModuleMessage>Not enough history yet to chart.</ModuleMessage>
+          ) : (
+            <div className="p-6 md:p-7 h-64">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+                <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={monthShortYearLabel}
+                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={40}
+                  />
+                  <YAxis
+                    tickFormatter={(v) => `${v}%`}
+                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={48}
+                  />
+                  <Tooltip
+                    labelFormatter={(label) => fullDateLabel(label as string)}
+                    formatter={(value) => [`${Number(value).toFixed(2)}%`, "Below previous high"]}
+                    contentStyle={TOOLTIP_STYLE}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#f43f5e" strokeWidth={2} fill="#f43f5e" fillOpacity={0.12} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
+// How many rows the per-asset / per-platform lists below show before the rest would just be
+// noise on a summary tab.
+const TOP_ROWS = 5;
+
+/**
+ * RANKED BARS — a short "who contributes most" list: a label, a figure, and a bar scaled to the
+ * largest row. Shared by the top dividend payers and the costs by platform.
+ */
+function RankedBars({ title, rows }: { title: string; rows: { key: string; label: string; sub?: string; value: number; figure: string }[] }) {
+  const max = Math.max(...rows.map((r) => r.value), 0.01);
+  return (
+    <div className="px-6 md:px-7 py-6 border-t border-slate-100">
+      <h3 className="text-sm font-black text-slate-900 mb-4">{title}</h3>
+      <div className="space-y-3">
+        {rows.map((r) => (
+          <div key={r.key}>
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <span className="min-w-0 truncate">
+                <span className="text-[13px] font-bold text-slate-900">{r.label}</span>
+                {r.sub && <span className="text-xs text-slate-400 ml-2">{r.sub}</span>}
+              </span>
+              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{r.figure}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-full bg-[#C49A3C]" style={{ width: `${(r.value / max) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * DIVIDENDS MODULE — /dividends: the last 12 months' income as the headline, the yields behind
+ * it, and the biggest payers. wholePortfolioYieldPct is the portfolio's yield as a whole (not
+ * just the holdings that pay), which is what "what does my portfolio yield" means.
+ */
+function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<DividendsResponse>(portfolioService.getDividends, portfolioUuid);
+  const payers = useMemo(
+    () => (data ? [...data.byAsset].filter((a) => a.trailing12MIncome > 0).sort((a, b) => b.trailing12MIncome - a.trailing12MIncome).slice(0, TOP_ROWS) : []),
+    [data],
+  );
+  const hasIncome = data !== null && data.totalLifetimeIncome > 0;
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow={data?.currency ?? "Income"}
+        title="Dividends"
+        desc="Cash paid out by your holdings."
+        right={data !== null && !updating && hasIncome ? (
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Last 12 months</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {formatCurrency(data.totalTrailing12MIncome, data.currency, 0)}
+            </p>
+          </div>
+        ) : undefined}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {!hasIncome ? (
+            <ModuleMessage>No dividends received yet.</ModuleMessage>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+                <StatContent
+                  title="Yield"
+                  value={data.wholePortfolioYieldPct === null ? "—" : `${data.wholePortfolioYieldPct.toFixed(2)}%`}
+                  icon={<Percent className="h-4 w-4 text-blue-600" />}
+                  info="The last 12 months' dividends over what the whole portfolio is worth today."
+                  color="blue"
+                />
+                <StatContent
+                  title="Yield on Cost"
+                  value={data.portfolioYieldOnCostPct === null ? "—" : `${data.portfolioYieldOnCostPct.toFixed(2)}%`}
+                  icon={<Percent className="h-4 w-4 text-blue-600" />}
+                  info="The last 12 months' dividends over what you paid for the holdings that pay them."
+                  color="blue"
+                />
+                <StatContent
+                  title="vs Previous Year"
+                  value={formatPctOrDash(data.portfolioGrowthYoyPct)}
+                  icon={data.portfolioGrowthYoyPct !== null && data.portfolioGrowthYoyPct < 0 ? FALL_ICON : RISE_ICON}
+                  info="How the last 12 months' dividends compare with the 12 months before."
+                  color={pctColor(data.portfolioGrowthYoyPct)}
+                />
+              </div>
+              {payers.length > 0 && (
+                <RankedBars
+                  title="Top payers, last 12 months"
+                  rows={payers.map((a) => ({
+                    key: a.assetId,
+                    label: a.ticker ?? a.name,
+                    sub: a.ticker ? a.name : undefined,
+                    value: a.trailing12MIncome,
+                    figure: formatCurrency(a.trailing12MIncome, data.currency, 0),
+                  }))}
+                />
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
+// annualizedCostDragPct thresholds, the same ones the PDF report uses.
+const costDragLabel = (pct: number) => (pct < 0.1 ? "Negligible" : pct > 0.5 ? "Material" : "Moderate");
+
+/**
+ * TRADING COSTS MODULE — /trading-costs: what trading has cost (commissions plus spread) as
+ * the headline, how heavy that is relative to what was traded and to the portfolio's return,
+ * and which platforms it went to.
+ */
+function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<TradingCostsResponse>(portfolioService.getTradingCosts, portfolioUuid);
+  const platforms = useMemo(
+    () => (data ? [...data.byPlatform].sort((a, b) => b.totalCosts - a.totalCosts).slice(0, TOP_ROWS) : []),
+    [data],
+  );
+
+  return (
+    <Module>
+      <ModuleHead
+        eyebrow={data?.currency ?? "Costs"}
+        title="Trading Costs"
+        desc="Commissions plus the spread paid when buying and selling."
+        right={data !== null && !updating && data.totalTransactions > 0 ? (
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total costs</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {formatCurrency(data.totalCosts, data.currency, 0)}
+            </p>
+          </div>
+        ) : undefined}
+      />
+      <AnalyticsPlaceholder
+        loading={loading}
+        failed={failed}
+        hasData={data !== null}
+        updating={updating}
+        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+      />
+      {data !== null && !updating && (
+        <>
+          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {data.totalTransactions === 0 ? (
+            <ModuleMessage>No trades recorded yet.</ModuleMessage>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+                <StatContent
+                  title="Per Trade"
+                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
+                  icon={<Receipt className="h-4 w-4 text-slate-500" />}
+                  description={`Across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}`}
+                  color="slate"
+                />
+                <StatContent
+                  title="Of Traded Volume"
+                  value={data.costRatioPct === null ? "—" : `${data.costRatioPct.toFixed(2)}%`}
+                  icon={<Percent className="h-4 w-4 text-slate-500" />}
+                  info="Costs over the total amount you bought and sold."
+                  color="slate"
+                />
+                <StatContent
+                  title="Yearly Drag"
+                  value={data.annualizedCostDragPct === null ? "—" : `${data.annualizedCostDragPct.toFixed(2)}%`}
+                  icon={<TrendingDown className="h-4 w-4 text-slate-500" />}
+                  description={data.annualizedCostDragPct === null ? undefined : costDragLabel(data.annualizedCostDragPct)}
+                  info="How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material."
+                  color="slate"
+                />
+              </div>
+              {platforms.length > 1 && (
+                <RankedBars
+                  title="By platform"
+                  rows={platforms.map((pl) => ({
+                    key: pl.platform,
+                    label: pl.platform,
+                    sub: `${pl.transactionCount} ${pl.transactionCount === 1 ? "trade" : "trades"}`,
+                    value: pl.totalCosts,
+                    figure: formatCurrency(pl.totalCosts, data.currency, 0),
+                  }))}
+                />
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Module>
+  );
+}
+
 // Each is null while the backend hasn't computed it for this user yet; `summary` never is
 // (see portfolioService.getPortfolioSummary).
 interface PortfolioComposition {
@@ -2181,8 +2541,9 @@ interface PortfolioComposition {
  * withdrawn is kept out of the figures and only mentioned alongside the month-to-date one.
  * Deltas, not raw values: a stable portfolio's value line is visually flat at this timescale.
  * /today carries isStale like the analytics documents, so useAnalytics polls it the same way.
+ * Shown on the Dashboard, for the headline portfolio, rather than in Insights.
  */
-function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
+export function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
 
   return (
@@ -2377,11 +2738,20 @@ function HistoryPage({
     );
   }
 
+  // The /history figures (lifetime totals, chart, heatmap) all come from the one document, so
+  // one isStale check covers them: hidden behind one StaleUpdatingState while historyUpdating,
+  // or shown with one hint once that window times out. The analytics modules on each tab are
+  // their own fetches with their own isStale.
+  const historyFigures = (content: React.ReactNode) => historyUpdating
+    ? <Module><StaleUpdatingState /></Module>
+    : <>{data.isStale && <UpdatingNote />}{content}</>;
+
   return (
     <div className="space-y-6">
       {subTab === "risk" ? (
         <>
           <VolatilityModule portfolioUuid={portfolioUuid} />
+          <DrawdownModule portfolioUuid={portfolioUuid} />
           <RiskModelTab portfolioUuid={portfolioUuid} />
         </>
       ) : subTab === "composition" ? (
@@ -2400,64 +2770,69 @@ function HistoryPage({
             <SectorRegionModule sector={composition.sector} region={composition.region} />
           </>
         ) : null
+      ) : subTab === "income" ? (
+        <>
+          {historyFigures(
+            <StatCardGroup gridClassName="grid-cols-2 lg:grid-cols-4 divide-y divide-slate-100 lg:divide-y-0 lg:divide-x">
+              <StatContent
+                title="Unrealized P&L"
+                value={
+                  <AmountWithDelta
+                    amount={formatSignedCurrency(data.totalUnrealizedPnl, data.currency)}
+                    pct={data.totalInvestedCapital > 0 ? (data.totalUnrealizedPnl / data.totalInvestedCapital) * 100 : 0}
+                    hasBaseline={data.totalInvestedCapital > 0}
+                  />
+                }
+                icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                info="What your open positions are up or down, against what you paid for them."
+                color={unrealizedIsGain ? "emerald" : "red"}
+              />
+              <StatContent
+                title="Realized P&L"
+                value={formatSignedCurrency(data.totalRealizedPnl, data.currency)}
+                icon={data.totalRealizedPnl >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                info="Gains and losses you've locked in by selling, since your first transaction."
+                color={data.totalRealizedPnl >= 0 ? "emerald" : "red"}
+              />
+              <StatContent
+                title="Dividends"
+                value={formatCurrency(data.totalDividendIncome, data.currency, 0)}
+                icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
+                info="All the dividends you've received, since your first transaction."
+                color="blue"
+              />
+              <StatContent
+                title="Trading Costs"
+                value={formatCurrency(data.lifetimeTradingCosts, data.currency, 0)}
+                icon={<Receipt className="h-4 w-4 text-slate-500" />}
+                info="Commissions plus the spread paid on every buy and sell, since your first transaction."
+                color="slate"
+              />
+            </StatCardGroup>,
+          )}
+          <DividendsModule portfolioUuid={portfolioUuid} />
+          {!historyUpdating && <RealizedPnLCard trades={data.realizedTradesByAsset} />}
+          <TradingCostsModule portfolioUuid={portfolioUuid} />
+        </>
       ) : (
         <>
-          {/* data.isStale here means the same edit-triggered rebuild covers every /history
-              figure on this tab (lifetime totals, chart, heatmap, realized P&L) — hide them
-              behind one StaleUpdatingState while historyUpdating, or show them with one hint
-              once that window times out, rather than repeating the check per module.
-              MonthToDateModule and BenchmarkModule are unaffected: each is its own fetch with
-              its own isStale. */}
-          {historyUpdating ? (
-            <Module><StaleUpdatingState /></Module>
-          ) : (
+          <ReturnsModule portfolioUuid={portfolioUuid} />
+          {historyFigures(
             <>
-              {data.isStale && <UpdatingNote />}
-              <StatCardGroup gridClassName="grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
-                <StatContent
-                  title="Invested Capital"
-                  value={formatCurrency(data.totalInvestedCapital, data.currency, 0)}
-                  icon={<Receipt className="h-4 w-4 text-blue-600" />}
-                  description="Capital deployed to date"
-                  color="blue"
-                />
-                <StatContent
-                  title="Unrealized P&L"
-                  value={`${unrealizedIsGain ? "+" : ""}${formatCurrency(data.totalUnrealizedPnl, data.currency, 0)}`}
-                  icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                  description="Open positions vs. invested capital"
-                  color={unrealizedIsGain ? "emerald" : "red"}
-                />
-                {/* Same ROI the backend computes for the portfolio and for each holding
-                    (unrealized_roi_pct / roiPct): unrealized P&L over the cost basis of the
-                    open positions, which is what totalInvestedCapital is. "—" when nothing is
-                    held (a fully sold-out portfolio). */}
-                <StatContent
-                  title="ROI"
-                  value={
-                    data.totalInvestedCapital > 0
-                      ? formatPct((data.totalUnrealizedPnl / data.totalInvestedCapital) * 100)
-                      : "—"
-                  }
-                  icon={<Percent className={`h-4 w-4 ${unrealizedIsGain ? "text-emerald-600" : "text-rose-600"}`} />}
-                  description="Return on the capital in your open positions"
-                  color={unrealizedIsGain ? "emerald" : "red"}
-                />
-              </StatCardGroup>
-            </>
-          )}
-          <MonthToDateModule portfolioUuid={portfolioUuid} />
-          {!historyUpdating && (
-            <ChartCard
-              chart={data.chart}
-              currency={data.currency}
-              title="Value Since Inception"
-              desc="Daily portfolio market value across your full history."
-            />
-          )}
-          <BenchmarkModule portfolioUuid={portfolioUuid} />
-          {!historyUpdating && (
-            <>
+              <ChartCard
+                chart={data.chart}
+                currency={data.currency}
+                title="Portfolio Value"
+                desc="Market value at each month end since inception, and today."
+                right={
+                  <div className="sm:text-right shrink-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Value today</p>
+                    <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                      {formatCurrency(data.currentValue, data.currency, 0)}
+                    </p>
+                  </div>
+                }
+              />
               <Module>
                 <ModuleHead
                   eyebrow={data.currency}
@@ -2466,9 +2841,9 @@ function HistoryPage({
                 />
                 <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={onSelectMonth} />
               </Module>
-              <RealizedPnLCard trades={data.realizedTradesByAsset} />
-            </>
+            </>,
           )}
+          <BenchmarkModule portfolioUuid={portfolioUuid} />
         </>
       )}
     </div>

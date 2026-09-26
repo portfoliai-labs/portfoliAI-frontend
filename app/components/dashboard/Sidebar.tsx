@@ -1,8 +1,9 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
+import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Columns3 } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
 import { PortfolioSwitcher } from "./PortfolioSwitcher";
+import { usePortfolio } from "../../context/PortfolioContext";
 
 interface SidebarProps {
   activeSection: string;
@@ -21,11 +22,15 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard };
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
+  // Meaningful for investors only (see PortfolioContext), which is the only menu that reads it.
+  const { portfolios } = usePortfolio();
 
-  // Investor: Dashboard on top, then the portfolio group (switcher + that portfolio's pages),
-  // then the sections that aren't about any one portfolio.
+  // Investor: Dashboard (and Compare, once there are 2+ portfolios to compare) on top, then the
+  // portfolio group (switcher + that portfolio's pages), then the sections that aren't about
+  // any one portfolio.
   const investorTop: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+    ...(portfolios.filter((p) => !p.isAggregate).length >= 2 ? [{ id: 'compare', label: 'Compare', icon: Columns3 }] : []),
   ];
   const investorPortfolioItems: NavItem[] = [
     { id: 'performance', label: 'Insights', icon: TrendingUp },
