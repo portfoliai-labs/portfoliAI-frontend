@@ -1,7 +1,7 @@
 // app/(reserved)/dashboard/page.tsx
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useUser } from "../../context/UserContext";
 import { usePortfolio } from "../../context/PortfolioContext";
@@ -20,7 +20,7 @@ import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboar
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
-import { InsightsSection } from "../../components/dashboard/InsightsSection";
+import { InsightsSection, openPortfoliosPage } from "../../components/dashboard/InsightsSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { Loader2 } from "lucide-react";
 
@@ -48,17 +48,29 @@ function DashboardPageContent() {
     requestedSection && VALID_SECTIONS.includes(requestedSection) ? requestedSection : 'overview'
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  // Bumped when the sidebar picks the section already open, so a section with pages of its own
-  // (Insights' hub and what's under it) starts over from its first one, as a fresh visit would.
+  // Bumped when the section already open is opened again (from the sidebar, or a link to one of
+  // its pages), so a section with pages of its own (Portfolios' hub and what's under it) starts
+  // over, as a fresh visit would.
   const [sectionVisit, setSectionVisit] = useState(0);
-  const openSectionFromSidebar = (section: string) => {
+  const openSection = (section: string) => {
     if (section === activeSection) setSectionVisit((n) => n + 1);
     setActiveSection(section);
   };
 
   const isAdvisor = user?.role === 'ADVISOR';
 
-  const renderContent = useMemo(() => {
+  // An investor's transactions live on each portfolio's page under Portfolios now, so a link to
+  // the old Transactions section (an "add transactions" empty state) opens the selected
+  // portfolio's instead.
+  const navigate = (section: string) => {
+    if (section === 'upload' && !isAdvisor && portfolio) {
+      openPortfoliosPage(openSection, portfolio.uuid, 'transactions');
+      return;
+    }
+    setActiveSection(section);
+  };
+
+  const renderContent = (() => {
     // Every investor-facing case below needs a resolved portfolio; advisor cases never read
     // `portfolio` at all (they resolve a client's own via useClientDefaultPortfolio), so this
     // guard only ever blocks the investor branches while PortfolioContext is still loading.
@@ -67,8 +79,8 @@ function DashboardPageContent() {
     switch (activeSection) {
       case 'overview':
         return isAdvisor
-          ? <AdvisorDashboardOverview onNavigate={setActiveSection} />
-          : <DashboardOverview onNavigate={setActiveSection} />;
+          ? <AdvisorDashboardOverview onNavigate={navigate} />
+          : <DashboardOverview onNavigate={navigate} />;
       case 'clients':
         return <ClientsSection />;
       case 'upload':
@@ -79,7 +91,7 @@ function DashboardPageContent() {
       case 'performance':
         return isAdvisor
           ? <AdvisorPerformanceSection />
-          : <InsightsSection key={sectionVisit} onNavigate={setActiveSection} />;
+          : <InsightsSection key={sectionVisit} onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
@@ -89,9 +101,9 @@ function DashboardPageContent() {
       case 'notifications':
         return <NotificationsSection />;
       default:
-        return <DashboardOverview onNavigate={setActiveSection} />;
+        return <DashboardOverview onNavigate={navigate} />;
     }
-  }, [activeSection, isAdvisor, portfolio, sectionVisit]);
+  })();
 
   if (loading || (!isAdvisor && portfolioLoading)) {
     return (
@@ -117,7 +129,7 @@ function DashboardPageContent() {
         isMenuOpen={isSidebarOpen}
         onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         subscriptionTier={user.subscription_tier}
-        onNavigate={setActiveSection}
+        onNavigate={navigate}
       />
 
       {/* The window scrolls the page (the header above is sticky to it), so nothing between it
@@ -127,7 +139,7 @@ function DashboardPageContent() {
       <div className="flex flex-1 overflow-x-clip">
         <Sidebar
           activeSection={activeSection}
-          setActiveSection={openSectionFromSidebar}
+          setActiveSection={openSection}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           role={user?.role}

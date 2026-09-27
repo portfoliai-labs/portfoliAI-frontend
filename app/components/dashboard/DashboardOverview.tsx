@@ -11,16 +11,16 @@ import {
   Loader2,
   ArrowRight,
   Briefcase,
-  BellRing,
 } from "lucide-react";
 import { portfolioService } from "../../services/portfolioService";
-import type { Portfolio, PortfolioSnapshot } from "../../models/Portfolio";
+import type { Portfolio, PortfolioSnapshot, TodayDashboard } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { InfoTip, MonthToDateModule } from "./PerformanceSection";
+import { InfoTip } from "./PerformanceSection";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
 import { openPortfoliosPage } from "./InsightsSection";
+import { DailyArticleModule } from "./NewsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
 
@@ -34,13 +34,13 @@ type SnapshotState =
 /**
  * DASHBOARD — every portfolio at a glance, not tied to the selected portfolio: the
  * aggregate "All portfolios" on top (or the only portfolio, for a user with just one), then a
- * card per portfolio, then every portfolio's alerts. Headline figures (invested,
- * market value, unrealized P&L) and the headline's moves this month; the longer-term figures
- * and the charts live in each portfolio's Insights, which a card opens. The overview endpoint
- * never mixes history with fresh data (no isStale); this month's module polls on its own.
+ * card per portfolio, then every portfolio's alerts and the article of the day. Headline
+ * figures only (invested, market value with today's and this month's moves, unrealized P&L):
+ * the longer-term figures and the charts live in each portfolio's Insights, reached from its
+ * card. The overview endpoint never mixes history with fresh data (no isStale).
  */
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
-  const { portfolios, selectPortfolio } = usePortfolio();
+  const { portfolios, current, selectPortfolio } = usePortfolio();
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotState>>({});
 
   // Refetch only when the set of portfolios changes, not on every new array from the context
@@ -63,26 +63,31 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     return () => { cancelled = true; };
   }, [uuidsKey]);
 
-  // The backend lists the aggregate first while there are 2+ portfolios; with just one, that
-  // one is the headline and there's no per-portfolio grid underneath.
+  // The aggregate, when there is one, is the headline. The per-portfolio cards underneath only
+  // show with two or more portfolios of the user's own: with just one, its card would repeat
+  // the headline's figures.
   const aggregate = portfolios.find((p) => p.isAggregate);
   const headline = aggregate ?? portfolios[0];
-  const others = useMemo(() => (aggregate ? portfolios.filter((p) => !p.isAggregate) : []), [aggregate, portfolios]);
+  const others = useMemo(() => {
+    const own = portfolios.filter((p) => !p.isAggregate);
+    return aggregate && own.length > 1 ? own : [];
+  }, [aggregate, portfolios]);
 
-  // Alerts are managed under Portfolios; "Manage alerts" (and the empty state's button) open
-  // that page directly (see openPortfoliosPage).
+  // Alerts are managed on each portfolio's page under Portfolios; "Manage alerts" (and the
+  // empty state's button) open the selected portfolio's (see openPortfoliosPage).
   const openAlertSettings = () => {
-    if (onNavigate) openPortfoliosPage(onNavigate, "alerts");
+    const target = current ?? headline;
+    if (onNavigate && target) openPortfoliosPage(onNavigate, target.uuid, "alerts");
   };
 
-  // A portfolio's Insights open on that portfolio, not on the Portfolios hub.
+  // A portfolio's page (and its Transactions) live under Portfolios, opened directly rather
+  // than through the Portfolios hub.
   const openPortfolio = (uuid: string, section: string) => {
     selectPortfolio(uuid);
-    if (section === "performance" && onNavigate) {
-      openPortfoliosPage(onNavigate, { portfolio: uuid });
-      return;
-    }
-    onNavigate?.(section);
+    if (!onNavigate) return;
+    if (section === "performance") openPortfoliosPage(onNavigate, uuid, "home");
+    else if (section === "upload") openPortfoliosPage(onNavigate, uuid, "transactions");
+    else onNavigate(section);
   };
 
   if (!headline) return null;
@@ -122,30 +127,17 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         />
       )}
 
-      {/* THIS MONTH — the headline's short-term moves, once it has figures at all. */}
-      {headlineState.status === "ready" && headlineState.snapshot !== null && (
-        <MonthToDateModule portfolioUuid={headline.uuid} />
-      )}
-
       {/* EACH PORTFOLIO */}
       {others.length > 0 && (
-        <div className="space-y-4">
-          <h2
-            className="text-lg md:text-xl font-black text-slate-900 px-1"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-          >
-            Your portfolios
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {others.map((p) => (
-              <PortfolioCard
-                key={p.uuid}
-                portfolio={p}
-                state={snapshots[p.uuid] ?? { status: "loading" }}
-                onOpen={(section) => openPortfolio(p.uuid, section)}
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {others.map((p) => (
+            <PortfolioCard
+              key={p.uuid}
+              portfolio={p}
+              state={snapshots[p.uuid] ?? { status: "loading" }}
+              onOpen={(section) => openPortfolio(p.uuid, section)}
+            />
+          ))}
         </div>
       )}
 
@@ -156,6 +148,9 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
           onManage={onNavigate ? openAlertSettings : undefined}
         />
       )}
+
+      {/* ARTICLE OF THE DAY — the same pick for everyone; renders nothing on a day without one. */}
+      <DailyArticleModule />
     </div>
   );
 }
@@ -205,12 +200,13 @@ function AmountWithDelta({ amount, pct }: { amount: string; pct: number | null }
 function HeadlineModule({
   portfolio, snapshot, onOpen,
 }: { portfolio: Portfolio; snapshot: PortfolioSnapshot | null; onOpen?: () => void }) {
+  const moves = useRecentMoves(portfolio.uuid);
   const openButton = onOpen && (
     <button
       onClick={onOpen}
       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
     >
-      Open insights <ArrowRight className="h-3.5 w-3.5" />
+      Open portfolio <ArrowRight className="h-3.5 w-3.5" />
     </button>
   );
 
@@ -249,9 +245,19 @@ function HeadlineModule({
         />
         <Stat
           title="Market Value"
-          value={formatCurrency(snapshot.totalMarketValue, currency, 0)}
+          value={
+            <>
+              {formatCurrency(snapshot.totalMarketValue, currency, 0)}
+              {moves && (
+                <>
+                  <MoveLine label="today" amount={moves.dayMarketEffect} pct={moves.previousDayValue !== 0 ? moves.dayMarketEffectPct : null} currency={moves.currency} />
+                  <MoveLine label="this month" amount={moves.mtdMarketEffect} pct={moves.monthStartValue !== 0 ? moves.mtdMarketEffectPct : null} currency={moves.currency} />
+                </>
+              )}
+            </>
+          }
           icon={<Coins className="h-4 w-4" />}
-          info="What your positions are worth today."
+          info="What your positions are worth today. Below it, how the market moved it today and this month, leaving out money you added or withdrew."
           color="gold"
         />
         <Stat
@@ -267,7 +273,44 @@ function HeadlineModule({
 }
 
 /**
- * PORTFOLIO CARD — one portfolio's headline figures. The whole card opens its Insights; with
+ * Today's and this month's market moves for the headline (GET /v1/portfolios/{p}/today, net of
+ * money added or withdrawn), shown under its market value; the day-by-day detail is in its
+ * Insights ("This month"). Null while there's nothing yet, or while the document is stale (it
+ * can mix two versions of the portfolio then).
+ */
+function useRecentMoves(portfolioUuid: string) {
+  const [today, setToday] = useState<TodayDashboard | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    portfolioService.getTodayDashboard(portfolioUuid)
+      .then((data) => { if (!cancelled) setToday(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [portfolioUuid]);
+  return today && !today.isStale ? today : null;
+}
+
+/**
+ * One move under the market value: "▲ +1,240 € · +0.84% today", in the same small coloured line
+ * as the unrealized P&L's percentage. The percentage is dropped without a baseline (a
+ * portfolio newer than the day or the month).
+ */
+function MoveLine({ label, amount, pct, currency }: { label: string; amount: number; pct: number | null; currency: string }) {
+  const isGain = amount >= 0;
+  const Icon = isGain ? TrendingUp : TrendingDown;
+  return (
+    <div className="flex items-center gap-1.5 font-sans text-sm font-bold mt-1">
+      <Icon className={`h-3.5 w-3.5 shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`} />
+      <span className={`tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+        {signedCurrency(amount, currency)}{pct !== null && ` · ${formatPct(pct)}`}
+      </span>
+      <span className="text-slate-400 font-semibold">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * PORTFOLIO CARD — one portfolio's headline figures. The whole card opens its page; with
  * no data yet it offers to add transactions to it instead.
  */
 function PortfolioCard({
@@ -366,7 +409,7 @@ const SUMMARY_GROUPS: { tone: AlertTone; label: string; dot: string }[] = [
  * (the backend re-checks every rule about every 5 minutes, so a reading changes while the page
  * is open). With more than one portfolio each dial is labelled with the portfolio it watches.
  * A one-line summary counts them by state; only the ALERTS_SHOWN_COLLAPSED most urgent get a
- * dial until the user asks for all of them. With no rules it invites the user to create one.
+ * dial until the user asks for all of them. With no rules it isn't shown at all.
  */
 function AlertsModule({ portfolios, onManage }: { portfolios: Portfolio[]; onManage?: () => void }) {
   const uuids = useMemo(() => portfolios.map((p) => p.uuid), [portfolios]);
@@ -381,6 +424,10 @@ function AlertsModule({ portfolios, onManage }: { portfolios: Portfolio[]; onMan
   const counts = SUMMARY_GROUPS
     .map((g) => ({ ...g, count: sorted.filter((r) => alertState(r).tone === g.tone).length }))
     .filter((g) => g.count > 0);
+
+  // Only there when there's something to show: no alerts (or none loaded yet, or a failed
+  // request) means no module at all. They're set up on each portfolio's page (Portfolios).
+  if (loading || error || sorted.length === 0) return null;
 
   return (
     <Module>
@@ -397,64 +444,38 @@ function AlertsModule({ portfolios, onManage }: { portfolios: Portfolio[]; onMan
           </button>
         )}
       />
-      {loading ? (
-        <div className="flex h-40 items-center justify-center">
-          <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
-        </div>
-      ) : error ? (
-        <p className="text-sm text-slate-500 p-6 md:p-7">Unable to load your alerts right now.</p>
-      ) : sorted.length === 0 ? (
-        <div className="flex flex-col items-center text-center gap-3 px-6 py-10">
-          <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
-            <BellRing className="h-5 w-5 text-slate-300" />
-          </div>
-          <p className="text-sm text-slate-500 max-w-sm">
-            You haven&apos;t set up any alerts. Get notified when your portfolio moves by a set amount, or when a
-            single holding grows past a share you choose.
-          </p>
-          {onManage && (
-            <button
-              onClick={onManage}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors"
-            >
-              Create an alert
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="p-6 md:p-7 space-y-5">
-          <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-bold text-slate-600">
-            {counts.map((g) => (
-              <li key={g.tone} className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${g.dot}`} />
-                {g.count} {g.label}
-              </li>
-            ))}
-          </ul>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {visible.map((rule) => (
-              <div key={`${rule.portfolioUuid}:${rule.ruleId}`} className="flex flex-col gap-1.5">
-                {portfolios.length > 1 && (
-                  <p className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400 truncate">
-                    {nameOf(rule.portfolioUuid)}
-                  </p>
-                )}
-                <AlertGaugeCard rule={rule} />
-              </div>
-            ))}
-          </div>
-          {sorted.length > ALERTS_SHOWN_COLLAPSED && (
-            <div className="flex justify-center">
-              <button
-                onClick={() => setShowAll((v) => !v)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
-              >
-                {showAll ? "Show fewer" : `Show all ${sorted.length}`}
-              </button>
+      <div className="p-6 md:p-7 space-y-5">
+        <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-bold text-slate-600">
+          {counts.map((g) => (
+            <li key={g.tone} className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${g.dot}`} />
+              {g.count} {g.label}
+            </li>
+          ))}
+        </ul>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {visible.map((rule) => (
+            <div key={`${rule.portfolioUuid}:${rule.ruleId}`} className="flex flex-col gap-1.5">
+              {portfolios.length > 1 && (
+                <p className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400 truncate">
+                  {nameOf(rule.portfolioUuid)}
+                </p>
+              )}
+              <AlertGaugeCard rule={rule} />
             </div>
-          )}
+          ))}
         </div>
-      )}
+        {sorted.length > ALERTS_SHOWN_COLLAPSED && (
+          <div className="flex justify-center">
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
+            >
+              {showAll ? "Show fewer" : `Show all ${sorted.length}`}
+            </button>
+          </div>
+        )}
+      </div>
     </Module>
   );
 }

@@ -10,13 +10,11 @@ import { useNews, useDailyArticle } from "../../hooks/useNews";
 import type { NewsItem, DailyArticle } from "../../models/News";
 
 /**
- * NEWS SECTION — shared building blocks for the sidebar's own News tab: today's headlines as
- * a full-page grid (NewsPageSection) plus the article of the day (DailyArticleModule). Used to
- * also back a Dashboard-only carousel/daily-article pair, both dashboards' own small preview of
- * the same content — retired once News became a real destination of its own, so the content
- * has one home instead of a summary everywhere. Each card shows the backend's `imageUrl` when
- * the story has one; otherwise (or if that URL fails to load) it falls back to a stylized
- * placeholder derived from the story's own topic/title (see themeFor below).
+ * NEWS SECTION — today's headlines as the sidebar's News page (NewsPageSection), and the
+ * article of the day (DailyArticleModule), which lives on the investor Dashboard instead. Each
+ * card shows the backend's `imageUrl` when the story has one; otherwise (or if that URL fails
+ * to load) it falls back to a stylized placeholder derived from the story's own topic/title
+ * (see themeFor below).
  */
 
 const dateLabel = (iso: string) =>
@@ -155,12 +153,6 @@ export function NewsPageSection() {
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
-      {/* The daily article used to sit on the investor Dashboard, right under the news
-          carousel — moved here so both news surfaces (carousel snippet aside, this is the
-          dedicated one) live in one place. Leads the page, ahead of the headlines grid, since
-          it's the day's single featured pick rather than one story among many. Renders
-          nothing on its own when there's no pick for today. */}
-      <DailyArticleModule />
       <Module>
         <ModuleHead eyebrow="Market News" title="Today's Headlines" desc="Market news published today." />
         {loading ? (
@@ -240,9 +232,9 @@ function DailyArticleCard({ article }: { article: DailyArticle }) {
 
 /**
  * DAILY ARTICLE MODULE — the day's featured read, same article for every user (not a
- * per-user or per-portfolio pick). Renders nothing at all — not an empty card — when
- * loading fails or there's nothing to show, so it never clutters the News page with an
- * empty slot on a day with no pick.
+ * per-user or per-portfolio pick), at the bottom of the investor Dashboard. Renders nothing at
+ * all — not an empty card — when loading fails or there's nothing to show, so it never
+ * clutters the Dashboard with an empty slot on a day with no pick.
  */
 export function DailyArticleModule() {
   const { article, loading, error, notFound } = useDailyArticle();

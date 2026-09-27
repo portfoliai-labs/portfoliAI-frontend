@@ -19,11 +19,10 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
   const isAdvisor = role === 'ADVISOR';
 
   // Investor: "which page" only. Which portfolio is picked on the pages themselves: Portfolios
-  // opens on a hub of them, with Compare, Reports and Alerts.
+  // opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'performance', label: 'Portfolios', icon: Briefcase },
-    { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

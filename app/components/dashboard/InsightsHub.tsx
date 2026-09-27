@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BellRing, Check, Columns3, FileText, Layers, Loader2, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Check, Columns3, Layers, Loader2, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
@@ -10,11 +10,7 @@ import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { NewPortfolioCard } from "./PortfolioBar";
-import { Breadcrumb } from "./Breadcrumb";
-import { ReportsList } from "./ReportsList";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { AlertsSettings } from "./AlertsSettings";
-import { useGenerateReport } from "./GenerateReport";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -25,18 +21,16 @@ const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 /**
  * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio
  * ("All portfolios" first), each with its value, its return since inception and the curve
- * behind it, opening that portfolio's Insights (renamed or deleted from its "…" menu), a card
- * to create one, then the ways out to Compare, Reports and Alerts. The figures for every card come
+ * behind it, opening that portfolio's page (renamed or deleted from its "…" menu), a card
+ * to create one, then the way into Compare. The figures for every card come
  * from one call (GET /v1/portfolios/comparison with no portfolio listed returns all of them),
  * refetched when a portfolio is added or removed.
  */
 export function InsightsHub({
-  onOpenPortfolio, onCompare, onReports, onAlerts,
+  onOpenPortfolio, onCompare,
 }: {
   onOpenPortfolio: (uuid: string) => void;
   onCompare: () => void;
-  onReports: () => void;
-  onAlerts: () => void;
 }) {
   const { portfolios, deletePortfolio } = usePortfolio();
   const [toDelete, setToDelete] = useState<Portfolio | null>(null);
@@ -88,28 +82,17 @@ export function InsightsHub({
         ))}
         <NewPortfolioCard />
       </div>
-      {deleteError && <p className="text-sm font-semibold text-rose-600">{deleteError}</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Its own row, never beside a portfolio: same columns as above, so it keeps a tile's size. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
         <ActionCard
           icon={<Columns3 className="h-5 w-5" />}
           title="Compare"
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
         />
-        <ActionCard
-          icon={<FileText className="h-5 w-5" />}
-          title="Reports"
-          text="Full-history PDF reports of your portfolios, generated on demand."
-          onClick={onReports}
-        />
-        <ActionCard
-          icon={<BellRing className="h-5 w-5" />}
-          title="Alerts"
-          text="Get notified when a portfolio or a holding moves past your limits."
-          onClick={onAlerts}
-        />
       </div>
+      {deleteError && <p className="text-sm font-semibold text-rose-600">{deleteError}</p>}
 
       {toDelete && (
         <ConfirmDialog
@@ -125,7 +108,7 @@ export function InsightsHub({
 }
 
 /**
- * PORTFOLIO CARD — one portfolio on the hub, opening its Insights on a click. `entry` undefined
+ * PORTFOLIO CARD — one portfolio on the hub, opening its own page (PortfolioHome) on a click. `entry` undefined
  * while loading, null when the backend has nothing for it (no figures computed yet, or the
  * request failed): the card still opens the portfolio, whose own page explains what's missing.
  *
@@ -286,10 +269,10 @@ function PortfolioCard({
 }
 
 /**
- * PORTFOLIO CARD MENU — the "…" on a portfolio card. Its clicks stop at the menu, so they
- * never open the portfolio underneath. Closes on a pick, a click outside or Escape.
+ * PORTFOLIO CARD MENU — the "…" with Rename and Delete, on a portfolio card and at the top of
+ * its page. Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
  */
-function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boolean; onRename: () => void; onDelete: () => void }) {
+export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boolean; onRename: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -349,14 +332,17 @@ function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boole
   );
 }
 
-/** ACTION CARD — a way out of the hub: dark, so it reads apart from the portfolio cards above. */
-function ActionCard({ icon, title, text, onClick }: { icon: React.ReactNode; title: string; text: string; onClick?: () => void }) {
+/** ACTION CARD — a way out of a hub page: dark, so it reads apart from the portfolio cards. */
+// `children`: a line of live detail under the text (PortfolioHome's "3 rules, 1 triggered"…).
+export function ActionCard({
+  icon, title, text, onClick, className = "", children,
+}: { icon: React.ReactNode; title: string; text: string; onClick?: () => void; className?: string; children?: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className="group text-left bg-[#1c1917] rounded-3xl p-5 md:p-6 flex flex-col gap-4 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/60"
+      className={`group min-h-44 h-full text-left bg-[#1c1917] rounded-3xl p-5 md:p-6 flex flex-col justify-between gap-4 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/60 ${className}`}
     >
       <div className="flex items-center justify-between">
         <span className="w-10 h-10 rounded-xl bg-[#C49A3C]/15 text-[#C49A3C] flex items-center justify-center">{icon}</span>
@@ -365,98 +351,8 @@ function ActionCard({ icon, title, text, onClick }: { icon: React.ReactNode; tit
       <div>
         <p className="text-lg font-black text-white" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{title}</p>
         <p className="text-[13px] text-stone-400 mt-1 leading-relaxed">{text}</p>
+        {children && <div className="mt-3">{children}</div>}
       </div>
     </button>
-  );
-}
-
-/**
- * PORTFOLIOS REPORTS — "Portfolios / Reports": the PDF reports of one portfolio at a time
- * (ReportsList), picked with the pills when there's more than one, and "Generate report" for
- * it. Only standard portfolios: the backend neither generates nor stores reports for the
- * aggregate. Starts on the portfolio last opened, if it's a standard one.
- */
-export function InsightsReports({ onHub }: { onHub: () => void }) {
-  const { portfolios, current } = usePortfolio();
-  const standard = portfolios.filter((p) => !p.isAggregate);
-  const [selectedUuid, setSelectedUuid] = useState(() => (current && !current.isAggregate ? current.uuid : standard[0]?.uuid ?? null));
-  const selected = standard.find((p) => p.uuid === selectedUuid) ?? standard[0] ?? null;
-  const { generate, sending, toast } = useGenerateReport();
-
-  return (
-    <div className="space-y-6">
-      <Breadcrumb
-        trail={[{ label: "Portfolios", onClick: onHub }]}
-        current="Reports"
-        right={selected && (
-          <button
-            type="button"
-            onClick={() => generate(selected)}
-            disabled={sending}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1c1917] text-white text-xs font-bold hover:bg-[#C49A3C] transition-colors disabled:opacity-60 shrink-0"
-          >
-            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            Generate report
-          </button>
-        )}
-      />
-      {toast}
-      {standard.length > 1 && <PortfolioPills portfolios={standard} selectedUuid={selected?.uuid ?? null} onSelect={setSelectedUuid} />}
-      {selected ? (
-        <ReportsList key={selected.uuid} portfolioUuid={selected.uuid} />
-      ) : (
-        <p className="text-sm text-slate-500">Create a portfolio to generate its reports.</p>
-      )}
-    </div>
-  );
-}
-
-/**
- * PORTFOLIO PILLS — which portfolio a Portfolios page is about (Reports, Alerts), when there's
- * more than one to pick from.
- */
-function PortfolioPills({
-  portfolios, selectedUuid, onSelect,
-}: { portfolios: Portfolio[]; selectedUuid: string | null; onSelect: (uuid: string) => void }) {
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1">
-      {portfolios.map((p) => {
-        const on = p.uuid === selectedUuid;
-        return (
-          <button
-            key={p.uuid}
-            type="button"
-            onClick={() => onSelect(p.uuid)}
-            aria-pressed={on}
-            className={`shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full border text-[13px] font-bold transition-colors ${
-              on ? "bg-[#1c1917] border-[#1c1917] text-white" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900"
-            }`}
-          >
-            {p.isAggregate && <Layers className={`h-3.5 w-3.5 ${on ? "text-[#C49A3C]" : "text-slate-400"}`} />}
-            {p.name}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * PORTFOLIOS ALERTS — "Portfolios / Alerts": one portfolio's alert rules at a time
- * (AlertsSettings), picked with the pills when there's more than one. Every portfolio can have
- * rules, "All portfolios" included. Starts on the portfolio last opened.
- */
-export function InsightsAlerts({ onHub }: { onHub: () => void }) {
-  const { portfolios, current } = usePortfolio();
-  const [selectedUuid, setSelectedUuid] = useState(() => current?.uuid ?? portfolios[0]?.uuid ?? null);
-  const selected = portfolios.find((p) => p.uuid === selectedUuid) ?? portfolios[0] ?? null;
-
-  return (
-    <div className="space-y-6 pb-12">
-      <Breadcrumb trail={[{ label: "Portfolios", onClick: onHub }]} current="Alerts" />
-      {portfolios.length > 1 && <PortfolioPills portfolios={portfolios} selectedUuid={selected?.uuid ?? null} onSelect={setSelectedUuid} />}
-      {/* Keyed: AlertsSettings caches the portfolio's holdings for its asset picker. */}
-      {selected && <AlertsSettings key={selected.uuid} portfolioUuid={selected.uuid} />}
-    </div>
   );
 }

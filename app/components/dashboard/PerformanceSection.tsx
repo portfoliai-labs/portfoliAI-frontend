@@ -18,7 +18,7 @@ import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { Breadcrumb } from "./Breadcrumb";
+import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
   PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
@@ -68,15 +68,14 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({
-  portfolioUuid, portfolioName, isAggregate = false, onNavigate, onHub,
+  portfolioUuid, isAggregate = false, onNavigate, trail,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
-  // The investor's Insights (InsightsSection): the portfolio's name, the title of this page,
-  // and the way back to the hub, the first crumb of every breadcrumb here. Without them (an
-  // advisor's view of a client, which has its own header) the page has no breadcrumb of its
-  // own, and a month or a detail leads back to "Insights".
-  portfolioName?: string;
-  onHub?: () => void;
+  // The pages above this one in the investor's Portfolios ("Portfolios / Main portfolio"), where
+  // this page is "Insights" and a month or a detail one level deeper. Without it (an advisor's
+  // view of a client, which has its own header) the page has no breadcrumb of its own, and a
+  // month or a detail leads back to "Insights".
+  trail?: Crumb[];
 }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
@@ -166,23 +165,21 @@ export function PerformanceSection({
     ? monthCache[selected.year]?.find((p) => new Date(p.periodStart).getUTCMonth() + 1 === selected.month)
     : undefined;
 
-  // "Insights / <portfolio>" on the portfolio's page, one level deeper for a month or a
-  // module's detail, where the portfolio's name leads back to its page.
-  const hubCrumbs = onHub ? [{ label: "Portfolios", onClick: onHub }] : [];
-  const portfolioCrumb = (back: () => void) => ({ label: portfolioName ?? "Insights", onClick: back });
+  const above = trail ?? [];
+  const insightsCrumb = (back: () => void): Crumb => ({ label: "Insights", onClick: back });
 
   return (
     <div className="space-y-6 pb-12">
       {selected ? (
         <Breadcrumb
-          trail={[...hubCrumbs, portfolioCrumb(() => setSelected(null))]}
+          trail={[...above, insightsCrumb(() => setSelected(null))]}
           current={new Date(Date.UTC(selected.year, selected.month - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
           right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
         />
       ) : explore ? (
-        <Breadcrumb trail={[...hubCrumbs, portfolioCrumb(explore.onClose)]} current={explore.title} />
-      ) : portfolioName ? (
-        <Breadcrumb trail={hubCrumbs} current={portfolioName} />
+        <Breadcrumb trail={[...above, insightsCrumb(explore.onClose)]} current={explore.title} />
+      ) : trail ? (
+        <Breadcrumb trail={trail} current="Insights" />
       ) : null}
 
       {failed && (
@@ -3735,9 +3732,9 @@ interface PortfolioComposition {
  * withdrawn is kept out of the figures and only mentioned alongside the month-to-date one.
  * Deltas, not raw values: a stable portfolio's value line is visually flat at this timescale.
  * /today carries isStale like the analytics documents, so useAnalytics polls it the same way.
- * Shown on the Dashboard, for the headline portfolio, rather than in Insights.
+ * First in Insights' Performance section: the short term, before the whole history.
  */
-export function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
+function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
 
   return (
@@ -3957,6 +3954,8 @@ function HistoryPage({
           <Tile span="half"><TradingCostsModule portfolioUuid={portfolioUuid} /></Tile>
         </HistorySection>
         <HistorySection id="performance">
+          {/* The short term first (today and this month, market moves only), then the whole history. */}
+          <Tile><MonthToDateModule portfolioUuid={portfolioUuid} /></Tile>
           {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
           <Tile>
             {historyTile(
