@@ -60,9 +60,9 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 /**
  * INSIGHTS SECTION — one portfolio's lifetime figures, on one scrolling page split into
  * sections (see HISTORY_SECTIONS below), each answering one question: Composition (what it
- * holds), Income & Costs (what it earned and cost), Performance (how is it doing — returns,
- * value, the monthly heatmap drilled into via /monthly?year=, the benchmark) and Risk (how much
- * it swings).
+ * holds), Income & Costs (what it earned and cost — dividends, trading costs, realized P&L),
+ * Performance (how is it doing — value, this month, returns, the monthly heatmap drilled into
+ * via /monthly?year=, the benchmark) and Risk (how much it swings).
  * The short-term view (this month) lives on the Dashboard instead. /history returns null rather than a
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
@@ -1509,7 +1509,9 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
                   className={`hover:bg-slate-50/60 transition-colors ${h.ticker ? "group/explore cursor-pointer" : ""}`}
                 >
                   <td className="px-5 md:px-6 py-3.5">
-                    <div className="flex items-baseline gap-2 min-w-0">
+                    {/* Capped, the name truncated (full name on hover): a long fund name would
+                        otherwise widen this column until the figures wrap. */}
+                    <div className="flex items-baseline gap-2 min-w-0 max-w-56 md:max-w-72" title={h.name}>
                       {h.ticker ? (
                         <button
                           type="button"
@@ -1523,16 +1525,16 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
                       <span className="text-xs text-slate-400 truncate">{h.name}</span>
                     </div>
                   </td>
-                  <td className="px-3 py-3.5">
+                  <td className="px-3 py-3.5 whitespace-nowrap">
                     <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-100 text-slate-600">
                       {h.assetClass}
                     </span>
                   </td>
-                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums">{formatQuantity(h.quantity)}</td>
-                  <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums">
+                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums whitespace-nowrap">{formatQuantity(h.quantity)}</td>
+                  <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums whitespace-nowrap">
                     {formatCurrency(h.investedValue, h.currency, 2)}
                   </td>
-                  <td className="px-3 md:px-6 py-3.5 text-sm font-medium text-slate-500">{h.broker ?? "Unknown"}</td>
+                  <td className="px-3 md:px-6 py-3.5 text-sm font-medium text-slate-500 whitespace-nowrap">{h.broker ?? "Unknown"}</td>
                 </tr>
               ))}
             </tbody>
@@ -3732,7 +3734,8 @@ interface PortfolioComposition {
  * withdrawn is kept out of the figures and only mentioned alongside the month-to-date one.
  * Deltas, not raw values: a stable portfolio's value line is visually flat at this timescale.
  * /today carries isStale like the analytics documents, so useAnalytics polls it the same way.
- * First in Insights' Performance section: the short term, before the whole history.
+ * In Insights' Performance section, right under the portfolio's value: the short term, before
+ * the rest of the history.
  */
 function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
@@ -3952,10 +3955,11 @@ function HistoryPage({
         <HistorySection id="income">
           <Tile span="half"><DividendsModule portfolioUuid={portfolioUuid} /></Tile>
           <Tile span="half"><TradingCostsModule portfolioUuid={portfolioUuid} /></Tile>
+          {/* What selling has locked in, next to what the holdings paid and what trading cost.
+              Its own row: the list grows with every closed position. */}
+          <Tile>{historyTile(<RealizedPnLCard trades={data.realizedTradesByAsset} />)}</Tile>
         </HistorySection>
         <HistorySection id="performance">
-          {/* The short term first (today and this month, market moves only), then the whole history. */}
-          <Tile><MonthToDateModule portfolioUuid={portfolioUuid} /></Tile>
           {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
           <Tile>
             {historyTile(
@@ -3975,9 +3979,10 @@ function HistoryPage({
               />,
             )}
           </Tile>
+          {/* Under the value, the short term (today and this month, market moves only), then the
+              rest of the history. */}
+          <Tile><MonthToDateModule portfolioUuid={portfolioUuid} /></Tile>
           <Tile><ReturnsModule portfolioUuid={portfolioUuid} /></Tile>
-          {/* Its own row: the list grows with every closed position. */}
-          {!historyUpdating && <Tile><RealizedPnLCard trades={data.realizedTradesByAsset} /></Tile>}
           <Tile>
             {historyTile(
               <Module>

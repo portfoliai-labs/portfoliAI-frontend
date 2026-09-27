@@ -30,9 +30,9 @@ const formatSigned = (amount: number, currency: string) => `${amount >= 0 ? "+" 
 
 /**
  * PORTFOLIO HOME — one portfolio's own page, opened from its card on the Portfolios hub: its
- * key figures (value, return, the curve behind it), then the way into its
- * Insights, Transactions, Reports and Alerts, each card with a line of what's there. Rename and
- * delete sit in the "…" at the top right ("All portfolios", built automatically, has neither).
+ * key figures (value, return, the curve behind it), then the way into its Insights,
+ * Transactions, Reports and Alerts, each card with a line of what's there. Rename and delete
+ * sit in the "…" in the figures' corner ("All portfolios", built automatically, has neither).
  * The aggregate has no reports (the backend doesn't make them), and its transactions are every
  * portfolio's, added to whichever one is picked.
  */
@@ -66,16 +66,17 @@ export function PortfolioHome({
 
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb
-        trail={trail}
-        current={portfolio.name}
-        right={!portfolio.isAggregate && (
+      <Breadcrumb trail={trail} current={portfolio.name} />
+      {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
+
+      {/* Rename / delete in the headline's corner rather than as the breadcrumb's action: on
+          wide screens that would be a row of its own above everything, for one small button. */}
+      <PortfolioHeadline
+        portfolioUuid={portfolio.uuid}
+        action={!portfolio.isAggregate && (
           <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={() => setRenaming(true)} onDelete={() => setConfirmDelete(true)} />
         )}
       />
-      {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
-
-      <PortfolioHeadline portfolioUuid={portfolio.uuid} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <ActionCard
@@ -115,7 +116,7 @@ export function PortfolioHome({
  * /v1/portfolios/comparison: what it's worth, its return since inception and per year, the
  * gain on what's still held, and the return curve since its first day.
  */
-function PortfolioHeadline({ portfolioUuid }: { portfolioUuid: string }) {
+function PortfolioHeadline({ portfolioUuid, action }: { portfolioUuid: string; action?: React.ReactNode }) {
   const [state, setState] = useState<{ entry: PortfolioComparisonEntry | null; loading: boolean }>({ entry: null, loading: true });
 
   useEffect(() => {
@@ -133,7 +134,8 @@ function PortfolioHeadline({ portfolioUuid }: { portfolioUuid: string }) {
   const lineColor = totalReturn === null || totalReturn >= 0 ? "#10b981" : "#f43f5e";
 
   return (
-    <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+    <section className="relative bg-white rounded-4xl border border-slate-200 shadow-sm">
+      {action && <div className="absolute top-5 right-5 md:top-6 md:right-6 z-10">{action}</div>}
       {state.loading ? (
         <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" /></div>
       ) : value === null ? (
