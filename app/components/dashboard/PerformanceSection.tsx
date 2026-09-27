@@ -129,12 +129,16 @@ export function PerformanceSection({
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedYearStale, selectedYear, portfolioUuid]);
 
+  // HistoryPage shows the section timeline only for a full history, not a month's detail.
+  const withTimeline = !loading && history !== null && !isHistoryEmpty(history) && !selected;
+
   const selectedPeriod = selected
     ? monthCache[selected.year]?.find((p) => new Date(p.periodStart).getUTCMonth() + 1 === selected.month)
     : undefined;
 
   return (
-    <div className="space-y-6 pb-12">
+    // --timeline-gutter: the timeline's column plus the gap before it (HistoryPage's grid).
+    <div className="space-y-6 pb-12 [--timeline-gutter:3.5rem]">
       {selected ? (
         <MonthBreadcrumb
           year={selected.year}
@@ -143,7 +147,10 @@ export function PerformanceSection({
           right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
         />
       ) : (
-        <PortfolioPageHeader bar={portfolioBar} />
+        // Stops where the cards do while the timeline runs down the right (HistoryPage).
+        <div className={withTimeline ? "lg:mr-[var(--timeline-gutter)]" : undefined}>
+          <PortfolioPageHeader bar={portfolioBar} />
+        </div>
       )}
 
       {failed && (
@@ -217,10 +224,27 @@ function MonthBreadcrumb({
  */
 function Module({ children }: { children: React.ReactNode }) {
   return (
-    <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+    <section className="h-full bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
       {children}
     </section>
   );
+}
+
+const TILE_SPAN = {
+  full: "col-span-2 lg:col-span-12",
+  half: "col-span-2 lg:col-span-6",
+  quarter: "col-span-1 lg:col-span-3",
+} as const;
+
+/**
+ * TILE — one cell of a section's mosaic (see HistorySection): a 12-column grid on wide
+ * screens, so a big chart can sit beside a narrow card and two related modules side by side,
+ * instead of every module stacked at full width. Below lg everything is full width except
+ * quarter tiles, which pair up. A container, so what's inside lays itself out by the tile's
+ * width (@md:, @3xl:…) rather than the viewport's. Collapses when its module renders nothing.
+ */
+function Tile({ span = "full", children }: { span?: keyof typeof TILE_SPAN; children: React.ReactNode }) {
+  return <div className={`@container min-w-0 empty:hidden ${TILE_SPAN[span]}`}>{children}</div>;
 }
 
 function ModuleHead({
@@ -325,9 +349,9 @@ export function InfoTip({ text, children }: { text: string; children: React.Reac
 }
 
 /**
- * STAT CONTENT — the icon/title/value block, with no card shell of its own,
- * meant to share a card with siblings via StatCardGroup, divided by internal borders
- * instead of gaps — reads better than each figure getting its own separate card.
+ * STAT CONTENT — the icon/title/value block, with no card shell of its own: either one cell
+ * of a strip sharing a card with its siblings (divided by internal borders), or a small card
+ * of its own in a section's mosaic.
  */
 function StatContent({ title, value, icon, color, info }: StatProps) {
   const iconBox = (
@@ -343,21 +367,6 @@ function StatContent({ title, value, icon, color, info }: StatProps) {
       <div className="font-black text-slate-900 text-xl md:text-2xl" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
         {value}
       </div>
-    </div>
-  );
-}
-
-/**
- * STAT CARD GROUP — a handful of StatContent cells sharing one card, divided by internal
- * borders instead of each getting its own card + gap. `gridClassName` carries the
- * grid-cols/divide combination, since that has to match how many children are actually
- * passed in (see call sites) — a fixed column count here would either stretch a shorter
- * group across empty space or wrap a longer one without the row dividers it needs.
- */
-function StatCardGroup({ children, gridClassName }: { children: React.ReactNode; gridClassName: string }) {
-  return (
-    <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm grid overflow-hidden ${gridClassName}`}>
-      {children}
     </div>
   );
 }
@@ -575,13 +584,13 @@ const HISTORY_SECTIONS: { id: HistorySectionId; label: string; icon: typeof Coin
 const sectionAnchor = (id: HistorySectionId) => `insights-${id}`;
 
 /**
- * HISTORY SECTION — one of the page's sections: just its modules, with no heading of its own
+ * HISTORY SECTION — one of the page's sections: a mosaic of Tiles, with no heading of its own
  * (SectionNav names it). `scroll-mt` keeps its top clear of the dashboard's sticky header when
  * SectionNav scrolls to it.
  */
 function HistorySection({ id, children }: { id: HistorySectionId; children: React.ReactNode }) {
   return (
-    <section id={sectionAnchor(id)} className="scroll-mt-28 space-y-6">
+    <section id={sectionAnchor(id)} className="scroll-mt-28 grid grid-cols-2 lg:grid-cols-12 gap-6">
       {children}
     </section>
   );
@@ -979,45 +988,52 @@ function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
 
   if (loading || failed || data === null || updating) {
     return (
-      <Module>
-        <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
-        <AnalyticsPlaceholder
-          loading={loading}
-          failed={failed}
-          hasData={data !== null}
-          updating={updating}
-          preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-        />
-      </Module>
+      <Tile>
+        <Module>
+          <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
+          <AnalyticsPlaceholder
+            loading={loading}
+            failed={failed}
+            hasData={data !== null}
+            updating={updating}
+            preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+          />
+        </Module>
+      </Tile>
     );
   }
 
   const built = data.status === "ok";
 
+  // Tiles of the Risk section's mosaic, not a block of its own.
   return (
-    <div className="space-y-6">
-      {data.isStale && <UpdatingNote />}
+    <>
+      {data.isStale && <Tile><UpdatingNote /></Tile>}
       {built ? (
         <>
-          <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />
-          <FrontierModule
-            frontier={data.frontier}
-            current={data.current}
-            maxSharpe={data.maxSharpe}
-            minVolatility={data.minVolatility}
-          />
-          <WeightGapsModule gaps={data.weightGaps} />
-          <RiskAssetsModule assets={data.assets} />
+          <Tile><MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} /></Tile>
+          <Tile>
+            <FrontierModule
+              frontier={data.frontier}
+              current={data.current}
+              maxSharpe={data.maxSharpe}
+              minVolatility={data.minVolatility}
+            />
+          </Tile>
+          <Tile span="half"><WeightGapsModule gaps={data.weightGaps} /></Tile>
+          <Tile span="half"><RiskAssetsModule assets={data.assets} /></Tile>
         </>
       ) : (
-        <Module>
-          <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
-          <ModuleMessage>{riskModelUnavailableMessage(data)}</ModuleMessage>
-        </Module>
+        <Tile>
+          <Module>
+            <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
+            <ModuleMessage>{riskModelUnavailableMessage(data)}</ModuleMessage>
+          </Module>
+        </Tile>
       )}
 
-      {(built || data.correlation !== null) && <CorrelationMatrixModule riskModel={data} />}
-    </div>
+      {(built || data.correlation !== null) && <Tile><CorrelationMatrixModule riskModel={data} /></Tile>}
+    </>
   );
 }
 
@@ -1299,7 +1315,7 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
         title="Holdings Behind the Model"
         desc="Each holding's average annual return and volatility over the history they share."
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-6 md:p-7">
+      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3 p-6 md:p-7">
         {assets.map((a) => (
           <div key={a.ticker} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
             <div className="min-w-0">
@@ -1748,8 +1764,8 @@ function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
         title="Realized P&L"
         desc="From closed positions, based on recorded buy and sell prices."
         right={single ? (
-          <div className="flex gap-6 flex-wrap">
-            <div className="text-right">
+          <div className="grid grid-cols-2 divide-x divide-slate-200">
+            <div className="pr-6">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total P&L</p>
               <p
                 className={`text-2xl font-black tabular-nums mt-1 ${singleIsGain ? "text-emerald-600" : "text-rose-600"}`}
@@ -1758,7 +1774,7 @@ function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
                 {singleIsGain ? "+" : ""}{formatCurrency(single.totalPl, single.currency, 2)}
               </p>
             </div>
-            <div className="text-right">
+            <div className="pl-6">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sell Transactions</p>
               <p className="text-2xl font-black tabular-nums text-slate-900 mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
                 {single.sellCount}
@@ -1794,14 +1810,14 @@ function RealizedPnLGroup({
         <div className="flex flex-wrap items-baseline justify-between gap-4 mb-5">
           {showCurrencyLabel && <p className="text-xs font-black uppercase tracking-wider text-slate-400">{group.currency}</p>}
           {showTotals && (
-            <div className="flex gap-6 flex-wrap ml-auto">
-              <div className="text-right">
+            <div className="grid grid-cols-2 divide-x divide-slate-200 ml-auto">
+              <div className="pr-6">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total P&L</p>
                 <p className={`text-lg font-black tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
                   {isGain ? "+" : ""}{formatCurrency(group.totalPl, group.currency, 2)}
                 </p>
               </div>
-              <div className="text-right">
+              <div className="pl-6">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Sell Transactions</p>
                 <p className="text-lg font-black tabular-nums text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
                   {group.sellCount}
@@ -2259,9 +2275,9 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>Not enough history yet to measure returns — they&apos;ll show up here soon.</ModuleMessage>
           ) : (
             <>
-              {/* Two columns: the since-inception figures side by side on one row on the left,
-                  the recent horizons two by two on the right. */}
-              <div className={`grid grid-cols-1 divide-y divide-slate-100 ${horizons.length > 0 ? "lg:grid-cols-2 lg:divide-y-0 lg:divide-x" : ""}`}>
+              {/* The since-inception figures side by side, then the recent horizons two by two —
+                  beside them in a wide tile, under them in a narrow one. */}
+              <div className={`grid grid-cols-1 divide-y divide-slate-100 ${horizons.length > 0 ? "@3xl:grid-cols-2 @3xl:divide-y-0 @3xl:divide-x" : ""}`}>
                 <div className="grid grid-cols-2 items-center divide-x divide-slate-100">
                   <StatContent
                     title="Since Inception"
@@ -2451,7 +2467,7 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>No dividends received yet.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+              <div className="grid grid-cols-1 @md:grid-cols-3 divide-y divide-slate-100 @md:divide-y-0 @md:divide-x">
                 <StatContent
                   title="Yield"
                   value={data.wholePortfolioYieldPct === null ? "—" : `${data.wholePortfolioYieldPct.toFixed(2)}%`}
@@ -2538,7 +2554,7 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>No trades recorded yet.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+              <div className="grid grid-cols-1 @md:grid-cols-3 divide-y divide-slate-100 @md:divide-y-0 @md:divide-x">
                 <StatContent
                   title="Per Trade"
                   value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
@@ -3001,63 +3017,79 @@ function HistoryPage({
   }
 
   // The /history figures (lifetime totals, chart, heatmap) all come from the one document, so
-  // one isStale check covers them: hidden behind one StaleUpdatingState while historyUpdating,
-  // or shown with one hint once that window times out. The analytics modules in each section
-  // are their own fetches with their own isStale.
-  const historyFigures = (content: React.ReactNode) => historyUpdating
-    ? <Module><StaleUpdatingState /></Module>
-    : <>{data.isStale && <UpdatingNote />}{content}</>;
+  // one isStale check covers them: each hidden behind a StaleUpdatingState while
+  // historyUpdating, with one hint at the top of the page once that window times out. The
+  // analytics modules in each section are their own fetches with their own isStale.
+  const historyTile = (content: React.ReactNode) => historyUpdating ? <Module><StaleUpdatingState /></Module> : content;
 
   return (
+    // The timeline's column and gap add up to --timeline-gutter (set in PerformanceSection).
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_2rem] gap-6">
       <div className="space-y-6 min-w-0">
         <HistorySection id="income">
-          {historyFigures(
-            <StatCardGroup gridClassName="grid-cols-2 lg:grid-cols-4 divide-y divide-slate-100 lg:divide-y-0 lg:divide-x">
-              <StatContent
-                title="Unrealized P&L"
-                value={
-                  <AmountWithDelta
-                    amount={formatSignedCurrency(data.totalUnrealizedPnl, data.currency)}
-                    pct={data.totalInvestedCapital > 0 ? (data.totalUnrealizedPnl / data.totalInvestedCapital) * 100 : 0}
-                    hasBaseline={data.totalInvestedCapital > 0}
+          {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
+          {historyUpdating ? (
+            <Tile><Module><StaleUpdatingState /></Module></Tile>
+          ) : (
+            <>
+              <Tile span="quarter">
+                <Module>
+                  <StatContent
+                    title="Unrealized P&L"
+                    value={
+                      <AmountWithDelta
+                        amount={formatSignedCurrency(data.totalUnrealizedPnl, data.currency)}
+                        pct={data.totalInvestedCapital > 0 ? (data.totalUnrealizedPnl / data.totalInvestedCapital) * 100 : 0}
+                        hasBaseline={data.totalInvestedCapital > 0}
+                      />
+                    }
+                    icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                    info="What your open positions are up or down, against what you paid for them."
+                    color={unrealizedIsGain ? "emerald" : "red"}
                   />
-                }
-                icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                info="What your open positions are up or down, against what you paid for them."
-                color={unrealizedIsGain ? "emerald" : "red"}
-              />
-              <StatContent
-                title="Realized P&L"
-                value={formatSignedCurrency(data.totalRealizedPnl, data.currency)}
-                icon={data.totalRealizedPnl >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                info="Gains and losses you've locked in by selling, since your first transaction."
-                color={data.totalRealizedPnl >= 0 ? "emerald" : "red"}
-              />
-              <StatContent
-                title="Dividends"
-                value={formatCurrency(data.totalDividendIncome, data.currency, 0)}
-                icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                info="All the dividends you've received, since your first transaction."
-                color="blue"
-              />
-              <StatContent
-                title="Trading Costs"
-                value={formatCurrency(data.lifetimeTradingCosts, data.currency, 0)}
-                icon={<Receipt className="h-4 w-4 text-slate-500" />}
-                info="Commissions plus the spread paid on every buy and sell, since your first transaction."
-                color="slate"
-              />
-            </StatCardGroup>,
+                </Module>
+              </Tile>
+              <Tile span="quarter">
+                <Module>
+                  <StatContent
+                    title="Realized P&L"
+                    value={formatSignedCurrency(data.totalRealizedPnl, data.currency)}
+                    icon={data.totalRealizedPnl >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+                    info="Gains and losses you've locked in by selling, since your first transaction."
+                    color={data.totalRealizedPnl >= 0 ? "emerald" : "red"}
+                  />
+                </Module>
+              </Tile>
+              <Tile span="quarter">
+                <Module>
+                  <StatContent
+                    title="Dividends"
+                    value={formatCurrency(data.totalDividendIncome, data.currency, 0)}
+                    icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
+                    info="All the dividends you've received, since your first transaction."
+                    color="blue"
+                  />
+                </Module>
+              </Tile>
+              <Tile span="quarter">
+                <Module>
+                  <StatContent
+                    title="Trading Costs"
+                    value={formatCurrency(data.lifetimeTradingCosts, data.currency, 0)}
+                    icon={<Receipt className="h-4 w-4 text-slate-500" />}
+                    info="Commissions plus the spread paid on every buy and sell, since your first transaction."
+                    color="slate"
+                  />
+                </Module>
+              </Tile>
+            </>
           )}
-          <DividendsModule portfolioUuid={portfolioUuid} />
-          {!historyUpdating && <RealizedPnLCard trades={data.realizedTradesByAsset} />}
-          <TradingCostsModule portfolioUuid={portfolioUuid} />
+          <Tile span="half"><DividendsModule portfolioUuid={portfolioUuid} /></Tile>
+          <Tile span="half"><TradingCostsModule portfolioUuid={portfolioUuid} /></Tile>
         </HistorySection>
         <HistorySection id="performance">
-          <ReturnsModule portfolioUuid={portfolioUuid} />
-          {historyFigures(
-            <>
+          <Tile>
+            {historyTile(
               <ChartCard
                 chart={data.chart}
                 currency={data.currency}
@@ -3071,7 +3103,13 @@ function HistoryPage({
                     </p>
                   </div>
                 }
-              />
+              />,
+            )}
+          </Tile>
+          <Tile span="half"><ReturnsModule portfolioUuid={portfolioUuid} /></Tile>
+          {!historyUpdating && <Tile span="half"><RealizedPnLCard trades={data.realizedTradesByAsset} /></Tile>}
+          <Tile>
+            {historyTile(
               <Module>
                 <ModuleHead
                   eyebrow={data.currency}
@@ -3079,33 +3117,37 @@ function HistoryPage({
                   desc="Time-weighted return by month, since inception. Click a month for its full detail."
                 />
                 <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={onSelectMonth} />
-              </Module>
-            </>,
-          )}
-          <BenchmarkModule portfolioUuid={portfolioUuid} />
+              </Module>,
+            )}
+          </Tile>
+          <Tile><BenchmarkModule portfolioUuid={portfolioUuid} /></Tile>
         </HistorySection>
         <HistorySection id="composition">
           {compositionError ? (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-              <AlertCircle className="h-5 w-5 shrink-0" />
-              <p className="text-sm font-bold">{compositionError}</p>
-            </div>
+            <Tile>
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <p className="text-sm font-bold">{compositionError}</p>
+              </div>
+            </Tile>
           ) : composition ? (
             <>
-              {isAggregate && <PortfoliosMixModule portfolioUuid={portfolioUuid} />}
-              <HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} />
-              <SectorRegionModule sector={composition.sector} region={composition.region} />
+              {isAggregate && <Tile><PortfoliosMixModule portfolioUuid={portfolioUuid} /></Tile>}
+              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} /></Tile>
+              <Tile><SectorRegionModule sector={composition.sector} region={composition.region} /></Tile>
             </>
           ) : (
-            <div className="flex h-64 items-center justify-center">
-              <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-            </div>
+            <Tile>
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
+              </div>
+            </Tile>
           )}
         </HistorySection>
         <HistorySection id="risk">
-          <VolatilityModule portfolioUuid={portfolioUuid} />
-          {isAggregate && <PortfolioCorrelationModule portfolioUuid={portfolioUuid} />}
-          <DrawdownModule portfolioUuid={portfolioUuid} />
+          <Tile span="half"><VolatilityModule portfolioUuid={portfolioUuid} /></Tile>
+          <Tile span="half"><DrawdownModule portfolioUuid={portfolioUuid} /></Tile>
+          {isAggregate && <Tile><PortfolioCorrelationModule portfolioUuid={portfolioUuid} /></Tile>}
           <RiskModelTab portfolioUuid={portfolioUuid} />
         </HistorySection>
       </div>
