@@ -2,17 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Script from "next/script";
-import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, BellRing, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote, Mail, Lock, Briefcase } from "lucide-react";
+import { Crown, AlertCircle, AlertTriangle, Loader2, Bell, Save, CheckCircle2, FlaskConical, User as UserIcon, Trash2, Globe, ChevronDown, Banknote, Mail, Lock } from "lucide-react";
 import { userService } from "../../services/userService";
 import { supabase } from "../../lib/supabaseClient";
 import type { SubscriptionResponse, NotificationPreferences } from "../../models/User";
 import SubscriptionSection from "./SubscriptionSection";
 import { DeleteAccountModal } from "./DeleteAccountModal";
-import { AlertsSettings } from "./AlertsSettings";
-import { PortfoliosSettings } from "./PortfoliosSettings";
 import { Toggle } from "./Toggle";
 import { useUser } from "../../context/UserContext";
-import { usePortfolio } from "../../context/PortfolioContext";
 
 // Tally form used for tester applications: https://tally.so/r/QKWeYg
 const TESTER_APPLICATION_FORM_ID = "QKWeYg";
@@ -58,9 +55,7 @@ function ReadOnlyField({ label, value, className = "" }: { label: string; value:
 
 const TABS = [
   { id: "subscription", label: "Subscription", icon: Crown },
-  { id: "portfolios", label: "Portfolios", icon: Briefcase },
   { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "alerts", label: "Alerts", icon: BellRing },
   { id: "preferences", label: "Preferences", icon: Globe },
   { id: "account", label: "Account", icon: UserIcon },
 ] as const;
@@ -82,23 +77,7 @@ const CURRENCIES = [
 
 export function SettingsSection() {
   const { user, logout, refreshUser } = useUser();
-  // Alerts are rules on one of the user's own portfolios; advisors don't have any (they manage
-  // their clients' portfolios), so the tab is investor-only. usePortfolio() is only meaningful
-  // for that role too — see PortfolioContext — so it's safe to call unconditionally here.
-  // Settings isn't tied to the sidebar's portfolio, so the tab picks its own, starting from the
-  // sidebar's.
-  const { portfolios, current } = usePortfolio();
-  const [alertsPortfolioUuid, setAlertsPortfolioUuid] = useState<string | null>(null);
-  const alertsPortfolio = portfolios.find((p) => p.uuid === alertsPortfolioUuid) ?? current;
-  const isAdvisor = user?.role === "ADVISOR";
-  // Alerts and Portfolios are about the investor's own portfolios (see above).
-  const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts" && tab.id !== "portfolios") : TABS;
-  // Lands on a tab when arriving via a link that asks for it through the URL hash: #alerts from
-  // the Dashboard's "Manage alerts", #portfolios from the Insights hub's "Manage portfolios".
-  const [activeTab, setActiveTab] = useState<TabId>(() => {
-    const requested = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    return !isAdvisor && (requested === "alerts" || requested === "portfolios") ? requested : "subscription";
-  });
+  const [activeTab, setActiveTab] = useState<TabId>("subscription");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
@@ -143,14 +122,6 @@ export function SettingsSection() {
       })
       .catch((error) => console.error("Failed to load locale preferences:", error))
       .finally(() => setLocaleLoading(false));
-  }, []);
-
-  // The hash only carries the request to open a tab; clear it so opening Settings later, from the
-  // sidebar, doesn't jump to that tab again.
-  useEffect(() => {
-    if (window.location.hash === "#alerts" || window.location.hash === "#portfolios") {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    }
   }, []);
 
   useEffect(() => {
@@ -288,7 +259,7 @@ export function SettingsSection() {
       {/* Tab bar — a full-width 2-column grid on mobile (so the selector never
           scrolls sideways), the original inline pill row from sm and up. */}
       <div className="grid grid-cols-2 sm:inline-flex gap-1 p-1 bg-white rounded-2xl sm:rounded-full border border-[rgba(196,154,60,0.2)]">
-        {tabs.map((tab) => {
+        {TABS.map((tab) => {
           const active = tab.id === activeTab;
           return (
             <button
@@ -420,29 +391,6 @@ export function SettingsSection() {
         </div>
       )}
 
-      {activeTab === "portfolios" && !isAdvisor && <PortfoliosSettings />}
-
-      {activeTab === "alerts" && !isAdvisor && alertsPortfolio && (
-        <div className="space-y-6">
-          {portfolios.length > 1 && (
-            <div className="flex flex-wrap items-center gap-3">
-              <label htmlFor="alerts-portfolio" className="text-xs font-black uppercase tracking-widest text-[#78716c]">
-                Portfolio
-              </label>
-              <select
-                id="alerts-portfolio"
-                value={alertsPortfolio.uuid}
-                onChange={(e) => setAlertsPortfolioUuid(e.target.value)}
-                className="text-sm font-bold text-[#1c1917] bg-white border border-[rgba(196,154,60,0.3)] rounded-xl px-3 py-2 outline-none cursor-pointer focus:ring-4 focus:ring-[#C49A3C]/10"
-              >
-                {portfolios.map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
-              </select>
-            </div>
-          )}
-          {/* Keyed: AlertsSettings caches the portfolio's holdings for its asset picker. */}
-          <AlertsSettings key={alertsPortfolio.uuid} portfolioUuid={alertsPortfolio.uuid} />
-        </div>
-      )}
 
       {activeTab === "preferences" && (
         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">

@@ -21,6 +21,7 @@ import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { InsightsSection } from "../../components/dashboard/InsightsSection";
+import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { Loader2 } from "lucide-react";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
@@ -108,6 +109,8 @@ function DashboardPageContent() {
   if (!user) return null;
 
   return (
+    // SectionTrailProvider: a section's inner pages show up in the Sidebar (see SectionTrail).
+    <SectionTrailProvider>
     <div className="min-h-screen bg-[#F7F5EF] flex flex-col selection:bg-[#C49A3C]/20 selection:text-[#1c1917]">
       <DashboardHeader
         onLogout={logout}
@@ -138,6 +141,7 @@ function DashboardPageContent() {
         </main>
       </div>
     </div>
+    </SectionTrailProvider>
   );
 }
 

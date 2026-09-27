@@ -33,8 +33,8 @@ const formatDate = (iso: string) =>
  * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
  *
  * `portfolioUuid` is always required now (every alert-rule route is nested under one). Without
- * `clientName` it's the caller's own rules (the Settings tab, passed the current portfolio from
- * PortfolioContext). With `clientName` it's an advisor's rules on that client's portfolio (the
+ * `clientName` it's the caller's own rules (Portfolios → Alerts, passed the portfolio picked
+ * there). With `clientName` it's an advisor's rules on that client's portfolio (the
  * Clients section, passed that client's default portfolio uuid): the asset picker lists the
  * client's holdings, and the advisor is the one notified.
  */

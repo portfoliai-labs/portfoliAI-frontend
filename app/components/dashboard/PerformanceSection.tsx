@@ -168,7 +168,7 @@ export function PerformanceSection({
 
   // "Insights / <portfolio>" on the portfolio's page, one level deeper for a month or a
   // module's detail, where the portfolio's name leads back to its page.
-  const hubCrumbs = onHub ? [{ label: "Insights", onClick: onHub }] : [];
+  const hubCrumbs = onHub ? [{ label: "Portfolios", onClick: onHub }] : [];
   const portfolioCrumb = (back: () => void) => ({ label: portfolioName ?? "Insights", onClick: back });
 
   return (

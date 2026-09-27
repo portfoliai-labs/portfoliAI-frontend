@@ -20,6 +20,7 @@ import { NoDataEmptyState } from "./NoDataEmptyState";
 import { InfoTip, MonthToDateModule } from "./PerformanceSection";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
+import { openPortfoliosPage } from "./InsightsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
 
@@ -68,15 +69,19 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   const headline = aggregate ?? portfolios[0];
   const others = useMemo(() => (aggregate ? portfolios.filter((p) => !p.isAggregate) : []), [aggregate, portfolios]);
 
-  // Alerts are managed in Settings; "Manage alerts" (and the empty state's button) open it on
-  // its Alerts tab via the URL hash, which SettingsSection reads when it mounts.
+  // Alerts are managed under Portfolios; "Manage alerts" (and the empty state's button) open
+  // that page directly (see openPortfoliosPage).
   const openAlertSettings = () => {
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#alerts`);
-    onNavigate?.("settings");
+    if (onNavigate) openPortfoliosPage(onNavigate, "alerts");
   };
 
+  // A portfolio's Insights open on that portfolio, not on the Portfolios hub.
   const openPortfolio = (uuid: string, section: string) => {
     selectPortfolio(uuid);
+    if (section === "performance" && onNavigate) {
+      openPortfoliosPage(onNavigate, { portfolio: uuid });
+      return;
+    }
     onNavigate?.(section);
   };
 

@@ -10,12 +10,6 @@ import { portfolioColorMap } from "../../lib/chartColors";
 // More columns than this stop fitting a comparison table a person can read across.
 export const MAX_COMPARED = 4;
 
-/** Opens Settings on its Portfolios tab (via the URL hash SettingsSection reads on mount). */
-export function openPortfolioSettings(onNavigate: (section: string) => void) {
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#portfolios`);
-  onNavigate("settings");
-}
-
 /**
  * COMPARE PICKER — which portfolios Compare puts side by side: one toggle pill per portfolio,
  * in its colour (portfolioColorMap, the same as in every chart), up to MAX_COMPARED at once,

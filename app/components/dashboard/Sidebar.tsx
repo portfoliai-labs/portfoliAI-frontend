@@ -1,6 +1,7 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
+import { useSectionTrail } from "./SectionTrail";
+import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -17,11 +18,11 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard };
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
 
-  // Investor: "which page" only. Which portfolio is picked on the pages themselves (Insights
-  // opens on a hub of its portfolios, with Compare for several at once).
+  // Investor: "which page" only. Which portfolio is picked on the pages themselves: Portfolios
+  // opens on a hub of them, with Compare, Reports and Alerts.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'performance', label: 'Insights', icon: TrendingUp },
+    { id: 'performance', label: 'Portfolios', icon: Briefcase },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -42,24 +43,67 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     if (onClose) onClose();
   };
 
+  // The page open inside the active section, if it's not the section's first (see SectionTrail).
+  const { trail } = useSectionTrail();
+
+  const goToCrumb = (index: number) => {
+    trail?.go(index);
+    if (onClose) onClose();
+  };
+
+  /**
+   * The trail under its section's entry: one row per page below the section (labels[0] is the
+   * section itself, the entry above), each indented a step further, the current page last and
+   * highlighted. The rows above it lead back to their page.
+   */
+  const renderTrail = () => {
+    if (!trail) return null;
+    const rows = [...trail.labels.slice(1).map((label, i) => ({ label, index: i + 1 })), { label: trail.current, index: -1 }];
+    return (
+      <div className="flex flex-col gap-0.5 mt-1 mb-1">
+        {rows.map((row, depth) => {
+          const isCurrent = row.index === -1;
+          return (
+            <button
+              key={`${depth}-${row.label}`}
+              type="button"
+              onClick={isCurrent ? undefined : () => goToCrumb(row.index)}
+              aria-current={isCurrent ? "page" : undefined}
+              style={{ marginLeft: `${1.25 + depth * 0.875}rem` }}
+              className={`flex items-center gap-2.5 rounded-lg pl-3 pr-3 py-2 text-left border-l-2 transition-colors ${
+                isCurrent
+                  ? "border-[#C49A3C] text-white bg-white/5 cursor-default"
+                  : "border-white/10 text-[#a8a29e] hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <span className="text-[13px] font-semibold truncate">{row.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderItem = (item: NavItem) => {
     const isActive = activeSection === item.id;
     return (
-      <button
-        key={item.id}
-        onClick={() => handleNavClick(item.id)}
-        className={`group relative flex items-center justify-between rounded-xl font-semibold transition-all duration-200 active:scale-[0.98] px-4 py-3 ${
-          isActive
-            ? "bg-[#C49A3C]/15 text-[#C49A3C] border border-[#C49A3C]/30"
-            : "text-[#a8a29e] hover:bg-white/5 hover:text-white border border-transparent"
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? "" : "group-hover:scale-110"}`} />
-          <span className="text-sm">{item.label}</span>
-        </div>
-        {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
-      </button>
+      <div key={item.id} className="flex flex-col">
+        <button
+          onClick={() => handleNavClick(item.id)}
+          className={`group relative flex items-center justify-between rounded-xl font-semibold transition-all duration-200 active:scale-[0.98] px-4 py-3 ${
+            isActive
+              ? "bg-[#C49A3C]/15 text-[#C49A3C] border border-[#C49A3C]/30"
+              : "text-[#a8a29e] hover:bg-white/5 hover:text-white border border-transparent"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? "" : "group-hover:scale-110"}`} />
+            <span className="text-sm">{item.label}</span>
+          </div>
+          {isActive && <ChevronRight className={`h-4 w-4 opacity-50 transition-transform ${trail ? "rotate-90" : ""}`} />}
+        </button>
+        {isActive && renderTrail()}
+      </div>
     );
   };
 
