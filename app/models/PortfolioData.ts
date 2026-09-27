@@ -486,6 +486,49 @@ interface PortfolioComparisonEntry {
   benchmark: ComparisonBenchmark | null;
 }
 
+// ---------- asset detail ----------
+
+// GET /v1/assets/{ticker}?range= — one listed asset's price history and metadata, for any
+// authenticated user, held or not. Not an analytics document: read on request (the first call
+// for a ticker nobody holds can take a few seconds), never null, no status / isStale. A 404
+// (error_type "AssetNotFoundError") means no market-data provider knows the ticker.
+type AssetChartRange = "1M" | "6M" | "1Y" | "5Y" | "MAX";
+
+// Follows the range: 1M / 6M daily, 1Y / 5Y weekly, MAX monthly.
+type ChartFrequency = "daily" | "weekly" | "monthly";
+
+interface AssetWeightEntryResponse {
+  label: string;
+  weightPct: number;
+}
+
+// prices are adjusted closes in the caller's reference `currency` (each converted at its own
+// date's FX rate); quotePrices the same closes unconverted, in quoteCurrency. The first point
+// is the close the range starts from, so change over the range is last / first − 1. Weekly /
+// monthly points sit on the period's last real close. Both are null only when no close falls
+// in the range. sector / industry / country are for single stocks (null for funds, which use
+// the weightings instead); terPct for funds. topHoldings is [] for anything but a fund.
+interface AssetDetailResponse {
+  ticker: string;
+  isin: string | null;
+  name: string;
+  assetClass: string;
+  sector: string | null;
+  industry: string | null;
+  country: string | null;
+  terPct: number | null;
+  quoteCurrency: string;
+  currency: string;
+  range: AssetChartRange;
+  frequency: ChartFrequency;
+  pricesAsOf: string | null;
+  prices: TimeSeries | null;
+  quotePrices: TimeSeries | null;
+  topHoldings: AssetWeightEntryResponse[];
+  sectorWeightings: AssetWeightEntryResponse[];
+  regionWeightings: AssetWeightEntryResponse[];
+}
+
 export type {
   AnalyticsStatus, RiskModelUnavailableReason, WeightGapDirection, TimeSeries,
   PortfolioHoldingResponse, HoldingsResponse,
@@ -501,4 +544,5 @@ export type {
   ComparisonValue, ComparisonPerformance, ComparisonVolatility, ComparisonAllocationEntry,
   ComparisonDividends, ComparisonTradingCosts, ComparisonBenchmark, PortfolioComparisonEntry,
   CompositionMemberEntry, PortfolioCorrelationMatrix, AssetHoldingEntry, OverlappingAssetEntry, CompositionResponse,
+  AssetChartRange, ChartFrequency, AssetWeightEntryResponse, AssetDetailResponse,
 };

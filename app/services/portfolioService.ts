@@ -3,6 +3,7 @@ import type { PortfolioSnapshot, TodayDashboard, PeriodDashboard, FullHistoryDas
 import type {
   HoldingsResponse, ExposureResponse, PerformanceResponse, VolatilityResponse, CategoriesResponse,
   DividendsResponse, TradingCostsResponse, BenchmarkResponse, RiskModelResponse, CompositionResponse,
+  AssetDetailResponse, AssetChartRange,
 } from "../models/PortfolioData";
 import { apiFetch } from "./apiClient";
 
@@ -133,5 +134,13 @@ export const portfolioService = {
   // Null for a standard portfolio (and before the aggregate's first analytics run).
   async getComposition(portfolioUuid: string): Promise<CompositionResponse | null> {
     return apiFetch<CompositionResponse | null>(`/v1/portfolios/${portfolioUuid}/composition`);
+  },
+
+  // GET /v1/assets/{ticker}?range= — a listed asset's price history and metadata, not tied to a
+  // portfolio. `ticker` is the market-data ticker the holdings rows carry (VWCE.MI, BTC-USD…),
+  // not the ISIN; it's URL-encoded since some contain ^ or =. Throws ApiError 404 for a ticker
+  // no provider knows.
+  async getAssetDetail(ticker: string, range: AssetChartRange = "1Y"): Promise<AssetDetailResponse> {
+    return apiFetch<AssetDetailResponse>(`/v1/assets/${encodeURIComponent(ticker)}${buildQuery({ range })}`);
   },
 };

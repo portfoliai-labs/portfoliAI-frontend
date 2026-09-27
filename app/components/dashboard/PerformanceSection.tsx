@@ -5,19 +5,21 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
-  Loader2, AlertCircle, FileText, ExternalLink, Scale, LayoutGrid, Gauge,
-  Search, ChevronDown, Coins, Info,
+  Loader2, AlertCircle, FileText, ExternalLink, LayoutGrid, Gauge,
+  Search, ChevronDown, ChevronRight, Coins, Info, ArrowUpRight, ArrowLeft,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
+import { ApiError } from "../../services/apiClient";
 import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { PortfolioPageHeader } from "./PortfolioPageHeader";
+import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
   PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
   AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
@@ -25,7 +27,7 @@ import type {
 import type {
   ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
   BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries, CompositionResponse,
-  PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse,
+  PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse, AssetDetailResponse, AssetChartRange,
 } from "../../models/PortfolioData";
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -57,10 +59,10 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 
 /**
  * INSIGHTS SECTION — one portfolio's lifetime figures, on one scrolling page split into
- * sections (see HISTORY_SECTIONS below), each answering one question: Income & Costs (what it
- * earned and cost), Performance (how is it doing — returns, value, the monthly heatmap drilled
- * into via /monthly?year=, the benchmark), Composition (what it holds) and Risk (how much it
- * swings).
+ * sections (see HISTORY_SECTIONS below), each answering one question: Composition (what it
+ * holds), Income & Costs (what it earned and cost), Performance (how is it doing — returns,
+ * value, the monthly heatmap drilled into via /monthly?year=, the benchmark) and Risk (how much
+ * it swings).
  * The short-term view (this month) lives on the Dashboard instead. /history returns null rather than a
  * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
@@ -129,6 +131,33 @@ export function PerformanceSection({
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedYearStale, selectedYear, portfolioUuid]);
 
+  // A module's detail view (see ExploreView): the module draws it into `exploreSlot` and
+  // reports it here, so the page can hide everything else and show its breadcrumb instead of
+  // the header. The scroll position is kept for the way back, like the page itself.
+  const [explore, setExplore] = useState<ExploreHeader | null>(null);
+  const [exploreSlot, setExploreSlot] = useState<HTMLDivElement | null>(null);
+  const scrollBeforeExplore = useRef(0);
+  const exploreHost = useMemo(() => ({
+    slot: exploreSlot,
+    show: (header: ExploreHeader | null) => {
+      setExplore((current) => {
+        if (header && !current) scrollBeforeExplore.current = window.scrollY;
+        return header;
+      });
+    },
+  }), [exploreSlot]);
+  const exploring = explore !== null;
+
+  useEffect(() => {
+    if (exploring) {
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    // After the page has been shown again, so there's something to scroll back down.
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: scrollBeforeExplore.current }));
+    return () => cancelAnimationFrame(frame);
+  }, [exploring]);
+
   // HistoryPage shows the section timeline only for a full history, not a month's detail.
   const withTimeline = !loading && history !== null && !isHistoryEmpty(history) && !selected;
 
@@ -146,6 +175,8 @@ export function PerformanceSection({
           onBack={() => setSelected(null)}
           right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
         />
+      ) : explore ? (
+        <Breadcrumb parent="Insights" current={explore.title} onBack={explore.onClose} />
       ) : (
         // Stops where the cards do while the timeline runs down the right (HistoryPage).
         <div className={withTimeline ? "lg:mr-[var(--timeline-gutter)]" : undefined}>
@@ -171,20 +202,31 @@ export function PerformanceSection({
           onNavigate={onNavigate}
         />
       ) : (
-        <HistoryPage
-          key={portfolioUuid}
-          data={history}
-          historyUpdating={updating}
-          portfolioUuid={portfolioUuid}
-          selected={selected}
-          monthCache={monthCache}
-          monthLoading={monthLoading}
-          monthError={monthError}
-          onSelectMonth={handleSelectMonth}
-          selectedYearStale={selectedYearStale}
-          monthStaleTimedOut={monthStaleTimedOut}
-          isAggregate={isAggregate}
-        />
+        <ExploreHostContext.Provider value={exploreHost}>
+          {/* Never display:none: the detail's charts are drawn here on its very first render,
+              before `explore` is set, and a chart measured in a hidden box comes out 0×0. */}
+          <div ref={setExploreSlot} className="space-y-6 empty:hidden" />
+          {/* Hidden rather than unmounted while a detail is open: the detail lives in its
+              module's state, and the page keeps its place for the way back. Collapsed and
+              invisible rather than display:none, for the same reason as above: its charts keep
+              their width and height, so they don't re-measure as 0×0. */}
+          <div className={exploring ? "invisible h-0 overflow-hidden" : undefined} aria-hidden={exploring || undefined} inert={exploring || undefined}>
+            <HistoryPage
+              key={portfolioUuid}
+              data={history}
+              historyUpdating={updating}
+              portfolioUuid={portfolioUuid}
+              selected={selected}
+              monthCache={monthCache}
+              monthLoading={monthLoading}
+              monthError={monthError}
+              onSelectMonth={handleSelectMonth}
+              selectedYearStale={selectedYearStale}
+              monthStaleTimedOut={monthStaleTimedOut}
+              isAggregate={isAggregate}
+            />
+          </div>
+        </ExploreHostContext.Provider>
       )}
     </div>
   );
@@ -200,19 +242,48 @@ function MonthBreadcrumb({
   year, month, onBack, right,
 }: { year: number; month: number; onBack: () => void; right?: React.ReactNode }) {
   const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  return <Breadcrumb parent={String(year)} current={monthName} onBack={onBack} right={right} />;
+}
+
+/**
+ * BREADCRUMB — stands in for the header on the pages that drill into Insights: a month's
+ * detail (MonthBreadcrumb, "2025 / March") and a module's detail view ("Insights / Dividends",
+ * see ExploreView). Same white panel as the portfolio bar it replaces, so the top of the page
+ * doesn't jump: a back button, the parent as a small gold line over the current page, which is
+ * the panel's title (the parent leads back too).
+ */
+function Breadcrumb({
+  parent, current, onBack, right,
+}: { parent: string; current: string; onBack: () => void; right?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 min-h-10">
-      <nav aria-label="Breadcrumb">
-        <ol className="flex items-center gap-2 text-[13px] font-bold">
-          <li>
-            <button onClick={onBack} className="text-slate-400 hover:text-[#C49A3C] transition-colors">
-              {year}
-            </button>
-          </li>
-          <li aria-hidden className="text-slate-300">/</li>
-          <li aria-current="page" className="text-slate-900">{monthName}</li>
-        </ol>
-      </nav>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 md:px-5 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-4 min-w-0">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={`Back to ${parent}`}
+          className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center shrink-0 text-slate-500 hover:text-white hover:bg-[#C49A3C] hover:border-[#C49A3C] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <nav aria-label="Breadcrumb" className="min-w-0">
+          <ol className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em]">
+            <li>
+              <button type="button" onClick={onBack} className="text-[#C49A3C] hover:text-[#8A6A28] transition-colors">
+                {parent}
+              </button>
+            </li>
+            <li aria-hidden><ChevronRight className="h-3 w-3 text-slate-300" /></li>
+          </ol>
+          <h1
+            aria-current="page"
+            className="text-xl md:text-2xl font-black text-slate-900 truncate mt-0.5"
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            {current}
+          </h1>
+        </nav>
+      </div>
       {right}
     </div>
   );
@@ -246,17 +317,31 @@ function Tile({ span = "full", children }: { span?: keyof typeof TILE_SPAN; chil
   return <div className={`@container min-w-0 empty:hidden ${TILE_SPAN[span]}`}>{children}</div>;
 }
 
+// `onExplore` makes the whole header a way into the module's detail view (ExploreView): clickable, with an
+// arrow beside the title that lights up on hover. The title itself is the button, so it can be
+// reached from the keyboard; a click anywhere else on the header bubbles to the same handler.
 function ModuleHead({
-  eyebrow, title, desc, right, icon,
-}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; icon?: React.ReactNode }) {
-  const heading = (
+  eyebrow, title, desc, right, icon, onExplore,
+}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; icon?: React.ReactNode; onExplore?: () => void }) {
+  const titleText = (
     <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
       {title}
     </h2>
   );
+  const heading = onExplore ? (
+    <button type="button" className="flex items-center gap-2 text-left rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40">
+      {titleText}
+      <ExploreArrow />
+    </button>
+  ) : titleText;
 
   return (
-    <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
+    <div
+      onClick={onExplore}
+      className={`p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6 ${
+        onExplore ? "group/explore cursor-pointer hover:bg-slate-50/70 transition-colors" : ""
+      }`}
+    >
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
         {icon ? <div className="flex items-center gap-2.5">{icon}{heading}</div> : heading}
@@ -264,6 +349,16 @@ function ModuleHead({
       </div>
       {right}
     </div>
+  );
+}
+
+// The "there's more behind this" cue, shown next to an explorable module's title (ModuleHead).
+// Lights up while its group is hovered.
+function ExploreArrow() {
+  return (
+    <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 bg-slate-100 text-slate-400 group-hover/explore:bg-[#C49A3C] group-hover/explore:text-white transition-colors">
+      <ArrowUpRight className="h-3.5 w-3.5" />
+    </span>
   );
 }
 
@@ -337,7 +432,7 @@ export function InfoTip({ text, children }: { text: string; children: React.Reac
         <div
           role="tooltip"
           style={{ position: "fixed", left: tip.left, top: tip.top, bottom: tip.bottom, width: INFO_TIP_WIDTH }}
-          className="z-50 pointer-events-none rounded-xl bg-slate-900 px-3.5 py-3 text-xs font-medium leading-relaxed text-white shadow-xl"
+          className="z-120 pointer-events-none rounded-xl bg-slate-900 px-3.5 py-3 text-xs font-medium leading-relaxed text-white shadow-xl"
         >
           {text}
         </div>,
@@ -574,9 +669,9 @@ const isHistoryEmpty = (data: FullHistoryDashboard) =>
 type HistorySectionId = "performance" | "income" | "composition" | "risk";
 
 const HISTORY_SECTIONS: { id: HistorySectionId; label: string; icon: typeof Coins }[] = [
+  { id: "composition", label: "Composition", icon: LayoutGrid },
   { id: "income", label: "Income & Costs", icon: Coins },
   { id: "performance", label: "Performance", icon: TrendingUp },
-  { id: "composition", label: "Composition", icon: LayoutGrid },
   { id: "risk", label: "Risk", icon: Gauge },
 ];
 
@@ -1055,6 +1150,9 @@ function MixComparisonModule({
   // the same colour in all three bars.
   const tickers = [...new Set(mixes.flatMap((m) => m.entry?.weights.map((w) => w.ticker) ?? []))];
   const colorOf = (ticker: string) => CATEGORICAL_PALETTE[tickers.indexOf(ticker) % CATEGORICAL_PALETTE.length];
+  // The holding being pointed at (hovered, or tapped on a touch screen), shared by the three
+  // bars so the same holding lights up in all of them.
+  const [activeTicker, setActiveTicker] = useState<string | null>(null);
 
   return (
     <Module>
@@ -1082,7 +1180,7 @@ function MixComparisonModule({
                   <MixFigure label="Volatility" value={plainPctOrDash(m.entry.volatilityPct)} />
                   <MixFigure label="Sharpe ratio" value={ratioOrDash(m.entry.sharpeRatio)} />
                 </dl>
-                <MixWeights weights={m.entry.weights} colorOf={colorOf} />
+                <MixWeights weights={m.entry.weights} colorOf={colorOf} active={activeTicker} onActive={setActiveTicker} />
               </>
             )}
           </div>
@@ -1101,33 +1199,50 @@ function MixFigure({ label, value, strong = false }: { label: string; value: str
   );
 }
 
-/** One segmented bar for a mix's weights, with a legend of ticker and weight under it. */
+/**
+ * One segmented bar for a mix's weights. No legend under it: pointing at a segment (hover, or a
+ * tap on a touch screen, tapping it again to let go) names that holding and its weight in the
+ * line below, and lights the same holding up in the other two bars (`active` is shared), where
+ * the line shows its weight in that mix — 0% when the mix leaves it out.
+ */
 function MixWeights({
-  weights, colorOf,
-}: { weights: RiskPortfolioEntry["weights"]; colorOf: (ticker: string) => string }) {
+  weights, colorOf, active, onActive,
+}: {
+  weights: RiskPortfolioEntry["weights"];
+  colorOf: (ticker: string) => string;
+  active: string | null;
+  onActive: (ticker: string | null) => void;
+}) {
   const shown = weights.filter((w) => w.weightPct >= 0.05);
   if (shown.length === 0) return null;
+  const activeEntry = active === null ? null : weights.find((w) => w.ticker === active) ?? null;
 
   return (
-    <div>
+    <div onMouseLeave={() => onActive(null)}>
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
         {shown.map((w) => (
-          <div
+          <button
             key={w.ticker}
-            title={`${w.ticker}: ${w.weightPct.toFixed(1)}%`}
-            className="h-full"
-            style={{ width: `${w.weightPct}%`, background: colorOf(w.ticker) }}
+            type="button"
+            aria-label={`${w.ticker}: ${w.weightPct.toFixed(1)}%`}
+            onMouseEnter={() => onActive(w.ticker)}
+            onFocus={() => onActive(w.ticker)}
+            onClick={() => onActive(active === w.ticker ? null : w.ticker)}
+            className="h-full transition-opacity outline-none"
+            style={{ width: `${w.weightPct}%`, background: colorOf(w.ticker), opacity: active === null || active === w.ticker ? 1 : 0.25 }}
           />
         ))}
       </div>
-      <ul className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1">
-        {shown.map((w) => (
-          <li key={w.ticker} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: colorOf(w.ticker) }} />
-            {w.ticker} <span className="tabular-nums text-slate-500">{w.weightPct.toFixed(0)}%</span>
-          </li>
-        ))}
-      </ul>
+      <p className="mt-2.5 h-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 min-w-0">
+        {active !== null && (
+          <>
+            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: colorOf(active) }} />
+            <span className="shrink-0">{active}</span>
+            {activeEntry && <span className="truncate font-semibold text-slate-400">{activeEntry.name}</span>}
+            <span className="ml-auto tabular-nums text-slate-900 shrink-0">{(activeEntry?.weightPct ?? 0).toFixed(1)}%</span>
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -1358,6 +1473,9 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
   const [search, setSearch] = useState("");
   const [assetClass, setAssetClass] = useState("all");
   const [currency, setCurrency] = useState("all");
+  // The ticker whose detail view (AssetExplore) is open. Rows without a ticker can't open one:
+  // the asset endpoint is keyed by it.
+  const [exploringTicker, setExploringTicker] = useState<string | null>(null);
 
   const assetClasses = useMemo(() => [...new Set(holdings.map(h => h.assetClass))].sort(), [holdings]);
   const currencies = useMemo(() => [...new Set(holdings.map(h => h.currency))].sort(), [holdings]);
@@ -1418,10 +1536,23 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((h, i) => (
-                <tr key={`${h.currency}::${h.ticker ?? h.isin ?? i}::${h.broker ?? ""}`} className="hover:bg-slate-50/60 transition-colors">
+                <tr
+                  key={`${h.currency}::${h.ticker ?? h.isin ?? i}::${h.broker ?? ""}`}
+                  onClick={h.ticker ? () => setExploringTicker(h.ticker) : undefined}
+                  className={`hover:bg-slate-50/60 transition-colors ${h.ticker ? "group/explore cursor-pointer" : ""}`}
+                >
                   <td className="px-5 md:px-6 py-3.5">
                     <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="text-sm font-bold text-slate-900 shrink-0">{h.ticker ?? h.isin ?? "—"}</span>
+                      {h.ticker ? (
+                        <button
+                          type="button"
+                          className="text-sm font-bold text-slate-900 shrink-0 group-hover/explore:text-[#C49A3C] transition-colors rounded outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+                        >
+                          {h.ticker}
+                        </button>
+                      ) : (
+                        <span className="text-sm font-bold text-slate-900 shrink-0">{h.isin ?? "—"}</span>
+                      )}
                       <span className="text-xs text-slate-400 truncate">{h.name}</span>
                     </div>
                   </td>
@@ -1459,7 +1590,247 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
           )}
         </div>
       )}
+      {exploringTicker && (
+        <ExploreView title={exploringTicker} onClose={() => setExploringTicker(null)}>
+          <AssetExplore ticker={exploringTicker} positions={holdings.filter((h) => h.ticker === exploringTicker)} />
+        </ExploreView>
+      )}
     </div>
+  );
+}
+
+const ASSET_RANGES: AssetChartRange[] = ["1M", "6M", "1Y", "5Y", "MAX"];
+const ASSET_RANGE_LABELS: Record<AssetChartRange, string> = { "1M": "1 month", "6M": "6 months", "1Y": "1 year", "5Y": "5 years", MAX: "all time" };
+
+/**
+ * ASSET EXPLORE — one holding's own page, opened from a row of HoldingsExplorer: its price
+ * over a chosen range (GET /v1/assets/{ticker}), what the asset is (identifiers, class,
+ * sector or TER…), what it's made of when it's a fund, and the position held in it (the
+ * HoldingsExplorer rows for that ticker — the endpoint knows nothing about portfolios).
+ *
+ * Prices default to the user's reference currency, the one the rest of Insights is in; when
+ * the asset is quoted in another one, a toggle switches to its own quote prices. Changing
+ * range keeps the previous chart on screen (dimmed) until the new one arrives, since a ticker
+ * nobody else holds can take a few seconds.
+ */
+function AssetExplore({ ticker, positions }: { ticker: string; positions: Holding[] }) {
+  const [range, setRange] = useState<AssetChartRange>("1Y");
+  const [inQuoteCurrency, setInQuoteCurrency] = useState(false);
+  // `forRange`: the range the last answer (data or error) was for — loading while it isn't the
+  // one selected. `data` is kept across a range change so the old chart stays up meanwhile.
+  const [state, setState] = useState<{ data: AssetDetailResponse | null; error: string | null; forRange: AssetChartRange | null }>({
+    data: null, error: null, forRange: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    portfolioService.getAssetDetail(ticker, range)
+      .then((data) => { if (!cancelled) setState({ data, error: null, forRange: range }); })
+      .catch((err) => {
+        if (cancelled) return;
+        const error = err instanceof ApiError && err.status === 404
+          ? "No market data is available for this asset."
+          : "Unable to load this right now. Try again in a moment.";
+        setState((prev) => ({ ...prev, error, forRange: range }));
+      });
+    return () => { cancelled = true; };
+  }, [ticker, range]);
+
+  const loading = state.forRange !== range;
+  const error = loading ? null : state.error;
+  const { data } = state;
+  const hasQuoteToggle = data !== null && data.quoteCurrency !== data.currency;
+  const showQuote = hasQuoteToggle && inQuoteCurrency;
+  const series = data ? (showQuote ? data.quotePrices : data.prices) : null;
+  const unit = data ? (showQuote ? data.quoteCurrency : data.currency) : "";
+  const points = useMemo(() => (series ? toChartPoints(series) : []), [series]);
+
+  if (data === null) {
+    return loading ? (
+      <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" /></div>
+    ) : (
+      <Module><ModuleMessage>{error}</ModuleMessage></Module>
+    );
+  }
+
+  const first = series?.values[0];
+  const last = series?.values[series.values.length - 1];
+  const changePct = first && last !== undefined ? (last / first - 1) * 100 : null;
+  const rising = (changePct ?? 0) >= 0;
+  const lineColor = changePct === null ? PORTFOLIO_COLOR : rising ? "#10b981" : "#f43f5e";
+
+  const facts: { label: string; value: string }[] = [
+    { label: "Ticker", value: data.ticker },
+    ...(data.isin ? [{ label: "ISIN", value: data.isin }] : []),
+    { label: "Asset class", value: data.assetClass },
+    ...(data.sector ? [{ label: "Sector", value: data.sector }] : []),
+    ...(data.industry ? [{ label: "Industry", value: data.industry }] : []),
+    ...(data.country ? [{ label: "Country", value: data.country }] : []),
+    ...(data.terPct !== null ? [{ label: "Yearly fee (TER)", value: `${data.terPct.toFixed(2)}%` }] : []),
+    { label: "Quoted in", value: data.quoteCurrency },
+  ];
+
+  return (
+    <>
+      <Module>
+        <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{data.assetClass}</p>
+            <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {data.name}
+            </h2>
+          </div>
+          {last !== undefined && (
+            <div className="sm:text-right shrink-0">
+              <p className="text-2xl font-black text-slate-900 tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                {formatCurrency(last, unit, 2)}
+              </p>
+              {changePct !== null && (
+                <p className={`text-[13px] font-bold tabular-nums mt-1 ${rising ? "text-emerald-600" : "text-rose-600"}`}>
+                  {formatPct(changePct)} <span className="text-slate-400 font-semibold">over {ASSET_RANGE_LABELS[data.range]}</span>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="px-6 md:px-7 pt-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100">
+            {ASSET_RANGES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRange(r)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
+                  r === range ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {hasQuoteToggle && (
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100">
+              {[data.currency, data.quoteCurrency].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setInQuoteCurrency(c === data.quoteCurrency)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
+                    c === unit ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {error && <p className="px-6 md:px-7 pt-4 text-sm font-semibold text-rose-600">{error}</p>}
+        {points.length < 2 ? (
+          <ModuleMessage>No prices in this range.</ModuleMessage>
+        ) : (
+          <div className={`p-6 md:p-7 h-80 transition-opacity ${loading ? "opacity-40" : ""}`}>
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 700, height: 320 }}>
+              <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={data.frequency === "daily" && data.range === "1M" ? chartDateLabel : monthShortYearLabel}
+                  tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={40}
+                />
+                <YAxis
+                  domain={["auto", "auto"]}
+                  tickFormatter={(v) => formatCompact(Number(v))}
+                  tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                />
+                <Tooltip
+                  labelFormatter={(label) => fullDateLabel(label as string)}
+                  formatter={(value) => [formatCurrency(Number(value), unit, 2), "Close"]}
+                  contentStyle={TOOLTIP_STYLE}
+                />
+                <Area type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} fill={lineColor} fillOpacity={0.1} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {data.pricesAsOf && (
+          <p className="px-6 md:px-7 pb-5 -mt-2 text-[11px] font-semibold text-slate-400">
+            Adjusted closes, last one on {fullDateLabel(data.pricesAsOf)}.
+          </p>
+        )}
+      </Module>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <ExplorePanel title="About">
+          <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">
+            {facts.map((f) => (
+              <div key={f.label} className="flex items-center justify-between gap-4 py-3">
+                <dt className="text-[13px] font-semibold text-slate-600">{f.label}</dt>
+                <dd className="text-[13px] font-bold text-slate-900 text-right truncate">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </ExplorePanel>
+        {positions.length > 0 && (
+          <ExplorePanel title="Your position">
+            <div className="divide-y divide-slate-100">
+              {positions.map((p, i) => (
+                <dl key={`${p.broker ?? ""}-${p.currency}-${i}`} className="px-6 md:px-7 py-2">
+                  {positions.length > 1 && (
+                    <p className="pt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{p.broker ?? "Unknown broker"}</p>
+                  )}
+                  <div className="flex items-center justify-between gap-4 py-3">
+                    <dt className="text-[13px] font-semibold text-slate-600">Quantity</dt>
+                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatQuantity(p.quantity)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
+                    <dt className="text-[13px] font-semibold text-slate-600">Invested</dt>
+                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(p.investedValue, p.currency, 2)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
+                    <dt className="text-[13px] font-semibold text-slate-600">Fees paid</dt>
+                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(p.fees, p.currency, 2)}</dd>
+                  </div>
+                  {positions.length === 1 && (
+                    <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
+                      <dt className="text-[13px] font-semibold text-slate-600">Broker</dt>
+                      <dd className="text-[13px] font-bold text-slate-900">{p.broker ?? "Unknown"}</dd>
+                    </div>
+                  )}
+                </dl>
+              ))}
+            </div>
+          </ExplorePanel>
+        )}
+      </div>
+
+      {data.topHoldings.length > 0 && (
+        <ExplorePanel title="Largest holdings">
+          <div className="p-6 md:p-7">
+            <ExposureBreakdown entries={data.topHoldings} />
+          </div>
+        </ExplorePanel>
+      )}
+      {(data.sectorWeightings.length > 1 || data.regionWeightings.length > 1) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {data.sectorWeightings.length > 1 && (
+            <ExplorePanel title="By sector">
+              <div className="p-6 md:p-7"><ExposureBreakdown entries={data.sectorWeightings} /></div>
+            </ExplorePanel>
+          )}
+          {data.regionWeightings.length > 1 && (
+            <ExplorePanel title="By region">
+              <div className="p-6 md:p-7"><ExposureBreakdown entries={data.regionWeightings} /></div>
+            </ExplorePanel>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1995,10 +2366,12 @@ function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, portfolioUuid);
 
   const showFigure = data !== null && !updating && data.status !== "insufficient_history";
+  const [exploring, setExploring] = useState(false);
 
   return (
     <Module>
       <ModuleHead
+        onExplore={showFigure ? () => setExploring(true) : undefined}
         eyebrow="Risk"
         title="Volatility"
         icon={
@@ -2035,7 +2408,75 @@ function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
           )}
         </>
       )}
+      {showFigure && exploring && (
+        <ExploreView title="Volatility" onClose={() => setExploring(false)}>
+          <VolatilityExplore data={data} />
+        </ExploreView>
+      )}
     </Module>
+  );
+}
+
+const shortDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const rangeLabel = (start: string, end: string) => `${shortDateLabel(start)} – ${shortDateLabel(end)}`;
+const daysBetween = (start: string, end: string) => Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86_400_000);
+
+/**
+ * VOLATILITY EXPLORE — the detail view behind VolatilityModule: the rolling chart, then the
+ * turbulent stretches the backend picked out of it (riskEvents), most recent first, with what
+ * the portfolio did through each and what it held at the time.
+ */
+function VolatilityExplore({ data }: { data: VolatilityResponse }) {
+  const events = useMemo(() => [...data.riskEvents].sort((a, b) => b.startDate.localeCompare(a.startDate)), [data]);
+  return (
+    <>
+      <ExplorePanel
+        title={data.rollingWindowDays ? `Rolling ${data.rollingWindowDays}-day volatility` : "Rolling volatility"}
+        right={
+          <span className="text-sm font-black tabular-nums text-slate-900">
+            {plainPctOrDash(data.annualizedVolatilityPct)} <span className="text-xs font-bold text-slate-400">overall</span>
+          </span>
+        }
+      >
+        {data.rollingVolatilityPct ? <RollingVolatilityChart series={data.rollingVolatilityPct} /> : <ModuleMessage>Not enough data yet to chart.</ModuleMessage>}
+      </ExplorePanel>
+      <ExplorePanel
+        title="Turbulent periods"
+        right={
+          <InfoTip text="Stretches of at least five trading days when the portfolio's 20-day volatility stayed in its top 10%.">
+            <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+          </InfoTip>
+        }
+      >
+        {events.length === 0 ? (
+          <ModuleMessage>No stretch of unusual turbulence so far.</ModuleMessage>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {events.map((e) => (
+              <li key={`${e.startDate}-${e.endDate}`} className="px-6 md:px-7 py-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+                  <p className="text-[13px] font-bold text-slate-900">
+                    {rangeLabel(e.startDate, e.endDate)}
+                    <span className="ml-2 text-xs font-semibold text-slate-400">{daysBetween(e.startDate, e.endDate) + 1} days</span>
+                  </p>
+                  <p className="flex items-baseline gap-4 text-[13px] tabular-nums">
+                    <span><span className="text-xs text-slate-400 mr-1.5">Volatility</span><span className="font-bold text-slate-900">{plainPctOrDash(e.annualizedVolatilityPct)}</span></span>
+                    <span><span className="text-xs text-slate-400 mr-1.5">Return</span><SignedPct pct={e.cumulativeReturnPct} /></span>
+                  </p>
+                </div>
+                {e.assetNames.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                    {e.assetNames.map((name) => (
+                      <span key={name} className="px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">{name}</span>
+                    ))}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ExplorePanel>
+    </>
   );
 }
 
@@ -2107,131 +2548,183 @@ function SeriesValue({
   );
 }
 
+type BasketEntry = BenchmarkComponentEntry & { weightPct: number };
+
+// The benchmark's current basket, largest first. The backend also lists proxies of closed
+// positions at weight 0; those are dropped so only today's basket is shown.
+const benchmarkBasket = (components: BenchmarkComponentEntry[]): BasketEntry[] =>
+  components.filter((c): c is BasketEntry => (c.weightPct ?? 0) > 0).sort((a, b) => b.weightPct - a.weightPct);
+
 /**
- * BENCHMARK COMPOSITION — what the dashed benchmark line on the chart is made of: the proxy
- * ETFs the benchmark holds, largest first, with their weights. Sits right under the chart so
- * it reads as the explanation of that line. The backend also lists proxies of closed
- * positions at weight 0; those are dropped so only today's basket is shown.
+ * BENCHMARK BASKET LIST — what the dashed benchmark line is made of: the proxy ETFs it holds,
+ * with their weights, bars in the benchmark's grey so they read as that line's explanation.
  */
-function BenchmarkComposition({ components }: { components: BenchmarkComponentEntry[] }) {
-  const basket = components
-    .filter((c): c is BenchmarkComponentEntry & { weightPct: number } => (c.weightPct ?? 0) > 0)
-    .sort((a, b) => b.weightPct - a.weightPct);
-
-  if (basket.length === 0) return null;
-
+function BenchmarkBasketList({ basket }: { basket: BasketEntry[] }) {
   const max = Math.max(...basket.map((c) => c.weightPct), 0.01);
-
   return (
-    <div className="px-6 md:px-7 pb-6 md:pb-7">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-5 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLOR }} />
-        <h3 className="text-sm font-black text-slate-900">What the benchmark is made of</h3>
-      </div>
-      <p className="text-xs text-slate-500 mb-4 max-w-xl leading-relaxed">
-        Each of your holdings is matched to a proxy ETF. The benchmark holds them at today&apos;s weights and
-        receives the same deposits and withdrawals as your portfolio.
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-        {basket.map((c, i) => (
-          <div key={`${c.ticker ?? c.name}-${i}`}>
-            <div className="flex items-baseline justify-between gap-3 mb-1">
-              <span className="min-w-0 truncate">
-                <span className="text-[13px] font-bold text-slate-900">{c.ticker ?? c.name}</span>
-                {c.ticker && <span className="text-xs text-slate-400 ml-2">{c.name}</span>}
-              </span>
-              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{c.weightPct.toFixed(1)}%</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${(c.weightPct / max) * 100}%`, background: BENCHMARK_COLOR }} />
-            </div>
+    <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-3">
+      {basket.map((c, i) => (
+        <div key={`${c.ticker ?? c.name}-${i}`}>
+          <div className="flex items-baseline justify-between gap-3 mb-1">
+            <span className="min-w-0 truncate">
+              <span className="text-[13px] font-bold text-slate-900">{c.ticker ?? c.name}</span>
+              {c.ticker && <span className="text-xs text-slate-400 ml-2">{c.name}</span>}
+            </span>
+            <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{c.weightPct.toFixed(1)}%</span>
           </div>
-        ))}
-      </div>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${(c.weightPct / max) * 100}%`, background: BENCHMARK_COLOR }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-/**
- * BENCHMARK MODULE — /benchmark: the portfolio against a synthetic benchmark of proxy ETFs
- * that receives the same cash flows. All figures are already percentages (or plain ratios),
- * over the days the portfolio and benchmark share, and any of them can be null. Its
- * composition is shown under the chart (see BenchmarkComposition).
- */
-function BenchmarkModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, portfolioUuid);
+const BENCHMARK_BASKET_INFO =
+  "Each of your holdings is matched to a proxy ETF. The benchmark holds them at today's weights and receives the same deposits and withdrawals as your portfolio.";
 
+/**
+ * BENCHMARK TILE — /benchmark on the page: the portfolio against the benchmark, the chart with
+ * both total returns as its legend. Everything else (alpha, beta, tracking error, the
+ * side-by-side risk figures, what the benchmark is made of) lives in its detail view
+ * (BenchmarkExplore), so the page keeps the one question "am I beating it?" and the detail
+ * answers "how, and at what risk?".
+ */
+function BenchmarkTile({ portfolioUuid }: { portfolioUuid: string }) {
+  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, portfolioUuid);
+  const [exploring, setExploring] = useState(false);
+
+  const ready = data !== null && !updating && data.status === "ok";
+  const basket = useMemo(() => (data ? benchmarkBasket(data.components) : []), [data]);
   const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
-  const outperformed = data?.outperformed ?? null;
+  const explore = ready ? () => setExploring(true) : undefined;
 
   return (
-    <Module>
-      <ModuleHead
-        eyebrow="All Time"
-        title="Benchmark Comparison"
-        desc={data && !updating ? `${coverage}.` : "How your portfolio compares to the market."}
-      />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
-        <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          {data.status !== "ok" ? (
-            <ModuleMessage>Not enough overlapping history with the benchmark yet to compare.</ModuleMessage>
-          ) : (
-            <>
-              {data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct && (
-                <CumulativeReturnChart
-                  portfolio={data.portfolioCumulativeReturnPct}
-                  benchmark={data.benchmarkCumulativeReturnPct}
-                />
-              )}
-              <BenchmarkComposition components={data.components} />
-              <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x border-t border-slate-100">
-                <StatContent
-                  title="Total Return"
-                  value={
-                    <div className="space-y-1.5">
-                      <SeriesValue label="Portfolio" value={formatPctOrDash(data.portfolioTotalReturnPct)} color={PORTFOLIO_COLOR} />
-                      <SeriesValue label="Benchmark" value={formatPctOrDash(data.benchmarkTotalReturnPct)} color={BENCHMARK_COLOR} dashed />
-                    </div>
-                  }
-                  icon={outperformed === false ? <TrendingDown className="h-4 w-4 text-rose-600" /> : <TrendingUp className="h-4 w-4 text-emerald-600" />}
-                  color={outperformed === null ? "slate" : outperformed ? "emerald" : "red"}
-                  info="How much each grew over the shared period, counting only market moves: deposits and withdrawals are stripped out, so it isn't the gain on your open positions. The benchmark is fed the same cash flows as your portfolio."
-                />
-                <StatContent
-                  title="Excess Return"
-                  value={formatPctOrDash(data.excessReturnPct)}
-                  icon={<Scale className="h-4 w-4 text-slate-500" />}
-                  color="slate"
-                  info="The gap between your portfolio's annualized return and the benchmark's, in percentage points. Positive means your portfolio grew faster than the benchmark, negative means slower."
-                />
-                <StatContent
-                  title="Alpha"
-                  value={formatPctOrDash(data.alphaPct)}
-                  icon={<Activity className="h-4 w-4 text-slate-500" />}
-                  color="slate"
-                  info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain, calculated with a risk-free rate of 0. Positive means the portfolio earned more than its market exposure alone would suggest."
-                />
-                <StatContent
-                  title="Beta"
-                  value={data.beta === null ? "—" : data.beta.toFixed(2)}
-                  icon={<Activity className="h-4 w-4 text-slate-500" />}
-                  color="slate"
-                  info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves."
-                />
+    <>
+      <Tile>
+        <Module>
+          <ModuleHead
+            eyebrow="All Time"
+            title="Benchmark"
+            desc={data && !updating ? `${coverage}.` : "How your portfolio compares to the market."}
+            onExplore={explore}
+            right={ready ? (
+              <div className="w-52 space-y-1.5 font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                <SeriesValue label="Portfolio" value={formatPctOrDash(data.portfolioTotalReturnPct)} color={PORTFOLIO_COLOR} />
+                <SeriesValue label="Benchmark" value={formatPctOrDash(data.benchmarkTotalReturnPct)} color={BENCHMARK_COLOR} dashed />
               </div>
+            ) : undefined}
+          />
+          <AnalyticsPlaceholder
+            loading={loading}
+            failed={failed}
+            hasData={data !== null}
+            updating={updating}
+            preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
+          />
+          {data !== null && !updating && (
+            <>
+              {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+              {data.status !== "ok" ? (
+                <ModuleMessage>Not enough overlapping history with the benchmark yet to compare.</ModuleMessage>
+              ) : data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct ? (
+                <CumulativeReturnChart portfolio={data.portfolioCumulativeReturnPct} benchmark={data.benchmarkCumulativeReturnPct} />
+              ) : null}
             </>
           )}
-        </>
+        </Module>
+      </Tile>
+      {ready && exploring && (
+        <ExploreView title="Benchmark" onClose={() => setExploring(false)}>
+          <BenchmarkExplore data={data} basket={basket} coverage={coverage} />
+        </ExploreView>
       )}
-    </Module>
+    </>
+  );
+}
+
+// A difference in percentage points, green when it's the better side for the portfolio.
+// `higherIsBetter` false for volatility; drawdowns are negative, so a higher one is milder.
+function PointsDiff({ diff, higherIsBetter = true }: { diff: number | null; higherIsBetter?: boolean }) {
+  if (diff === null) return <span className="text-slate-400">—</span>;
+  const good = higherIsBetter ? diff >= 0 : diff <= 0;
+  return <span className={`font-bold ${good ? "text-emerald-600" : "text-rose-600"}`}>{diff >= 0 ? "+" : ""}{diff.toFixed(2)} pp</span>;
+}
+
+const diffOrNull = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
+
+interface BenchmarkPairRow {
+  key: string;
+  label: string;
+  portfolio: number | null;
+  benchmark: number | null;
+  diff: number | null;
+  higherIsBetter: boolean;
+  signed: boolean;
+}
+
+/**
+ * BENCHMARK EXPLORE — the detail view behind BenchmarkTile: the chart again, the portfolio and the
+ * benchmark figure by figure (return and risk side by side), the relative statistics, and
+ * the whole basket.
+ */
+function BenchmarkExplore({ data, basket, coverage }: { data: BenchmarkResponse; basket: BasketEntry[]; coverage: string }) {
+  const pairs: BenchmarkPairRow[] = [
+    { key: "total", label: "Total return", portfolio: data.portfolioTotalReturnPct, benchmark: data.benchmarkTotalReturnPct, diff: diffOrNull(data.portfolioTotalReturnPct, data.benchmarkTotalReturnPct), higherIsBetter: true, signed: true },
+    { key: "annual", label: "Per year", portfolio: data.portfolioAnnualizedReturnPct, benchmark: data.benchmarkAnnualizedReturnPct, diff: data.excessReturnPct, higherIsBetter: true, signed: true },
+    { key: "vol", label: "Volatility", portfolio: data.portfolioVolatilityPct, benchmark: data.benchmarkVolatilityPct, diff: diffOrNull(data.portfolioVolatilityPct, data.benchmarkVolatilityPct), higherIsBetter: false, signed: false },
+    { key: "dd", label: "Deepest fall", portfolio: data.portfolioMaxDrawdownPct, benchmark: data.benchmarkMaxDrawdownPct, diff: diffOrNull(data.portfolioMaxDrawdownPct, data.benchmarkMaxDrawdownPct), higherIsBetter: true, signed: false },
+  ];
+  const cell = (row: BenchmarkPairRow, value: number | null) =>
+    row.signed ? formatPctOrDash(value) : plainPctOrDash(value);
+  const pairColumns: DataColumn<BenchmarkPairRow>[] = [
+    { key: "label", label: "", render: (r) => <span className="font-bold text-slate-900 whitespace-nowrap">{r.label}</span> },
+    { key: "portfolio", label: "Portfolio", align: "right", render: (r) => <span className="font-bold text-slate-900">{cell(r, r.portfolio)}</span> },
+    { key: "benchmark", label: "Benchmark", align: "right", render: (r) => <span className="text-slate-500">{cell(r, r.benchmark)}</span> },
+    { key: "diff", label: "Difference", align: "right", render: (r) => <PointsDiff diff={r.diff} higherIsBetter={r.higherIsBetter} /> },
+  ];
+
+  return (
+    <>
+      {data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct && (
+        <ExplorePanel title={coverage}>
+          <CumulativeReturnChart portfolio={data.portfolioCumulativeReturnPct} benchmark={data.benchmarkCumulativeReturnPct} />
+        </ExplorePanel>
+      )}
+      <ExplorePanel title="Side by side">
+        <DataTable columns={pairColumns} rows={pairs} rowKey={(r) => r.key} />
+      </ExplorePanel>
+      <ExplorePanel title="Relative figures">
+        <FigureList>
+          <FigureRow label="Alpha" info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain. Positive means the portfolio earned more than its market exposure alone would suggest." value={formatPctOrDash(data.alphaPct)} tone={data.alphaPct === null ? undefined : data.alphaPct >= 0 ? "gain" : "loss"} />
+          <FigureRow label="Beta" info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves." value={ratioOrDash(data.beta)} />
+          <FigureRow label="Tracking error" info="How much the gap between your portfolio's and the benchmark's daily returns swings, annualized. Low means the portfolio follows the benchmark closely." value={plainPctOrDash(data.trackingErrorPct)} />
+          <FigureRow label="Information ratio" info="The excess return per unit of tracking error: how consistently the portfolio beat the benchmark, rather than by how much." value={ratioOrDash(data.informationRatio)} />
+          <FigureRow label="Sharpe ratio difference" info="The portfolio's return per unit of volatility minus the benchmark's. Positive means better risk-adjusted returns." value={data.sharpeRatioDiff === null ? "—" : `${data.sharpeRatioDiff >= 0 ? "+" : ""}${data.sharpeRatioDiff.toFixed(2)}`} tone={data.sharpeRatioDiff === null ? undefined : data.sharpeRatioDiff >= 0 ? "gain" : "loss"} />
+          <FigureRow label="Recovery ratio" info="The portfolio's total return over its deepest fall: how much it earned for the worst drop it went through." value={ratioOrDash(data.recoveryRatio)} />
+          <FigureRow label="Days ahead" info="The share of trading days on which the portfolio's return beat the benchmark's." value={plainPctOrDash(data.winRatePct)} />
+          <FigureRow label="Time in the lead" info="The share of the shared period during which the portfolio's growth since the start was above the benchmark's." value={plainPctOrDash(data.timeOutperformingPct)} />
+          {data.tradingDays !== null && (
+            <FigureRow label="Trading days compared" info="The days on which both the portfolio and the benchmark have a price." value={data.tradingDays.toLocaleString("en-US")} />
+          )}
+        </FigureList>
+      </ExplorePanel>
+      {basket.length > 0 && (
+        <ExplorePanel
+          title="What the benchmark is made of"
+          right={
+            <InfoTip text={BENCHMARK_BASKET_INFO}>
+              <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+            </InfoTip>
+          }
+        >
+          <div className="p-6 md:p-7">
+            <BenchmarkBasketList basket={basket} />
+          </div>
+        </ExplorePanel>
+      )}
+    </>
   );
 }
 
@@ -2252,10 +2745,13 @@ const lifespanLabel = (days: number) =>
 function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
   const horizons = data?.horizons.filter((h) => h.period !== "Inception") ?? [];
+  const [exploring, setExploring] = useState(false);
+  const canExplore = data !== null && !updating && data.status !== "insufficient_history";
 
   return (
     <Module>
       <ModuleHead
+        onExplore={canExplore ? () => setExploring(true) : undefined}
         eyebrow="Performance"
         title="Returns"
         desc="Time-weighted: money you add or withdraw doesn't count as a gain or a loss."
@@ -2295,7 +2791,7 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
                 </div>
                 {horizons.length > 0 && (
                   <div className="grid grid-cols-2 auto-rows-fr gap-px bg-slate-100">
-                    {horizons.map((h) => <HorizonCell key={h.period} horizon={h} />)}
+                    {horizons.map((h) => <HorizonCell key={h.period} horizon={h} onClick={() => setExploring(true)} />)}
                   </div>
                 )}
               </div>
@@ -2303,19 +2799,115 @@ function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
           )}
         </>
       )}
+      {canExplore && exploring && (
+        <ExploreView title="Returns" onClose={() => setExploring(false)}>
+          <ReturnsExplore data={data} />
+        </ExploreView>
+      )}
     </Module>
   );
 }
 
-function HorizonCell({ horizon }: { horizon: HorizonEntry }) {
+const monthYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+const horizonLabel = (period: string) => (period === "Inception" ? "Since inception" : `Last ${period.toLowerCase()}`);
+
+/**
+ * RETURNS EXPLORE — the detail view behind ReturnsModule: the growth curve the headline figure is
+ * the end of, the return of each calendar year, every horizon with the risk taken to earn it,
+ * and the best and worst month.
+ */
+function ReturnsExplore({ data }: { data: PerformanceResponse }) {
+  const cumulative = useMemo(() => (data.cumulativeReturnPct ? toChartPoints(data.cumulativeReturnPct) : []), [data]);
+  const annual = useMemo(
+    () => data.annual.filter((a): a is { year: number; returnPct: number } => a.returnPct !== null).map((a) => ({ year: String(a.year), value: a.returnPct })),
+    [data],
+  );
+
+  const horizonColumns: DataColumn<HorizonEntry>[] = [
+    { key: "period", label: "Period", render: (h) => <span className="font-bold text-slate-900 whitespace-nowrap">{horizonLabel(h.period)}</span> },
+    { key: "return", label: "Return", align: "right", render: (h) => <SignedPct pct={h.totalReturnPct} /> },
+    { key: "vol", label: "Volatility", align: "right", render: (h) => plainPctOrDash(h.volatilityPct) },
+    { key: "dd", label: "Deepest fall", align: "right", render: (h) => plainPctOrDash(h.maxDrawdownPct) },
+    { key: "rar", label: "Return / risk", align: "right", render: (h) => ratioOrDash(h.riskAdjustedReturn) },
+  ];
+
+  return (
+    <>
+      {cumulative.length >= 2 && (
+        <ExplorePanel
+          title="Growth since inception"
+          right={<span className="text-sm tabular-nums"><SignedPct pct={data.totalReturnPct} /></span>}
+        >
+          <div className="p-6 md:p-7 h-64">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 256 }}>
+              <AreaChart data={cumulative} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                <XAxis dataKey="date" tickFormatter={monthShortYearLabel} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} minTickGap={40} />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} width={56} />
+                <Tooltip
+                  labelFormatter={(label) => fullDateLabel(label as string)}
+                  formatter={(value) => [formatPct(Number(value)), "Return to date"]}
+                  contentStyle={TOOLTIP_STYLE}
+                />
+                <Area type="monotone" dataKey="value" stroke={PORTFOLIO_COLOR} strokeWidth={2} fill={PORTFOLIO_COLOR} fillOpacity={0.12} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </ExplorePanel>
+      )}
+      {annual.length > 0 && (
+        <ExplorePanel title="By calendar year">
+          <div className="p-6 md:p-7 h-56">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 224 }}>
+              <BarChart data={annual} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                <XAxis dataKey="year" tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} width={56} />
+                <Tooltip formatter={(value) => [formatPct(Number(value)), "Return"]} contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f1f5f9" }} />
+                <Bar dataKey="value" radius={[6, 6, 6, 6]} maxBarSize={48}>
+                  {annual.map((a) => <Cell key={a.year} fill={a.value >= 0 ? "#10b981" : "#f43f5e"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ExplorePanel>
+      )}
+      {data.horizons.length > 0 && (
+        <ExplorePanel
+          title="By horizon"
+          right={
+            <InfoTip text="Return / risk is the return over the period divided by its volatility: how much it earned for each unit of swing.">
+              <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+            </InfoTip>
+          }
+        >
+          <DataTable columns={horizonColumns} rows={data.horizons} rowKey={(h) => h.period} />
+        </ExplorePanel>
+      )}
+      {(data.bestMonth || data.worstMonth) && (
+        <ExplorePanel title="Extremes">
+          <FigureList>
+            {data.bestMonth && (
+              <FigureRow label={`Best month · ${monthYearLabel(data.bestMonth.month)}`} info="The calendar month with the highest return." value={formatPct(data.bestMonth.returnPct)} tone={data.bestMonth.returnPct >= 0 ? "gain" : "loss"} />
+            )}
+            {data.worstMonth && (
+              <FigureRow label={`Worst month · ${monthYearLabel(data.worstMonth.month)}`} info="The calendar month with the lowest return." value={formatPct(data.worstMonth.returnPct)} tone={data.worstMonth.returnPct >= 0 ? "gain" : "loss"} />
+            )}
+            <FigureRow label="Deepest fall" info="The largest drop from a high to a later low, since inception." value={plainPctOrDash(data.maxDrawdownPct)} />
+          </FigureList>
+        </ExplorePanel>
+      )}
+    </>
+  );
+}
+
+function HorizonCell({ horizon, onClick }: { horizon: HorizonEntry; onClick: () => void }) {
   const pct = horizon.totalReturnPct;
   return (
-    <div className="bg-white px-5 md:px-6 py-4 flex flex-col justify-center">
+    <button type="button" onClick={onClick} className="bg-white hover:bg-slate-50 transition-colors text-left px-5 md:px-6 py-4 flex flex-col justify-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40">
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last {horizon.period.toLowerCase()}</p>
       <p className={`text-lg font-black tabular-nums mt-1 ${pct === null ? "text-slate-400" : pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
         {formatPctOrDash(pct)}
       </p>
-    </div>
+    </button>
   );
 }
 
@@ -2328,10 +2920,12 @@ function DrawdownModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
   const points = useMemo(() => (data?.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
   const showFigure = data !== null && !updating && data.status !== "insufficient_history";
+  const [exploring, setExploring] = useState(false);
 
   return (
     <Module>
       <ModuleHead
+        onExplore={showFigure && points.length >= 2 ? () => setExploring(true) : undefined}
         eyebrow="Risk"
         title="Drawdown"
         desc="How far the portfolio stood below its previous high, day by day."
@@ -2357,37 +2951,133 @@ function DrawdownModule({ portfolioUuid }: { portfolioUuid: string }) {
           {points.length < 2 ? (
             <ModuleMessage>Not enough history yet to chart.</ModuleMessage>
           ) : (
-            <div className="p-6 md:p-7 h-64">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
-                <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={monthShortYearLabel}
-                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-                    axisLine={false}
-                    tickLine={false}
-                    minTickGap={40}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => `${v}%`}
-                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={48}
-                  />
-                  <Tooltip
-                    labelFormatter={(label) => fullDateLabel(label as string)}
-                    formatter={(value) => [`${Number(value).toFixed(2)}%`, "Below previous high"]}
-                    contentStyle={TOOLTIP_STYLE}
-                  />
-                  <Area type="monotone" dataKey="value" stroke="#f43f5e" strokeWidth={2} fill="#f43f5e" fillOpacity={0.12} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <DrawdownChart points={points} />
           )}
         </>
       )}
+      {showFigure && exploring && data.drawdownPct && (
+        <ExploreView title="Drawdown" onClose={() => setExploring(false)}>
+          <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />
+        </ExploreView>
+      )}
     </Module>
+  );
+}
+
+function DrawdownChart({ points }: { points: { date: string; value: number }[] }) {
+  return (
+    <div className="p-6 md:p-7 h-64">
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
+        <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tickFormatter={monthShortYearLabel}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={40}
+          />
+          <YAxis
+            tickFormatter={(v) => `${v}%`}
+            tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+            axisLine={false}
+            tickLine={false}
+            width={48}
+          />
+          <Tooltip
+            labelFormatter={(label) => fullDateLabel(label as string)}
+            formatter={(value) => [`${Number(value).toFixed(2)}%`, "Below previous high"]}
+            contentStyle={TOOLTIP_STYLE}
+          />
+          <Area type="monotone" dataKey="value" stroke="#f43f5e" strokeWidth={2} fill="#f43f5e" fillOpacity={0.12} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+interface DrawdownEpisode {
+  peak: string;
+  trough: string;
+  depthPct: number;
+  recovered: string | null;
+}
+
+// Values at or above this count as "back at the high": the series is exactly 0 on a new high,
+// but leave room for float noise.
+const DRAWDOWN_AT_HIGH = -1e-6;
+
+/**
+ * Splits the daily drawdown series into episodes: each starts on the last day at a high (the
+ * peak), bottoms out at its deepest day (the trough) and ends on the first day back at a high
+ * (recovered), or is still open. Deepest first.
+ */
+function drawdownEpisodes(series: TimeSeries): DrawdownEpisode[] {
+  const episodes: DrawdownEpisode[] = [];
+  let current: DrawdownEpisode | null = null;
+  let lastHigh = series.dates[0];
+  series.values.forEach((value, i) => {
+    const date = series.dates[i];
+    if (value >= DRAWDOWN_AT_HIGH) {
+      if (current) {
+        current.recovered = date;
+        episodes.push(current);
+        current = null;
+      }
+      lastHigh = date;
+    } else if (!current) {
+      current = { peak: lastHigh, trough: date, depthPct: value, recovered: null };
+    } else if (value < current.depthPct) {
+      current.trough = date;
+      current.depthPct = value;
+    }
+  });
+  if (current) episodes.push(current);
+  return episodes.sort((a, b) => a.depthPct - b.depthPct);
+}
+
+const DRAWDOWN_EPISODE_ROWS = 10;
+
+/**
+ * DRAWDOWN EXPLORE — the detail view behind DrawdownModule: the chart, then the portfolio's
+ * deepest falls one by one, with how long each took to hit bottom and to climb back.
+ */
+function DrawdownExplore({
+  series, points, maxDrawdownPct,
+}: { series: TimeSeries; points: { date: string; value: number }[]; maxDrawdownPct: number | null }) {
+  const episodes = useMemo(() => drawdownEpisodes(series).slice(0, DRAWDOWN_EPISODE_ROWS), [series]);
+  const today = series.dates[series.dates.length - 1];
+
+  const columns: DataColumn<DrawdownEpisode>[] = [
+    { key: "peak", label: "From the high of", sortValue: (e) => e.peak, render: (e) => <span className="font-bold text-slate-900 whitespace-nowrap">{shortDateLabel(e.peak)}</span> },
+    { key: "depth", label: "Fall", align: "right", sortValue: (e) => -e.depthPct, render: (e) => <span className="font-bold text-rose-600">{e.depthPct.toFixed(2)}%</span> },
+    { key: "trough", label: "Bottom", align: "right", sortValue: (e) => e.trough, render: (e) => shortDateLabel(e.trough) },
+    { key: "down", label: "To bottom", align: "right", sortValue: (e) => daysBetween(e.peak, e.trough), render: (e) => `${daysBetween(e.peak, e.trough)} d` },
+    {
+      key: "recovery", label: "Recovered", align: "right",
+      sortValue: (e) => daysBetween(e.peak, e.recovered ?? today),
+      render: (e) => e.recovered
+        ? `${daysBetween(e.peak, e.recovered)} d later`
+        : <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-wider">Not yet</span>,
+    },
+  ];
+
+  return (
+    <>
+      <ExplorePanel
+        title="Below the previous high"
+        right={<span className="text-sm font-black tabular-nums text-rose-600">{plainPctOrDash(maxDrawdownPct)} <span className="text-xs font-bold text-slate-400">deepest</span></span>}
+      >
+        <DrawdownChart points={points} />
+      </ExplorePanel>
+      <ExplorePanel title="Deepest falls">
+        {episodes.length === 0 ? (
+          <ModuleMessage>The portfolio hasn&apos;t fallen below a previous high yet.</ModuleMessage>
+        ) : (
+          <DataTable columns={columns} rows={episodes} rowKey={(e) => e.peak} initialSort={{ key: "depth", desc: true }} />
+        )}
+      </ExplorePanel>
+    </>
   );
 }
 
@@ -2397,29 +3087,62 @@ const TOP_ROWS = 5;
 
 /**
  * RANKED BARS — a short "who contributes most" list: a label, a figure, and a bar scaled to the
- * largest row. Shared by the top dividend payers and the costs by platform.
+ * largest row. Shared by the top dividend payers and the costs by platform. With `onSelect`
+ * each row is a button that opens the module's detail view on that row; `more` adds a last line
+ * for the rows left out, opening the detail too.
  */
-function RankedBars({ title, rows }: { title: string; rows: { key: string; label: string; sub?: string; value: number; figure: string }[] }) {
+function RankedBars({
+  title, rows, onSelect, more,
+}: {
+  title: string;
+  rows: { key: string; label: string; sub?: string; value: number; figure: string }[];
+  onSelect?: (key: string) => void;
+  more?: { count: number; onClick: () => void };
+}) {
   const max = Math.max(...rows.map((r) => r.value), 0.01);
   return (
     <div className="px-6 md:px-7 py-6 border-t border-slate-100">
-      <h3 className="text-sm font-black text-slate-900 mb-4">{title}</h3>
-      <div className="space-y-3">
-        {rows.map((r) => (
-          <div key={r.key}>
-            <div className="flex items-baseline justify-between gap-3 mb-1">
-              <span className="min-w-0 truncate">
-                <span className="text-[13px] font-bold text-slate-900">{r.label}</span>
-                {r.sub && <span className="text-xs text-slate-400 ml-2">{r.sub}</span>}
-              </span>
-              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{r.figure}</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full bg-[#C49A3C]" style={{ width: `${(r.value / max) * 100}%` }} />
-            </div>
-          </div>
-        ))}
+      <h3 className="text-sm font-black text-slate-900 mb-3">{title}</h3>
+      <div className="space-y-1">
+        {rows.map((r) => {
+          const body = (
+            <>
+              <div className="flex items-baseline justify-between gap-3 mb-1">
+                <span className="min-w-0 truncate">
+                  <span className="text-[13px] font-bold text-slate-900">{r.label}</span>
+                  {r.sub && <span className="text-xs text-slate-400 ml-2">{r.sub}</span>}
+                </span>
+                <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{r.figure}</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full bg-[#C49A3C]" style={{ width: `${(r.value / max) * 100}%` }} />
+              </div>
+            </>
+          );
+          return onSelect ? (
+            <button
+              key={r.key}
+              type="button"
+              onClick={() => onSelect(r.key)}
+              className="block text-left -mx-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+              style={{ width: "calc(100% + 1rem)" }}
+            >
+              {body}
+            </button>
+          ) : (
+            <div key={r.key} className="py-1.5">{body}</div>
+          );
+        })}
       </div>
+      {more && more.count > 0 && (
+        <button
+          type="button"
+          onClick={more.onClick}
+          className="mt-3 text-xs font-bold text-[#C49A3C] hover:text-[#8A6A28] transition-colors"
+        >
+          +{more.count} more
+        </button>
+      )}
     </div>
   );
 }
@@ -2431,11 +3154,15 @@ function RankedBars({ title, rows }: { title: string; rows: { key: string; label
  */
 function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<DividendsResponse>(portfolioService.getDividends, portfolioUuid);
-  const payers = useMemo(
-    () => (data ? [...data.byAsset].filter((a) => a.trailing12MIncome > 0).sort((a, b) => b.trailing12MIncome - a.trailing12MIncome).slice(0, TOP_ROWS) : []),
+  const allPayers = useMemo(
+    () => (data ? [...data.byAsset].filter((a) => a.trailing12MIncome > 0).sort((a, b) => b.trailing12MIncome - a.trailing12MIncome) : []),
     [data],
   );
+  const payers = allPayers.slice(0, TOP_ROWS);
   const hasIncome = data !== null && data.totalLifetimeIncome > 0;
+  // undefined: closed; null: open on the whole list; a key: open on that payer's row.
+  const [exploring, setExploring] = useState<string | null | undefined>(undefined);
+  const canExplore = hasIncome && !updating;
 
   return (
     <Module>
@@ -2443,6 +3170,7 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
         eyebrow={data?.currency ?? "Income"}
         title="Dividends"
         desc="Cash paid out by your holdings."
+        onExplore={canExplore ? () => setExploring(null) : undefined}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -2497,13 +3225,64 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
                     value: a.trailing12MIncome,
                     figure: formatCurrency(a.trailing12MIncome, data.currency, 0),
                   }))}
+                  onSelect={setExploring}
+                  more={{ count: allPayers.length - payers.length, onClick: () => setExploring(null) }}
                 />
               )}
             </>
           )}
         </>
       )}
+      {canExplore && exploring !== undefined && (
+        <ExploreView title="Dividends" onClose={() => setExploring(undefined)}>
+          <DividendsExplore data={data} focus={exploring} />
+        </ExploreView>
+      )}
     </Module>
+  );
+}
+
+const DIVIDEND_COLUMNS = (currency: string): DataColumn<DividendsResponse["byAsset"][number]>[] => [
+  { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} /> },
+  { key: "t12m", label: "Last 12m", align: "right", sortValue: (a) => a.trailing12MIncome, render: (a) => formatCurrency(a.trailing12MIncome, currency, 0) },
+  { key: "p12m", label: "Prior 12m", align: "right", sortValue: (a) => a.prior12MIncome, render: (a) => formatCurrency(a.prior12MIncome, currency, 0) },
+  { key: "yoy", label: "Change", align: "right", sortValue: (a) => a.growthYoyPct, render: (a) => <SignedPct pct={a.growthYoyPct} /> },
+  { key: "lifetime", label: "Lifetime", align: "right", sortValue: (a) => a.lifetimeIncome, render: (a) => formatCurrency(a.lifetimeIncome, currency, 0) },
+  { key: "yield", label: "Yield", align: "right", sortValue: (a) => a.yieldPct, render: (a) => plainPctOrDash(a.yieldPct) },
+  { key: "yoc", label: "On cost", align: "right", sortValue: (a) => a.yieldOnCostPct, render: (a) => plainPctOrDash(a.yieldOnCostPct) },
+];
+
+/**
+ * DIVIDENDS EXPLORE — the detail view behind DividendsModule: every figure the module summarises,
+ * plus the two it leaves out (the previous 12 months, and the yield of just the paying
+ * holdings), then every asset that has ever paid, sortable.
+ */
+function DividendsExplore({ data, focus }: { data: DividendsResponse; focus: string | null }) {
+  const assets = useMemo(() => data.byAsset.filter((a) => a.lifetimeIncome > 0), [data]);
+  const columns = useMemo(() => DIVIDEND_COLUMNS(data.currency), [data.currency]);
+  return (
+    <>
+      <ExplorePanel title="Overview">
+        <FigureList>
+          <FigureRow label="Since inception" info="All the dividends you've received, since your first transaction." value={formatCurrency(data.totalLifetimeIncome, data.currency, 0)} emphasis />
+          <FigureRow label="Last 12 months" info="The dividends received over the last 12 months." value={formatCurrency(data.totalTrailing12MIncome, data.currency, 0)} />
+          <FigureRow label="Previous 12 months" info="The dividends received in the 12 months before that." value={formatCurrency(data.totalPrior12MIncome, data.currency, 0)} />
+          <FigureRow
+            label="vs previous year"
+            info="How the last 12 months' dividends compare with the 12 months before."
+            value={formatPctOrDash(data.portfolioGrowthYoyPct)}
+            tone={data.portfolioGrowthYoyPct === null ? undefined : data.portfolioGrowthYoyPct >= 0 ? "gain" : "loss"}
+          />
+          <FigureRow label="Yield" info="The last 12 months' dividends over what the whole portfolio is worth today." value={plainPctOrDash(data.wholePortfolioYieldPct)} />
+          <FigureRow label="Yield of paying holdings" info="The same, counting only the holdings that pay dividends." value={plainPctOrDash(data.portfolioYieldPct)} />
+          <FigureRow label="Paying holdings" info="How much of the portfolio's value is in holdings that paid a dividend over the last 12 months." value={plainPctOrDash(data.payersShareOfPortfolioPct)} />
+          <FigureRow label="Yield on cost" info="The last 12 months' dividends over what you paid for the holdings that pay them." value={plainPctOrDash(data.portfolioYieldOnCostPct)} />
+        </FigureList>
+      </ExplorePanel>
+      <ExplorePanel title="By asset">
+        <DataTable columns={columns} rows={assets} rowKey={(a) => a.assetId} initialSort={{ key: "t12m", desc: true }} highlight={focus} />
+      </ExplorePanel>
+    </>
   );
 }
 
@@ -2516,6 +3295,24 @@ function CostDragBadge({ pct }: { pct: number }) {
     ? "bg-emerald-50 text-emerald-700"
     : label === "Moderate" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700";
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${tone}`}>{label}</span>;
+}
+
+// An asset's cell in a DataTable: its ticker in bold with the full name under it (or just the
+// name when there's no ticker), plus an optional third line.
+function AssetCell({ ticker, name, sub }: { ticker: string | null; name: string; sub?: string }) {
+  return (
+    <div className="min-w-[9rem] max-w-[16rem]">
+      <p className="font-bold text-slate-900 truncate">{ticker ?? name}</p>
+      {ticker && <p className="text-xs text-slate-400 truncate">{name}</p>}
+      {sub && <p className="text-xs text-slate-400 truncate">{sub}</p>}
+    </div>
+  );
+}
+
+// A signed percentage in a table cell, green or red by its sign.
+function SignedPct({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="text-slate-400">—</span>;
+  return <span className={`font-bold ${pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatPct(pct)}</span>;
 }
 
 /**
@@ -2563,10 +3360,14 @@ function FigureRow({
  */
 function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<TradingCostsResponse>(portfolioService.getTradingCosts, portfolioUuid);
-  const platforms = useMemo(
-    () => (data ? [...data.byPlatform].sort((a, b) => b.totalCosts - a.totalCosts).slice(0, TOP_ROWS) : []),
+  const allPlatforms = useMemo(
+    () => (data ? [...data.byPlatform].sort((a, b) => b.totalCosts - a.totalCosts) : []),
     [data],
   );
+  const platforms = allPlatforms.slice(0, TOP_ROWS);
+  // undefined: closed; null: open; a platform: open on that platform's row.
+  const [exploring, setExploring] = useState<string | null | undefined>(undefined);
+  const canExplore = data !== null && !updating && data.totalTransactions > 0;
 
   return (
     <Module>
@@ -2574,6 +3375,7 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
         eyebrow={data?.currency ?? "Costs"}
         title="Trading Costs"
         desc="Commissions plus the spread paid when buying and selling."
+        onExplore={canExplore ? () => setExploring(null) : undefined}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -2623,13 +3425,110 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
                     value: pl.totalCosts,
                     figure: formatCurrency(pl.totalCosts, data.currency, 0),
                   }))}
+                  onSelect={setExploring}
+                  more={{ count: allPlatforms.length - platforms.length, onClick: () => setExploring(null) }}
                 />
               )}
             </>
           )}
         </>
       )}
+      {canExplore && exploring !== undefined && (
+        <ExploreView title="Trading Costs" onClose={() => setExploring(undefined)}>
+          <TradingCostsExplore data={data} focus={exploring} />
+        </ExploreView>
+      )}
     </Module>
+  );
+}
+
+const bpsOrDash = (bps: number | null) => (bps === null ? "—" : `${bps.toFixed(1)} bps`);
+
+/**
+ * TRADING COSTS EXPLORE — the detail view behind TradingCostsModule: how the total splits into
+ * commissions and spread, how it built up over time, and where it went, by platform and by
+ * asset.
+ */
+function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focus: string | null }) {
+  const cumulative = useMemo(() => (data.cumulativeCosts ? toChartPoints(data.cumulativeCosts) : []), [data]);
+  const commissionShare = data.totalCosts > 0 ? (data.explicitFees / data.totalCosts) * 100 : 0;
+
+  const platformColumns = useMemo((): DataColumn<TradingCostsResponse["byPlatform"][number]>[] => [
+    { key: "platform", label: "Platform", sortValue: (p) => p.platform, render: (p) => <span className="font-bold text-slate-900">{p.platform}</span> },
+    { key: "trades", label: "Trades", align: "right", sortValue: (p) => p.transactionCount, render: (p) => p.transactionCount },
+    { key: "volume", label: "Volume", align: "right", sortValue: (p) => p.tradedVolume, render: (p) => formatCurrency(p.tradedVolume, data.currency, 0) },
+    { key: "fees", label: "Commissions", align: "right", sortValue: (p) => p.explicitFees, render: (p) => formatCurrency(p.explicitFees, data.currency, 2) },
+    { key: "spread", label: "Spread", align: "right", sortValue: (p) => p.implicitCosts, render: (p) => formatCurrency(p.implicitCosts, data.currency, 2) },
+    { key: "total", label: "Total", align: "right", sortValue: (p) => p.totalCosts, render: (p) => <span className="font-bold text-slate-900">{formatCurrency(p.totalCosts, data.currency, 2)}</span> },
+    { key: "bps", label: "Of volume", align: "right", sortValue: (p) => p.costBps, render: (p) => bpsOrDash(p.costBps) },
+    { key: "share", label: "Share", align: "right", sortValue: (p) => p.shareOfTotalPct, render: (p) => plainPctOrDash(p.shareOfTotalPct) },
+  ], [data.currency]);
+
+  const assetColumns = useMemo((): DataColumn<TradingCostsResponse["byAsset"][number]>[] => [
+    { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} sub={a.broker} /> },
+    { key: "trades", label: "Trades", align: "right", sortValue: (a) => a.transactionCount, render: (a) => a.transactionCount },
+    { key: "volume", label: "Volume", align: "right", sortValue: (a) => a.tradedVolume, render: (a) => formatCurrency(a.tradedVolume, data.currency, 0) },
+    { key: "total", label: "Total", align: "right", sortValue: (a) => a.totalCosts, render: (a) => <span className="font-bold text-slate-900">{formatCurrency(a.totalCosts, data.currency, 2)}</span> },
+    { key: "bps", label: "Of volume", align: "right", sortValue: (a) => a.costBps, render: (a) => bpsOrDash(a.costBps) },
+  ], [data.currency]);
+
+  return (
+    <>
+      <ExplorePanel title="Where the costs come from">
+        <div className="px-6 md:px-7 pt-5">
+          <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
+            <div className="h-full bg-[#C49A3C]" style={{ width: `${commissionShare}%` }} />
+            <div className="h-full bg-[#E8C97A]" style={{ width: `${100 - commissionShare}%` }} />
+          </div>
+        </div>
+        <FigureList>
+          <FigureRow label="Total costs" info="Commissions plus the spread paid on every buy and sell, since your first transaction." value={formatCurrency(data.totalCosts, data.currency, 2)} emphasis />
+          <FigureRow
+            label="Commissions"
+            info="The fees your brokers charged, as recorded on your transactions."
+            value={formatCurrency(data.explicitFees, data.currency, 2)}
+            badge={<span className="w-2.5 h-2.5 rounded-full bg-[#C49A3C]" />}
+          />
+          <FigureRow
+            label="Spread"
+            info={`What was lost to the gap between buying and selling prices${data.implicitCostWeightPct === null ? "" : ` — ${data.implicitCostWeightPct.toFixed(0)}% of the total`}.`}
+            value={formatCurrency(data.implicitCosts, data.currency, 2)}
+            badge={<span className="w-2.5 h-2.5 rounded-full bg-[#E8C97A]" />}
+          />
+          <FigureRow label="Traded volume" info={`The total amount bought and sold, over ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}.`} value={formatCurrency(data.totalVolume, data.currency, 0)} />
+          <FigureRow label="Of traded volume" info="Costs over the total amount you bought and sold." value={data.costRatioBps === null ? "—" : `${bpsOrDash(data.costRatioBps)} · ${plainPctOrDash(data.costRatioPct)}`} />
+          <FigureRow label="Of portfolio value" info="Costs over what the portfolio is worth today." value={plainPctOrDash(data.costToEquityPct)} />
+        </FigureList>
+      </ExplorePanel>
+      {cumulative.length >= 2 && (
+        <ExplorePanel title="Costs over time">
+          <div className="p-6 md:p-7 h-64">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 256 }}>
+              <AreaChart data={cumulative} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                <XAxis dataKey="date" tickFormatter={monthShortYearLabel} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} minTickGap={40} />
+                <YAxis tickFormatter={(v) => formatCompact(Number(v))} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} width={48} />
+                <Tooltip
+                  labelFormatter={(label) => fullDateLabel(label as string)}
+                  formatter={(value) => [formatCurrency(Number(value), data.currency, 2), "Costs to date"]}
+                  contentStyle={TOOLTIP_STYLE}
+                />
+                <Area type="stepAfter" dataKey="value" stroke={PORTFOLIO_COLOR} strokeWidth={2} fill={PORTFOLIO_COLOR} fillOpacity={0.12} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </ExplorePanel>
+      )}
+      {data.byPlatform.length > 0 && (
+        <ExplorePanel title="By platform">
+          <DataTable columns={platformColumns} rows={data.byPlatform} rowKey={(p) => p.platform} initialSort={{ key: "total", desc: true }} highlight={focus} />
+        </ExplorePanel>
+      )}
+      {data.byAsset.length > 0 && (
+        <ExplorePanel title="By asset">
+          <DataTable columns={assetColumns} rows={data.byAsset} rowKey={(a) => `${a.assetId}-${a.broker}`} initialSort={{ key: "total", desc: true }} />
+        </ExplorePanel>
+      )}
+    </>
   );
 }
 
@@ -2984,7 +3883,6 @@ function HistoryPage({
   // "All portfolios": Composition and Risk then also show how the portfolios make it up.
   isAggregate: boolean;
 }) {
-  const unrealizedIsGain = data.totalUnrealizedPnl >= 0;
 
   // Composition (current holdings/currency breakdown plus sector/region exposure) used to live
   // on Insights' own Today page, fetched from the today dashboard's own `summary` field —
@@ -3062,46 +3960,34 @@ function HistoryPage({
     // The timeline's column and gap add up to --timeline-gutter (set in PerformanceSection).
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_2rem] gap-6">
       <div className="space-y-6 min-w-0">
-        <HistorySection id="income">
-          {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
-          {historyUpdating ? (
-            <Tile><Module><StaleUpdatingState /></Module></Tile>
-          ) : (
+        <HistorySection id="composition">
+          {compositionError ? (
+            <Tile>
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <p className="text-sm font-bold">{compositionError}</p>
+              </div>
+            </Tile>
+          ) : composition ? (
             <>
-              <Tile span="half">
-                <Module>
-                  <StatContent
-                    title="Unrealized P&L"
-                    value={
-                      <AmountWithDelta
-                        amount={formatSignedCurrency(data.totalUnrealizedPnl, data.currency)}
-                        pct={data.totalInvestedCapital > 0 ? (data.totalUnrealizedPnl / data.totalInvestedCapital) * 100 : 0}
-                        hasBaseline={data.totalInvestedCapital > 0}
-                      />
-                    }
-                    icon={unrealizedIsGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                    info="What your open positions are up or down, against what you paid for them."
-                    color={unrealizedIsGain ? "emerald" : "red"}
-                  />
-                </Module>
-              </Tile>
-              <Tile span="half">
-                <Module>
-                  <StatContent
-                    title="Realized P&L"
-                    value={formatSignedCurrency(data.totalRealizedPnl, data.currency)}
-                    icon={data.totalRealizedPnl >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
-                    info="Gains and losses you've locked in by selling, since your first transaction."
-                    color={data.totalRealizedPnl >= 0 ? "emerald" : "red"}
-                  />
-                </Module>
-              </Tile>
+              {isAggregate && <Tile><PortfoliosMixModule portfolioUuid={portfolioUuid} /></Tile>}
+              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} /></Tile>
+              <Tile><SectorRegionModule sector={composition.sector} region={composition.region} /></Tile>
             </>
+          ) : (
+            <Tile>
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
+              </div>
+            </Tile>
           )}
+        </HistorySection>
+        <HistorySection id="income">
           <Tile span="half"><DividendsModule portfolioUuid={portfolioUuid} /></Tile>
           <Tile span="half"><TradingCostsModule portfolioUuid={portfolioUuid} /></Tile>
         </HistorySection>
         <HistorySection id="performance">
+          {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
           <Tile>
             {historyTile(
               <ChartCard
@@ -3135,33 +4021,11 @@ function HistoryPage({
               </Module>,
             )}
           </Tile>
-          <Tile><BenchmarkModule portfolioUuid={portfolioUuid} /></Tile>
-        </HistorySection>
-        <HistorySection id="composition">
-          {compositionError ? (
-            <Tile>
-              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-                <AlertCircle className="h-5 w-5 shrink-0" />
-                <p className="text-sm font-bold">{compositionError}</p>
-              </div>
-            </Tile>
-          ) : composition ? (
-            <>
-              {isAggregate && <Tile><PortfoliosMixModule portfolioUuid={portfolioUuid} /></Tile>}
-              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} /></Tile>
-              <Tile><SectorRegionModule sector={composition.sector} region={composition.region} /></Tile>
-            </>
-          ) : (
-            <Tile>
-              <div className="flex h-64 items-center justify-center">
-                <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-              </div>
-            </Tile>
-          )}
+          <BenchmarkTile portfolioUuid={portfolioUuid} />
         </HistorySection>
         <HistorySection id="risk">
-          <Tile span="half"><VolatilityModule portfolioUuid={portfolioUuid} /></Tile>
-          <Tile span="half"><DrawdownModule portfolioUuid={portfolioUuid} /></Tile>
+          <Tile><VolatilityModule portfolioUuid={portfolioUuid} /></Tile>
+          <Tile><DrawdownModule portfolioUuid={portfolioUuid} /></Tile>
           {isAggregate && <Tile><PortfolioCorrelationModule portfolioUuid={portfolioUuid} /></Tile>}
           <RiskModelTab portfolioUuid={portfolioUuid} />
         </HistorySection>
