@@ -4,9 +4,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  TrendingUp, TrendingDown, Wallet, CircleDollarSign, Receipt, Activity,
+  TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, Scale, LayoutGrid, Gauge,
-  Search, ChevronDown, Coins, Percent,
+  Search, ChevronDown, Coins, Info,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -233,15 +233,14 @@ function Module({ children }: { children: React.ReactNode }) {
 const TILE_SPAN = {
   full: "col-span-2 lg:col-span-12",
   half: "col-span-2 lg:col-span-6",
-  quarter: "col-span-1 lg:col-span-3",
 } as const;
 
 /**
  * TILE — one cell of a section's mosaic (see HistorySection): a 12-column grid on wide
  * screens, so a big chart can sit beside a narrow card and two related modules side by side,
- * instead of every module stacked at full width. Below lg everything is full width except
- * quarter tiles, which pair up. A container, so what's inside lays itself out by the tile's
- * width (@md:, @3xl:…) rather than the viewport's. Collapses when its module renders nothing.
+ * instead of every module stacked at full width. Below lg everything is full width. A
+ * container, so what's inside lays itself out by the tile's width (@md:, @3xl:…) rather than
+ * the viewport's. Collapses when its module renders nothing.
  */
 function Tile({ span = "full", children }: { span?: keyof typeof TILE_SPAN; children: React.ReactNode }) {
   return <div className={`@container min-w-0 empty:hidden ${TILE_SPAN[span]}`}>{children}</div>;
@@ -2444,14 +2443,6 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
         eyebrow={data?.currency ?? "Income"}
         title="Dividends"
         desc="Cash paid out by your holdings."
-        right={data !== null && !updating && hasIncome ? (
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Last 12 months</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {formatCurrency(data.totalTrailing12MIncome, data.currency, 0)}
-            </p>
-          </div>
-        ) : undefined}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -2467,29 +2458,35 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>No dividends received yet.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 @md:grid-cols-3 divide-y divide-slate-100 @md:divide-y-0 @md:divide-x">
-                <StatContent
-                  title="Yield"
-                  value={data.wholePortfolioYieldPct === null ? "—" : `${data.wholePortfolioYieldPct.toFixed(2)}%`}
-                  icon={<Percent className="h-4 w-4 text-blue-600" />}
+              <FigureList>
+                <FigureRow
+                  label="Since inception"
+                  info="All the dividends you've received, since your first transaction."
+                  value={formatCurrency(data.totalLifetimeIncome, data.currency, 0)}
+                  emphasis
+                />
+                <FigureRow
+                  label="Last 12 months"
+                  info="The dividends received over the last 12 months."
+                  value={formatCurrency(data.totalTrailing12MIncome, data.currency, 0)}
+                />
+                <FigureRow
+                  label="Yield"
                   info="The last 12 months' dividends over what the whole portfolio is worth today."
-                  color="blue"
+                  value={data.wholePortfolioYieldPct === null ? "—" : `${data.wholePortfolioYieldPct.toFixed(2)}%`}
                 />
-                <StatContent
-                  title="Yield on Cost"
-                  value={data.portfolioYieldOnCostPct === null ? "—" : `${data.portfolioYieldOnCostPct.toFixed(2)}%`}
-                  icon={<Percent className="h-4 w-4 text-blue-600" />}
+                <FigureRow
+                  label="Yield on cost"
                   info="The last 12 months' dividends over what you paid for the holdings that pay them."
-                  color="blue"
+                  value={data.portfolioYieldOnCostPct === null ? "—" : `${data.portfolioYieldOnCostPct.toFixed(2)}%`}
                 />
-                <StatContent
-                  title="vs Previous Year"
-                  value={formatPctOrDash(data.portfolioGrowthYoyPct)}
-                  icon={data.portfolioGrowthYoyPct !== null && data.portfolioGrowthYoyPct < 0 ? FALL_ICON : RISE_ICON}
+                <FigureRow
+                  label="vs previous year"
                   info="How the last 12 months' dividends compare with the 12 months before."
-                  color={pctColor(data.portfolioGrowthYoyPct)}
+                  value={formatPctOrDash(data.portfolioGrowthYoyPct)}
+                  tone={data.portfolioGrowthYoyPct === null ? undefined : data.portfolioGrowthYoyPct >= 0 ? "gain" : "loss"}
                 />
-              </div>
+              </FigureList>
               {payers.length > 0 && (
                 <RankedBars
                   title="Top payers, last 12 months"
@@ -2513,6 +2510,52 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
 // annualizedCostDragPct thresholds, the same ones the PDF report uses.
 const costDragLabel = (pct: number) => (pct < 0.1 ? "Negligible" : pct > 0.5 ? "Material" : "Moderate");
 
+function CostDragBadge({ pct }: { pct: number }) {
+  const label = costDragLabel(pct);
+  const tone = label === "Negligible"
+    ? "bg-emerald-50 text-emerald-700"
+    : label === "Moderate" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700";
+  return <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${tone}`}>{label}</span>;
+}
+
+/**
+ * FIGURE LIST — a module's secondary figures as compact rows (label left, value right)
+ * rather than a strip of boxed stats, which crowd a half-width tile: each box's icon, title
+ * and padding take more room than the number it holds. The explanation sits behind the info
+ * icon next to the label, as on the stat cards.
+ */
+function FigureList({ children }: { children: React.ReactNode }) {
+  return <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">{children}</dl>;
+}
+
+// `emphasis` for the headline figure of the list: same row, a bigger value. `tone` colours a
+// value that reads as good or bad news (a change, say).
+function FigureRow({
+  label, info, value, badge, emphasis = false, tone,
+}: { label: string; info: string; value: string; badge?: React.ReactNode; emphasis?: boolean; tone?: "gain" | "loss" }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3.5">
+      <dt className="flex items-center gap-1.5 min-w-0 text-[13px] font-semibold text-slate-600">
+        <span className="truncate">{label}</span>
+        <InfoTip text={info}>
+          <Info className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+        </InfoTip>
+      </dt>
+      <dd className="flex items-center gap-2.5 shrink-0">
+        {badge}
+        <span
+          className={`font-black tabular-nums ${emphasis ? "text-2xl" : "text-base"} ${
+            tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900"
+          }`}
+          style={emphasis ? { fontFamily: "'Playfair Display', Georgia, serif" } : undefined}
+        >
+          {value}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
 /**
  * TRADING COSTS MODULE — /trading-costs: what trading has cost (commissions plus spread) as
  * the headline, how heavy that is relative to what was traded and to the portfolio's return,
@@ -2531,14 +2574,6 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
         eyebrow={data?.currency ?? "Costs"}
         title="Trading Costs"
         desc="Commissions plus the spread paid when buying and selling."
-        right={data !== null && !updating && data.totalTransactions > 0 ? (
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total costs</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {formatCurrency(data.totalCosts, data.currency, 0)}
-            </p>
-          </div>
-        ) : undefined}
       />
       <AnalyticsPlaceholder
         loading={loading}
@@ -2554,29 +2589,30 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
             <ModuleMessage>No trades recorded yet.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 @md:grid-cols-3 divide-y divide-slate-100 @md:divide-y-0 @md:divide-x">
-                <StatContent
-                  title="Per Trade"
-                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
-                  icon={<Receipt className="h-4 w-4 text-slate-500" />}
+              <FigureList>
+                <FigureRow
+                  label="Total costs"
+                  info="Commissions plus the spread paid on every buy and sell, since your first transaction."
+                  value={formatCurrency(data.totalCosts, data.currency, 0)}
+                  emphasis
+                />
+                <FigureRow
+                  label="Per trade"
                   info={`Average cost across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}.`}
-                  color="slate"
+                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
                 />
-                <StatContent
-                  title="Of Traded Volume"
-                  value={data.costRatioPct === null ? "—" : `${data.costRatioPct.toFixed(2)}%`}
-                  icon={<Percent className="h-4 w-4 text-slate-500" />}
+                <FigureRow
+                  label="Of traded volume"
                   info="Costs over the total amount you bought and sold."
-                  color="slate"
+                  value={data.costRatioPct === null ? "—" : `${data.costRatioPct.toFixed(2)}%`}
                 />
-                <StatContent
-                  title="Yearly Drag"
+                <FigureRow
+                  label="Yearly drag"
+                  info="How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material."
                   value={data.annualizedCostDragPct === null ? "—" : `${data.annualizedCostDragPct.toFixed(2)}%`}
-                  icon={<TrendingDown className="h-4 w-4 text-slate-500" />}
-                  info={`How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material.${data.annualizedCostDragPct === null ? "" : ` Yours is ${costDragLabel(data.annualizedCostDragPct).toLowerCase()}.`}`}
-                  color="slate"
+                  badge={data.annualizedCostDragPct === null ? undefined : <CostDragBadge pct={data.annualizedCostDragPct} />}
                 />
-              </div>
+              </FigureList>
               {platforms.length > 1 && (
                 <RankedBars
                   title="By platform"
@@ -3032,7 +3068,7 @@ function HistoryPage({
             <Tile><Module><StaleUpdatingState /></Module></Tile>
           ) : (
             <>
-              <Tile span="quarter">
+              <Tile span="half">
                 <Module>
                   <StatContent
                     title="Unrealized P&L"
@@ -3049,7 +3085,7 @@ function HistoryPage({
                   />
                 </Module>
               </Tile>
-              <Tile span="quarter">
+              <Tile span="half">
                 <Module>
                   <StatContent
                     title="Realized P&L"
@@ -3057,28 +3093,6 @@ function HistoryPage({
                     icon={data.totalRealizedPnl >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
                     info="Gains and losses you've locked in by selling, since your first transaction."
                     color={data.totalRealizedPnl >= 0 ? "emerald" : "red"}
-                  />
-                </Module>
-              </Tile>
-              <Tile span="quarter">
-                <Module>
-                  <StatContent
-                    title="Dividends"
-                    value={formatCurrency(data.totalDividendIncome, data.currency, 0)}
-                    icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                    info="All the dividends you've received, since your first transaction."
-                    color="blue"
-                  />
-                </Module>
-              </Tile>
-              <Tile span="quarter">
-                <Module>
-                  <StatContent
-                    title="Trading Costs"
-                    value={formatCurrency(data.lifetimeTradingCosts, data.currency, 0)}
-                    icon={<Receipt className="h-4 w-4 text-slate-500" />}
-                    info="Commissions plus the spread paid on every buy and sell, since your first transaction."
-                    color="slate"
                   />
                 </Module>
               </Tile>
@@ -3106,8 +3120,9 @@ function HistoryPage({
               />,
             )}
           </Tile>
-          <Tile span="half"><ReturnsModule portfolioUuid={portfolioUuid} /></Tile>
-          {!historyUpdating && <Tile span="half"><RealizedPnLCard trades={data.realizedTradesByAsset} /></Tile>}
+          <Tile><ReturnsModule portfolioUuid={portfolioUuid} /></Tile>
+          {/* Its own row: the list grows with every closed position. */}
+          {!historyUpdating && <Tile><RealizedPnLCard trades={data.realizedTradesByAsset} /></Tile>}
           <Tile>
             {historyTile(
               <Module>
