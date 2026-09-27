@@ -9,8 +9,9 @@ import { usePortfolio } from "../../context/PortfolioContext";
 import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
-import { MAX_COMPARED } from "./PortfolioBar";
+import { MAX_COMPARED, ComparePicker } from "./PortfolioBar";
 import { PortfolioPageHeader, PortfolioPageHeaderNote } from "./PortfolioPageHeader";
+import { Breadcrumb } from "./Breadcrumb";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -70,18 +71,20 @@ export function initialCompareSelection(portfolios: Portfolio[], currentUuid: st
 }
 
 /**
- * COMPARISON VIEW — Insights in compare mode (see InsightsSection): the picked portfolios side
- * by side (GET /v1/portfolios/comparison), picked through the same PortfolioBar that selects
- * one portfolio outside compare mode. One table of figures with the best of each row starred,
+ * COMPARISON VIEW — "Insights / Compare" (see InsightsSection): the picked portfolios side by
+ * side (GET /v1/portfolios/comparison), picked with the toggles in the panel under the
+ * breadcrumb (ComparePicker). One table of figures with the best of each row starred,
  * then the cumulative returns and the allocation. Each portfolio keeps its colour
  * (portfolioColorMap), so changing the selection never repaints the others. Columns follow the
  * portfolio list's order, not the order they were picked in, so they don't shuffle.
  */
 export function ComparisonView({
-  selection, portfolioBar, onOpen,
+  selection, onToggle, onHub, onOpen,
 }: {
   selection: string[];
-  portfolioBar: React.ReactNode;
+  onToggle: (uuid: string) => void;
+  // Back to the Insights hub, from the breadcrumb.
+  onHub: () => void;
   // Opens one portfolio's own Insights, from its column header.
   onOpen: (uuid: string) => void;
 }) {
@@ -92,8 +95,9 @@ export function ComparisonView({
 
   return (
     <div className="space-y-6 pb-12">
+      <Breadcrumb trail={[{ label: "Insights", onClick: onHub }]} current="Compare" />
       <PortfolioPageHeader
-        bar={portfolioBar}
+        bar={<ComparePicker selection={selection} onToggle={onToggle} />}
         nav={
           <PortfolioPageHeaderNote>
             {ordered.length < 2

@@ -10,7 +10,7 @@ import type { Portfolio } from "../../models/Portfolio";
 
 /**
  * PORTFOLIOS SETTINGS — Settings → Portfolios: create, rename and delete the investor's
- * portfolios (the PortfolioBar on the portfolio pages only picks one, and creates). The
+ * portfolios (the Insights hub only opens one, and creates). The
  * default portfolio can't be deleted (the backend's 409), and the automatic "All portfolios"
  * aggregate can be neither renamed nor deleted — it's listed, read-only, so the user sees
  * where it comes from.

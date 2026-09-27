@@ -17,8 +17,8 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard };
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
 
-  // Investor: "which page" only. Which portfolio is picked at the top of the portfolio pages
-  // themselves (see PortfolioBar), where Insights can also switch into comparing several.
+  // Investor: "which page" only. Which portfolio is picked on the pages themselves (Insights
+  // opens on a hub of its portfolios, with Compare for several at once).
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'performance', label: 'Insights', icon: TrendingUp },

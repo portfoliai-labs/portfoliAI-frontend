@@ -2,10 +2,8 @@
 "use client";
 
 /**
- * PORTFOLIO PAGE HEADER — the top of Insights (single portfolio and compare mode): one panel
- * holding "which portfolio" (the PortfolioBar, investor only) over a line of context (`nav`:
- * the month drilldown's way back, compare mode's status). No page title: the sidebar already
- * says which page this is. It scrolls away with the page rather than staying pinned.
+ * PORTFOLIO PAGE HEADER — Compare's picker panel, under its breadcrumb: which portfolios are
+ * compared (ComparePicker) over a line of status (`nav`).
  */
 export function PortfolioPageHeader({ bar, nav }: { bar?: React.ReactNode; nav?: React.ReactNode }) {
   if (!bar && !nav) return null;

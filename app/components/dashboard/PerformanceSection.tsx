@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, LayoutGrid, Gauge,
-  Search, ChevronDown, ChevronRight, Coins, Info, ArrowUpRight, ArrowLeft,
+  Search, ChevronDown, Coins, Info, ArrowUpRight,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -18,7 +18,7 @@ import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { PortfolioPageHeader } from "./PortfolioPageHeader";
+import { Breadcrumb } from "./Breadcrumb";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
   PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
@@ -68,11 +68,15 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
  */
 export function PerformanceSection({
-  portfolioUuid, isAggregate = false, onNavigate, portfolioBar,
+  portfolioUuid, portfolioName, isAggregate = false, onNavigate, onHub,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
-  // The investor's PortfolioBar (see InsightsSection), in the header panel.
-  portfolioBar?: React.ReactNode;
+  // The investor's Insights (InsightsSection): the portfolio's name, the title of this page,
+  // and the way back to the hub, the first crumb of every breadcrumb here. Without them (an
+  // advisor's view of a client, which has its own header) the page has no breadcrumb of its
+  // own, and a month or a detail leads back to "Insights".
+  portfolioName?: string;
+  onHub?: () => void;
 }) {
   const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
 
@@ -158,31 +162,28 @@ export function PerformanceSection({
     return () => cancelAnimationFrame(frame);
   }, [exploring]);
 
-  // HistoryPage shows the section timeline only for a full history, not a month's detail.
-  const withTimeline = !loading && history !== null && !isHistoryEmpty(history) && !selected;
-
   const selectedPeriod = selected
     ? monthCache[selected.year]?.find((p) => new Date(p.periodStart).getUTCMonth() + 1 === selected.month)
     : undefined;
 
+  // "Insights / <portfolio>" on the portfolio's page, one level deeper for a month or a
+  // module's detail, where the portfolio's name leads back to its page.
+  const hubCrumbs = onHub ? [{ label: "Insights", onClick: onHub }] : [];
+  const portfolioCrumb = (back: () => void) => ({ label: portfolioName ?? "Insights", onClick: back });
+
   return (
-    // --timeline-gutter: the timeline's column plus the gap before it (HistoryPage's grid).
-    <div className="space-y-6 pb-12 [--timeline-gutter:3.5rem]">
+    <div className="space-y-6 pb-12">
       {selected ? (
-        <MonthBreadcrumb
-          year={selected.year}
-          month={selected.month}
-          onBack={() => setSelected(null)}
+        <Breadcrumb
+          trail={[...hubCrumbs, portfolioCrumb(() => setSelected(null))]}
+          current={new Date(Date.UTC(selected.year, selected.month - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
           right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
         />
       ) : explore ? (
-        <Breadcrumb parent="Insights" current={explore.title} onBack={explore.onClose} />
-      ) : (
-        // Stops where the cards do while the timeline runs down the right (HistoryPage).
-        <div className={withTimeline ? "lg:mr-[var(--timeline-gutter)]" : undefined}>
-          <PortfolioPageHeader bar={portfolioBar} />
-        </div>
-      )}
+        <Breadcrumb trail={[...hubCrumbs, portfolioCrumb(explore.onClose)]} current={explore.title} />
+      ) : portfolioName ? (
+        <Breadcrumb trail={hubCrumbs} current={portfolioName} />
+      ) : null}
 
       {failed && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
@@ -228,63 +229,6 @@ export function PerformanceSection({
           </div>
         </ExploreHostContext.Provider>
       )}
-    </div>
-  );
-}
-
-/**
- * MONTH BREADCRUMB — stands in for the header while a month from the heatmap is open: "Year /
- * Month", the year leading back to the full history (the portfolio bar is hidden meanwhile,
- * since switching portfolio from inside one month's detail would land on a different history).
- * The month's report link, when it has one, sits at the other end.
- */
-function MonthBreadcrumb({
-  year, month, onBack, right,
-}: { year: number; month: number; onBack: () => void; right?: React.ReactNode }) {
-  const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
-  return <Breadcrumb parent={String(year)} current={monthName} onBack={onBack} right={right} />;
-}
-
-/**
- * BREADCRUMB — stands in for the header on the pages that drill into Insights: a month's
- * detail (MonthBreadcrumb, "2025 / March") and a module's detail view ("Insights / Dividends",
- * see ExploreView). Same white panel as the portfolio bar it replaces, so the top of the page
- * doesn't jump: a back button, the parent as a small gold line over the current page, which is
- * the panel's title (the parent leads back too).
- */
-function Breadcrumb({
-  parent, current, onBack, right,
-}: { parent: string; current: string; onBack: () => void; right?: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 md:px-5 py-3.5 flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-4 min-w-0">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={`Back to ${parent}`}
-          className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center shrink-0 text-slate-500 hover:text-white hover:bg-[#C49A3C] hover:border-[#C49A3C] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <nav aria-label="Breadcrumb" className="min-w-0">
-          <ol className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em]">
-            <li>
-              <button type="button" onClick={onBack} className="text-[#C49A3C] hover:text-[#8A6A28] transition-colors">
-                {parent}
-              </button>
-            </li>
-            <li aria-hidden><ChevronRight className="h-3 w-3 text-slate-300" /></li>
-          </ol>
-          <h1
-            aria-current="page"
-            className="text-xl md:text-2xl font-black text-slate-900 truncate mt-0.5"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-          >
-            {current}
-          </h1>
-        </nav>
-      </div>
-      {right}
     </div>
   );
 }
@@ -1079,6 +1023,7 @@ function riskModelUnavailableMessage(model: RiskModelResponse): string {
  */
 function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, portfolioUuid);
+  const [exploring, setExploring] = useState(false);
 
   if (loading || failed || data === null || updating) {
     return (
@@ -1098,24 +1043,47 @@ function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
   }
 
   const built = data.status === "ok";
+  // FrontierModule draws nothing without two plottable points; the modules its detail holds
+  // then stay on the page instead, or they'd have no way in.
+  const hasFrontier = data.frontier.filter((f) => f.volatilityPct !== null && f.expectedReturnPct !== null).length >= 2;
+  const mix = <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />;
+  const gaps = <WeightGapsModule gaps={data.weightGaps} />;
+  const assets = <RiskAssetsModule assets={data.assets} />;
+  const frontier = (onExplore?: () => void) => (
+    <FrontierModule
+      frontier={data.frontier}
+      current={data.current}
+      maxSharpe={data.maxSharpe}
+      minVolatility={data.minVolatility}
+      onExplore={onExplore}
+    />
+  );
 
   // Tiles of the Risk section's mosaic, not a block of its own.
   return (
     <>
       {data.isStale && <Tile><UpdatingNote /></Tile>}
-      {built ? (
+      {built && hasFrontier ? (
         <>
-          <Tile><MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} /></Tile>
-          <Tile>
-            <FrontierModule
-              frontier={data.frontier}
-              current={data.current}
-              maxSharpe={data.maxSharpe}
-              minVolatility={data.minVolatility}
-            />
-          </Tile>
-          <Tile span="half"><WeightGapsModule gaps={data.weightGaps} /></Tile>
-          <Tile span="half"><RiskAssetsModule assets={data.assets} /></Tile>
+          {/* The frontier alone on the page; the mixes it compares, the weight gaps and the
+              assets behind it are its detail. */}
+          <Tile>{frontier(() => setExploring(true))}</Tile>
+          {exploring && (
+            <ExploreView title="Efficient Frontier" onClose={() => setExploring(false)}>
+              {frontier()}
+              {mix}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="@container min-w-0">{gaps}</div>
+                <div className="@container min-w-0">{assets}</div>
+              </div>
+            </ExploreView>
+          )}
+        </>
+      ) : built ? (
+        <>
+          <Tile>{mix}</Tile>
+          <Tile span="half">{gaps}</Tile>
+          <Tile span="half">{assets}</Tile>
         </>
       ) : (
         <Tile>
@@ -1255,12 +1223,13 @@ function MixWeights({
  * curve's own range.
  */
 function FrontierModule({
-  frontier, current, maxSharpe, minVolatility,
+  frontier, current, maxSharpe, minVolatility, onExplore,
 }: {
   frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[];
   current: RiskPortfolioEntry | null;
   maxSharpe: RiskPortfolioEntry | null;
   minVolatility: RiskPortfolioEntry | null;
+  onExplore?: () => void;
 }) {
   const curve = useMemo(
     () => frontier
@@ -1283,6 +1252,7 @@ function FrontierModule({
         eyebrow="Risk Model"
         title="Efficient Frontier"
         desc="The highest past return available at each level of volatility, using your current holdings."
+        onExplore={onExplore}
       />
       <div className="p-6 md:p-7 pb-3 h-80">
         <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 320 }}>

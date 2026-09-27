@@ -94,7 +94,7 @@ export function SettingsSection() {
   // Alerts and Portfolios are about the investor's own portfolios (see above).
   const tabs = isAdvisor ? TABS.filter((tab) => tab.id !== "alerts" && tab.id !== "portfolios") : TABS;
   // Lands on a tab when arriving via a link that asks for it through the URL hash: #alerts from
-  // the Dashboard's "Manage alerts", #portfolios from the PortfolioBar's "Manage portfolios".
+  // the Dashboard's "Manage alerts", #portfolios from the Insights hub's "Manage portfolios".
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     const requested = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
     return !isAdvisor && (requested === "alerts" || requested === "portfolios") ? requested : "subscription";

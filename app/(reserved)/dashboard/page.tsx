@@ -47,6 +47,13 @@ function DashboardPageContent() {
     requestedSection && VALID_SECTIONS.includes(requestedSection) ? requestedSection : 'overview'
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  // Bumped when the sidebar picks the section already open, so a section with pages of its own
+  // (Insights' hub and what's under it) starts over from its first one, as a fresh visit would.
+  const [sectionVisit, setSectionVisit] = useState(0);
+  const openSectionFromSidebar = (section: string) => {
+    if (section === activeSection) setSectionVisit((n) => n + 1);
+    setActiveSection(section);
+  };
 
   const isAdvisor = user?.role === 'ADVISOR';
 
@@ -71,7 +78,7 @@ function DashboardPageContent() {
       case 'performance':
         return isAdvisor
           ? <AdvisorPerformanceSection />
-          : <InsightsSection onNavigate={setActiveSection} />;
+          : <InsightsSection key={sectionVisit} onNavigate={setActiveSection} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
@@ -83,7 +90,7 @@ function DashboardPageContent() {
       default:
         return <DashboardOverview onNavigate={setActiveSection} />;
     }
-  }, [activeSection, isAdvisor, portfolio]);
+  }, [activeSection, isAdvisor, portfolio, sectionVisit]);
 
   if (loading || (!isAdvisor && portfolioLoading)) {
     return (
@@ -117,7 +124,7 @@ function DashboardPageContent() {
       <div className="flex flex-1 overflow-x-clip">
         <Sidebar
           activeSection={activeSection}
-          setActiveSection={setActiveSection}
+          setActiveSection={openSectionFromSidebar}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           role={user?.role}
