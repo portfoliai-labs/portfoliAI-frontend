@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
-  Briefcase,
 } from "lucide-react";
 import { portfolioService } from "../../services/portfolioService";
 import type { Portfolio, PortfolioSnapshot, TodayDashboard } from "../../models/Portfolio";
@@ -23,6 +22,9 @@ import { openPortfoliosPage } from "./InsightsSection";
 import { DailyArticleModule } from "./NewsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
+import { portfolioColorMap } from "../../lib/chartColors";
+import { useUser } from "../../context/UserContext";
+import { WalletsOverviewModule } from "../preview/WalletsOverview";
 
 // One portfolio's GET /v1/portfolios/{p}/overview: null snapshot = no data yet (no transactions,
 // or the aggregate's first build hasn't landed), `failed` = the request itself errored.
@@ -33,14 +35,17 @@ type SnapshotState =
 
 /**
  * DASHBOARD — every portfolio at a glance, not tied to the selected portfolio: the
- * aggregate "All portfolios" on top (or the only portfolio, for a user with just one), then a
- * card per portfolio, then every portfolio's alerts and the article of the day. Headline
+ * aggregate "All portfolios" on top (or the only portfolio, for a user with just one), with a
+ * tile per portfolio (its market value) along its bottom edge; for a demo account the wallets
+ * the same way (a preview on sample data, see components/preview); then every portfolio's
+ * alerts and the article of the day. Headline
  * figures only (invested, market value with today's and this month's moves, unrealized P&L):
  * the longer-term figures and the charts live in each portfolio's Insights, reached from its
  * card. The overview endpoint never mixes history with fresh data (no isStale).
  */
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
+  const { isDemo } = useUser();
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotState>>({});
 
   // Refetch only when the set of portfolios changes, not on every new array from the context
@@ -63,9 +68,9 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     return () => { cancelled = true; };
   }, [uuidsKey]);
 
-  // The aggregate, when there is one, is the headline. The per-portfolio cards underneath only
-  // show with two or more portfolios of the user's own: with just one, its card would repeat
-  // the headline's figures.
+  // The aggregate, when there is one, is the headline. The per-portfolio tiles along its bottom
+  // only show with two or more portfolios of the user's own: with just one, its tile would
+  // repeat the headline's figures.
   const aggregate = portfolios.find((p) => p.isAggregate);
   const headline = aggregate ?? portfolios[0];
   const others = useMemo(() => {
@@ -124,22 +129,21 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
           portfolio={headline}
           snapshot={headlineState.snapshot}
           onOpen={onNavigate ? () => openPortfolio(headline.uuid, "performance") : undefined}
-        />
+        >
+          {/* EACH PORTFOLIO — part of the headline, since the aggregate is made of them. */}
+          {others.length > 0 && (
+            <PortfolioTiles
+              portfolios={others}
+              colorOf={portfolioColorMap(portfolios)}
+              snapshots={snapshots}
+              onOpen={(uuid, hasData) => openPortfolio(uuid, hasData ? "performance" : "upload")}
+            />
+          )}
+        </HeadlineModule>
       )}
 
-      {/* EACH PORTFOLIO */}
-      {others.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {others.map((p) => (
-            <PortfolioCard
-              key={p.uuid}
-              portfolio={p}
-              state={snapshots[p.uuid] ?? { status: "loading" }}
-              onOpen={(section) => openPortfolio(p.uuid, section)}
-            />
-          ))}
-        </div>
-      )}
+      {/* WALLETS — a preview on sample data, for demo accounts only. */}
+      {isDemo && <WalletsOverviewModule onNavigate={onNavigate} />}
 
       {/* ALERTS — every portfolio's, aggregate included, as one list sorted by urgency. */}
       {!noDataAtAll && (
@@ -195,11 +199,12 @@ function AmountWithDelta({ amount, pct }: { amount: string; pct: number | null }
 /**
  * HEADLINE MODULE — what the whole wealth (the aggregate) or the lone portfolio is worth
  * today, in the user's reference currency. The aggregate's figures are recomputed from every
- * portfolio's transactions combined, so they aren't necessarily the sum of the cards below.
+ * portfolio's transactions combined, so they aren't necessarily the sum of the tiles below.
+ * `children`: what's attached along its bottom edge (the per-portfolio tiles).
  */
 function HeadlineModule({
-  portfolio, snapshot, onOpen,
-}: { portfolio: Portfolio; snapshot: PortfolioSnapshot | null; onOpen?: () => void }) {
+  portfolio, snapshot, onOpen, children,
+}: { portfolio: Portfolio; snapshot: PortfolioSnapshot | null; onOpen?: () => void; children?: React.ReactNode }) {
   const moves = useRecentMoves(portfolio.uuid);
   const openButton = onOpen && (
     <button
@@ -220,6 +225,7 @@ function HeadlineModule({
             The combined figures across your portfolios are being prepared. Check back in a few minutes.
           </p>
         </div>
+        {children}
       </Module>
     );
   }
@@ -268,6 +274,7 @@ function HeadlineModule({
           color={pnlIsGain ? "emerald" : "red"}
         />
       </div>
+      {children}
     </Module>
   );
 }
@@ -310,79 +317,56 @@ function MoveLine({ label, amount, pct, currency }: { label: string; amount: num
 }
 
 /**
- * PORTFOLIO CARD — one portfolio's headline figures. The whole card opens its page; with
- * no data yet it offers to add transactions to it instead.
+ * PORTFOLIO TILES — a strip along the bottom of the headline, one small tile per portfolio
+ * with its market value only (the rest is on its page). A tile opens its portfolio; one with no
+ * data yet offers to add transactions to it instead.
  */
-function PortfolioCard({
-  portfolio, state, onOpen,
-}: { portfolio: Portfolio; state: SnapshotState; onOpen: (section: string) => void }) {
-  const snapshot = state.status === "ready" ? state.snapshot : null;
-  const hasData = snapshot !== null;
-
+function PortfolioTiles({
+  portfolios, colorOf, snapshots, onOpen,
+}: {
+  portfolios: Portfolio[];
+  colorOf: (uuid: string) => string;
+  snapshots: Record<string, SnapshotState>;
+  onOpen: (uuid: string, hasData: boolean) => void;
+}) {
   return (
-    <button
-      onClick={() => onOpen(hasData ? "performance" : "upload")}
-      className="group text-left bg-white rounded-4xl border border-slate-200 shadow-sm hover:border-[#C49A3C]/50 transition-colors p-6 md:p-7 flex flex-col gap-5"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl border flex items-center justify-center bg-[#C49A3C]/10 text-[#C49A3C] border-[#C49A3C]/20 shrink-0">
-            <Briefcase className="h-4 w-4" />
-          </div>
-          <span className="text-base font-black text-slate-900 truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            {portfolio.name}
-          </span>
-          {portfolio.isDefault && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 shrink-0">Default</span>
-          )}
-        </div>
-        <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors shrink-0" />
+    <div className="border-t border-slate-100 bg-slate-50/60 p-4 md:p-5">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1">Portfolios</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {portfolios.map((p) => {
+          const state = snapshots[p.uuid] ?? { status: "loading" };
+          const snapshot = state.status === "ready" ? state.snapshot : null;
+          return (
+            <button
+              key={p.uuid}
+              onClick={() => onOpen(p.uuid, snapshot !== null)}
+              className="group text-left bg-white rounded-2xl border border-slate-200 hover:border-[#C49A3C]/50 transition-colors px-4 py-3.5 flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-[13px] font-bold text-slate-700 truncate">
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: colorOf(p.uuid) }} />
+                  <span className="truncate">{p.name}</span>
+                </p>
+                <div className="mt-1 pl-4.5">
+                  {state.status === "loading" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-[#C49A3C]" />
+                  ) : state.status === "failed" ? (
+                    <p className="text-xs font-semibold text-rose-600">Unavailable</p>
+                  ) : snapshot === null ? (
+                    <p className="text-xs font-semibold text-slate-400">No transactions yet</p>
+                  ) : (
+                    <p className="text-lg font-black text-slate-900 tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                      {formatCurrency(snapshot.totalMarketValue, snapshot.currency, 0)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors shrink-0" />
+            </button>
+          );
+        })}
       </div>
-
-      {state.status === "loading" ? (
-        <div className="flex h-20 items-center justify-center">
-          <Loader2 className="animate-spin h-5 w-5 text-[#C49A3C]" />
-        </div>
-      ) : state.status === "failed" ? (
-        <p className="text-sm text-rose-600 font-semibold">Unable to load this portfolio right now.</p>
-      ) : snapshot === null ? (
-        <p className="text-sm text-slate-500">
-          No transactions yet. <span className="font-bold text-[#C49A3C]">Add transactions</span>
-        </p>
-      ) : (
-        <PortfolioCardFigures snapshot={snapshot} />
-      )}
-    </button>
-  );
-}
-
-function PortfolioCardFigures({ snapshot }: { snapshot: PortfolioSnapshot }) {
-  const { currency } = snapshot;
-  const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
-  const pct = unrealizedPct(snapshot);
-
-  return (
-    <>
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Market Value</p>
-        <p className="font-black text-slate-900 text-2xl mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-          {formatCurrency(snapshot.totalMarketValue, currency, 0)}
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Invested</p>
-          <p className="text-sm font-bold text-slate-700 mt-1">{formatCurrency(snapshot.totalInvestedCapital, currency, 0)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Unrealized P&L</p>
-          <p className={`text-sm font-bold mt-1 ${pnlIsGain ? "text-emerald-600" : "text-rose-600"}`}>
-            {signedCurrency(snapshot.totalUnrealizedPnl, currency)}
-            {pct !== null && <span className="font-semibold"> ({formatPct(pct)})</span>}
-          </p>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
 

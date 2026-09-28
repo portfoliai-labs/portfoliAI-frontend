@@ -1,7 +1,7 @@
 // components/preview/WalletsSection.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ComposedChart, Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine,
 } from "recharts";
@@ -36,6 +36,23 @@ const PAGE_LABELS: Record<Exclude<WalletPage, "home">, string> = {
 };
 
 /**
+ * Opens Wallets on one wallet's page (`"all"` for All wallets) rather than on the hub, from
+ * elsewhere in the dashboard (the Dashboard's wallet tiles): like openPortfoliosPage, the page
+ * rides in the URL hash (#wallet=<id>), which WalletsSection reads when it mounts and clears.
+ */
+export function openWalletsPage(onNavigate: (section: string) => void, walletId: string) {
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#wallet=${encodeURIComponent(walletId)}`);
+  onNavigate("wallets");
+}
+
+const viewFromHash = (): View => {
+  if (typeof window === "undefined") return { kind: "hub" };
+  const match = window.location.hash.match(/^#wallet=([\w-]+)$/);
+  if (!match || (match[1] !== ALL && !WALLETS.some((w) => w.id === match[1]))) return { kind: "hub" };
+  return { kind: "wallet", id: match[1], page: "home" };
+};
+
+/**
  * WALLETS SECTION (preview) — everyday money, next to the investments: current accounts, cards,
  * savings and cash, with what comes in and goes out. Built like Portfolios: a hub of wallets
  * ("All wallets" first), each opening its own page (balance, the year's income, spending and
@@ -43,7 +60,13 @@ const PAGE_LABELS: Record<Exclude<WalletPage, "home">, string> = {
  * trail shown in the Sidebar through Breadcrumb. All figures come from lib/mock/wallets.
  */
 export function WalletsSection() {
-  const [view, setView] = useState<View>({ kind: "hub" });
+  const [view, setView] = useState<View>(viewFromHash);
+  // The hash only carries the request to open a wallet (openWalletsPage): clear it.
+  useEffect(() => {
+    if (window.location.hash.startsWith("#wallet=")) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
   const go = (next: View) => {
     setView(next);
     window.scrollTo({ top: 0 });
