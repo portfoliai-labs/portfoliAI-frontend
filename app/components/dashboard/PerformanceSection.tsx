@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink, LayoutGrid, Gauge,
-  Search, ChevronDown, Coins, Info, ArrowUpRight,
+  Search, ChevronDown, ChevronLeft, ChevronRight, Coins, Info, ArrowUpRight,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -28,6 +28,7 @@ import type {
   ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
   BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries, CompositionResponse,
   PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse, AssetDetailResponse, AssetChartRange,
+  HoldingsResponse,
 } from "../../models/PortfolioData";
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -730,34 +731,6 @@ function SectionNav() {
   );
 }
 
-const compositionDesc = (data: CurrencyBreakdown) =>
-  `${data.holdingsCount} ${data.holdingsCount === 1 ? "holding" : "holdings"}, weighted by invested capital.`;
-
-function CompositionBody(data: CurrencyBreakdown, holdings: Holding[]) {
-  const { currency } = data;
-  const byAssetItems = holdings.map(h => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue }));
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-      <AllocPanel title="By asset" subtitle="Individual positions">
-        <CompositionDonut items={byAssetItems} currency={currency} />
-      </AllocPanel>
-      <AllocPanel title="By category" subtitle="Asset class">
-        <CompositionDonut
-          items={data.purchasesByAssetClass.map(a => ({ label: a.assetClass, value: a.totalInvested }))}
-          currency={currency}
-        />
-      </AllocPanel>
-      <AllocPanel title="By broker" subtitle="Where your orders were placed">
-        <CompositionDonut
-          items={data.purchasesByBroker.map(b => ({ label: b.broker, value: b.totalInvested }))}
-          currency={currency}
-        />
-      </AllocPanel>
-    </div>
-  );
-}
-
 function AllocPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div className="p-6 md:p-7">
@@ -782,7 +755,7 @@ const DONUT_MAX_SLICES = 5;
  */
 function CompositionDonut({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
   // Recomputed only when the underlying items actually change, not on every re-render
-  // this component's parent (the currency carousel) triggers while scrolling/snapping.
+  // this component's parent (the Holdings carousel) triggers while scrolling/snapping.
   const { total, grouped } = useMemo(() => {
     const total = items.reduce((sum, i) => sum + i.value, 0);
     const sorted = [...items].sort((a, b) => b.value - a.value);
@@ -1420,23 +1393,230 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
   );
 }
 
+interface CarouselSlide {
+  key: string;
+  label: string;
+  content: React.ReactNode;
+}
+
 /**
- * HOLDINGS EXPLORER — the one place all currencies appear together. Deliberately a plain
- * filterable table rather than a bar chart: bar length would encode invested value, and a
- * USD bar next to a EUR bar of the same length would visually claim they're equal, which
- * isn't true without a live FX rate. A table just lists the numbers with their own currency.
+ * HOLDINGS EXPLORE — the Holdings module's detail view: a carousel with every currency together
+ * first, then one slide per currency present in the portfolio. Swipe or scroll sideways, or
+ * pick a currency from the pills; the pills and arrows follow what's on screen.
  */
+function HoldingsExplore({ byCurrency, holdings, positions }: { byCurrency: CurrencyBreakdown[]; holdings: Holding[]; positions: HoldingsResponse | null }) {
+  const slides: CarouselSlide[] = [
+    { key: "all", label: "All currencies", content: <AllCurrenciesSlide positions={positions} holdings={holdings} /> },
+    ...[...byCurrency]
+      .sort((a, b) => a.currency.localeCompare(b.currency))
+      .map((b) => ({
+        key: b.currency,
+        label: b.currency,
+        content: <CurrencySlide breakdown={b} holdings={holdings.filter((h) => h.currency === b.currency)} />,
+      })),
+  ];
+  return <Carousel slides={slides} />;
+}
+
 /**
- * HOLDINGS EXPLORER — the searchable/filterable holdings table, with the currency-composition
- * breakdown (by asset / by category / by broker) folded in as what the Currency filter reveals
- * rather than a separate carousel module above it: pick a currency here and its composition
- * appears below the table, using the exact same holdings the table would show for that
- * currency with no other filter applied. "All currencies" has no single breakdown to show —
- * percentages from mixed currencies would silently treat e.g. 1 EUR and 1 USD as equal weight
- * (the same reason CompositionDonut below requires one currency per call) — so that state
- * prompts picking a currency instead of rendering something misleading.
+ * CAROUSEL — slides side by side in a track that scrolls sideways and snaps to one at a time.
+ * The active slide is read back from the scroll position, so the pills and arrows never run
+ * ahead of what's actually on screen while a smooth scroll is under way.
  */
-function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCurrency: CurrencyBreakdown[] }) {
+function Carousel({ slides }: { slides: CarouselSlide[] }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+
+  const scrollTo = (i: number) => {
+    const clamped = Math.max(0, Math.min(slides.length - 1, i));
+    const track = trackRef.current;
+    if (track) track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
+    else setActive(clamped);
+  };
+  const onScroll = () => {
+    const track = trackRef.current;
+    if (!track || track.clientWidth === 0) return;
+    setActive(Math.round(track.scrollLeft / track.clientWidth));
+  };
+
+  const arrow = "w-8 h-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
+
+  return (
+    <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-4 md:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5 min-w-0">
+          {slides.map((slide, i) => (
+            <button
+              key={slide.key}
+              type="button"
+              onClick={() => scrollTo(i)}
+              aria-current={i === active ? "true" : undefined}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                i === active ? "bg-[#1c1917] text-white border-[#1c1917]" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              {slide.label}
+            </button>
+          ))}
+        </div>
+        {slides.length > 1 && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button type="button" onClick={() => scrollTo(active - 1)} disabled={active === 0} aria-label="Previous" className={arrow}>
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={() => scrollTo(active + 1)} disabled={active === slides.length - 1} aria-label="Next" className={arrow}>
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+      <div
+        ref={trackRef}
+        onScroll={onScroll}
+        className="flex overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {slides.map((slide) => (
+          <div key={slide.key} className="w-full shrink-0 snap-center">{slide.content}</div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** A figure at the top of a slide: label over value, with an optional line under it. */
+function SlideFigure({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "gain" | "loss" }) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p
+        className={`text-xl md:text-2xl font-black tabular-nums mt-1 ${tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900"}`}
+        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      >
+        {value}
+      </p>
+      {note && <p className="text-[11px] font-semibold text-slate-400 mt-0.5">{note}</p>}
+    </div>
+  );
+}
+
+type DonutItems = { label: string; value: number }[];
+
+// A slide: its key figures, then three composition donuts side by side (all in `currency`).
+function SlideBody({ figures, currency, donuts }: { figures: React.ReactNode; currency: string; donuts: { title: string; subtitle: string; items: DonutItems }[] }) {
+  return (
+    <>
+      <div className="p-6 md:p-7 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5 border-b border-slate-100">{figures}</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+        {donuts.map((d) => (
+          <AllocPanel key={d.title} title={d.title} subtitle={d.subtitle}>
+            <CompositionDonut items={d.items} currency={currency} />
+          </AllocPanel>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Every currency together, from GET /holdings, where each position is already converted to the
+ * reference currency: market value, cost and unrealized P&L, then the split by asset, by asset
+ * class and by the currency each holding trades in. `positions` is null while
+ * the backend hasn't computed it yet.
+ */
+function AllCurrenciesSlide({ positions, holdings }: { positions: HoldingsResponse | null; holdings: Holding[] }) {
+  // /holdings doesn't carry a position's own currency: it comes from the summary's holdings,
+  // matched by ticker (or ISIN, or name for a position with neither).
+  const byCurrency = useMemo(() => {
+    const currencyOf = new Map(holdings.map((h) => [h.ticker ?? h.isin ?? h.name, h.currency]));
+    const totals = new Map<string, number>();
+    for (const p of positions?.holdings ?? []) {
+      const c = currencyOf.get(p.ticker ?? p.isin ?? p.name) ?? "Other";
+      totals.set(c, (totals.get(c) ?? 0) + p.marketValue);
+    }
+    return [...totals].map(([label, value]) => ({ label, value }));
+  }, [positions, holdings]);
+
+  const byClass = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const p of positions?.holdings ?? []) totals.set(p.assetClass, (totals.get(p.assetClass) ?? 0) + p.marketValue);
+    return [...totals].map(([label, value]) => ({ label, value }));
+  }, [positions]);
+
+  if (positions === null || positions.holdings.length === 0) {
+    return <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>;
+  }
+  const { currency } = positions;
+  const marketValue = positions.holdings.reduce((sum, p) => sum + p.marketValue, 0);
+  const cost = positions.holdings.reduce((sum, p) => sum + p.costBasis, 0);
+  const pnl = marketValue - cost;
+
+  return (
+    <SlideBody
+      figures={
+        <>
+          <SlideFigure label="Market value" value={formatCurrency(marketValue, currency, 0)} note={`In ${currency}, every currency converted`} />
+          <SlideFigure label="Cost" value={formatCurrency(cost, currency, 0)} />
+          <SlideFigure
+            label="Unrealized P&L"
+            value={formatSignedCurrency(pnl, currency)}
+            note={cost > 0 ? `${pnl >= 0 ? "+" : ""}${((pnl / cost) * 100).toFixed(2)}%` : undefined}
+            tone={pnl >= 0 ? "gain" : "loss"}
+          />
+          <SlideFigure label="Holdings" value={String(positions.holdings.length)} note={`In ${byCurrency.length} ${byCurrency.length === 1 ? "currency" : "currencies"}`} />
+        </>
+      }
+      currency={currency}
+      donuts={[
+        { title: "By asset", subtitle: "Individual positions", items: positions.holdings.map((p) => ({ label: p.ticker ?? p.isin ?? p.name, value: p.marketValue })) },
+        { title: "By category", subtitle: "Asset class", items: byClass },
+        { title: "By currency", subtitle: "The currency each holding trades in", items: byCurrency },
+      ]}
+    />
+  );
+}
+
+/**
+ * One currency's holdings, in that currency: inside a single currency they can be weighted by
+ * what was invested in them without any conversion: what's invested, fees and realized P&L,
+ * then the split by asset, by asset class and by broker.
+ */
+function CurrencySlide({ breakdown, holdings }: { breakdown: CurrencyBreakdown; holdings: Holding[] }) {
+  const { currency } = breakdown;
+  return (
+    <SlideBody
+      figures={
+        <>
+          <SlideFigure label="Invested" value={formatCurrency(breakdown.totalInvested, currency, 0)} note="In holdings still open" />
+          <SlideFigure label="Holdings" value={String(breakdown.holdingsCount)} />
+          <SlideFigure label="Fees paid" value={formatCurrency(breakdown.totalFeesPaid, currency, 0)} />
+          <SlideFigure
+            label="Realized P&L"
+            value={formatSignedCurrency(breakdown.totalRealizedPl, currency)}
+            note={`${breakdown.sellCount} ${breakdown.sellCount === 1 ? "sale" : "sales"}`}
+            tone={breakdown.totalRealizedPl >= 0 ? "gain" : "loss"}
+          />
+        </>
+      }
+      currency={currency}
+      donuts={[
+        { title: "By asset", subtitle: "Individual positions", items: holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue })) },
+        { title: "By category", subtitle: "Asset class", items: breakdown.purchasesByAssetClass.map((a) => ({ label: a.assetClass, value: a.totalInvested })) },
+        { title: "By broker", subtitle: "Where your orders were placed", items: breakdown.purchasesByBroker.map((b) => ({ label: b.broker, value: b.totalInvested })) },
+      ]}
+    />
+  );
+}
+
+/**
+ * HOLDINGS EXPLORER — the searchable/filterable holdings table, each figure in its own
+ * currency. Deliberately a plain table rather than a bar chart: bar length would encode
+ * invested value, and a USD bar next to a EUR bar of the same length would visually claim
+ * they're equal. Its title opens how the holdings add up (HoldingsExplore): across every
+ * currency, then within each one.
+ */
+function HoldingsExplorer({ holdings, byCurrency, positions }: { holdings: Holding[]; byCurrency: CurrencyBreakdown[]; positions: HoldingsResponse | null }) {
+  const [exploringCurrencies, setExploringCurrencies] = useState(false);
   const [search, setSearch] = useState("");
   const [assetClass, setAssetClass] = useState("all");
   const [currency, setCurrency] = useState("all");
@@ -1457,13 +1637,14 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
       .sort((a, b) => a.currency.localeCompare(b.currency) || b.investedValue - a.investedValue);
   }, [holdings, search, assetClass, currency]);
 
-  // Composition tracks only the Currency filter, not asset class or search — narrowing to one
-  // asset class would make "By category" a single 100% slice, and it answers "what does this
-  // currency look like overall", not "what does my current search match".
-  const activeBreakdown = currency !== "all" ? byCurrency.find(b => b.currency === currency) : undefined;
-
   return (
     <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+      <ModuleHead
+        eyebrow="Composition"
+        title="Holdings"
+        desc="Every position with what was invested in it, each in its own currency. Open it for the allocation, overall and by currency."
+        onExplore={holdings.length > 0 ? () => setExploringCurrencies(true) : undefined}
+      />
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-5 md:p-6 border-b border-slate-200">
         <div className="relative flex-1 min-w-0">
           <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1542,22 +1723,10 @@ function HoldingsExplorer({ holdings, byCurrency }: { holdings: Holding[]; byCur
         </div>
       )}
 
-      {byCurrency.length > 0 && (
-        <div className="border-t border-slate-200">
-          {activeBreakdown ? (
-            <>
-              <div className="px-5 md:px-6 pt-5">
-                <p className="text-[10px] font-black uppercase tracking-wider text-[#C49A3C]">Composition · {activeBreakdown.currency}</p>
-                <p className="text-xs text-slate-500 mt-1">{compositionDesc(activeBreakdown)}</p>
-              </div>
-              {CompositionBody(activeBreakdown, holdings.filter(h => h.currency === activeBreakdown.currency))}
-            </>
-          ) : (
-            <p className="px-5 md:px-6 py-5 text-xs text-slate-400">
-              Select a currency above to see its composition — holdings in different currencies can&apos;t be combined into one percentage breakdown.
-            </p>
-          )}
-        </div>
+      {exploringCurrencies && (
+        <ExploreView title="Holdings" onClose={() => setExploringCurrencies(false)}>
+          <HoldingsExplore byCurrency={byCurrency} holdings={holdings} positions={positions} />
+        </ExploreView>
       )}
       {exploringTicker && (
         <ExploreView title={exploringTicker} onClose={() => setExploringTicker(null)}>
@@ -2350,7 +2519,7 @@ function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
             </div>
           </InfoTip>
         }
-        desc={data?.rollingWindowDays ? `The chart uses a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."}
+        desc={`${data?.rollingWindowDays ? `The chart uses a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."} Open it for its turbulent periods and drawdowns.`}
         right={showFigure ? (
           <div className="sm:text-right shrink-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Annualized volatility</p>
@@ -2379,7 +2548,7 @@ function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
       )}
       {showFigure && exploring && (
         <ExploreView title="Volatility" onClose={() => setExploring(false)}>
-          <VolatilityExplore data={data} />
+          <VolatilityExplore data={data} portfolioUuid={portfolioUuid} />
         </ExploreView>
       )}
     </Module>
@@ -2393,9 +2562,10 @@ const daysBetween = (start: string, end: string) => Math.round((new Date(end).ge
 /**
  * VOLATILITY EXPLORE — the detail view behind VolatilityModule: the rolling chart, then the
  * turbulent stretches the backend picked out of it (riskEvents), most recent first, with what
- * the portfolio did through each and what it held at the time.
+ * the portfolio did through each and what it held at the time; then the drawdown
+ * (DrawdownSection): how far below its previous high it fell, and its deepest falls.
  */
-function VolatilityExplore({ data }: { data: VolatilityResponse }) {
+function VolatilityExplore({ data, portfolioUuid }: { data: VolatilityResponse; portfolioUuid: string }) {
   const events = useMemo(() => [...data.riskEvents].sort((a, b) => b.startDate.localeCompare(a.startDate)), [data]);
   return (
     <>
@@ -2445,6 +2615,7 @@ function VolatilityExplore({ data }: { data: VolatilityResponse }) {
           </ul>
         )}
       </ExplorePanel>
+      <DrawdownSection portfolioUuid={portfolioUuid} />
     </>
   );
 }
@@ -2881,55 +3052,33 @@ function HorizonCell({ horizon, onClick }: { horizon: HorizonEntry; onClick: () 
 }
 
 /**
- * DRAWDOWN MODULE — /performance's drawdown series: how far below its previous high the
- * portfolio stood on each day (0 at a new high, always ≤0), with the deepest fall as the
- * headline. Same document as ReturnsModule, fetched on its own since it's on another tab.
+ * DRAWDOWN SECTION — part of Volatility's detail view (VolatilityExplore): /performance's
+ * drawdown series, how far below its previous high the portfolio stood on each day (0 at a new
+ * high, always ≤0), charted and then broken into its deepest falls (DrawdownExplore). Same
+ * document as ReturnsModule, fetched on its own.
  */
-function DrawdownModule({ portfolioUuid }: { portfolioUuid: string }) {
+function DrawdownSection({ portfolioUuid }: { portfolioUuid: string }) {
   const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
   const points = useMemo(() => (data?.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
-  const showFigure = data !== null && !updating && data.status !== "insufficient_history";
-  const [exploring, setExploring] = useState(false);
 
+  if (data === null || updating || !data.drawdownPct || points.length < 2 || data.status === "insufficient_history") {
+    return (
+      <ExplorePanel title="Below the previous high">
+        {loading || updating ? (
+          <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" /></div>
+        ) : failed ? (
+          <ModuleMessage>The drawdown couldn&apos;t be loaded right now.</ModuleMessage>
+        ) : (
+          <ModuleMessage>Not enough history yet to chart the drawdown.</ModuleMessage>
+        )}
+      </ExplorePanel>
+    );
+  }
   return (
-    <Module>
-      <ModuleHead
-        onExplore={showFigure && points.length >= 2 ? () => setExploring(true) : undefined}
-        eyebrow="Risk"
-        title="Drawdown"
-        desc="How far the portfolio stood below its previous high, day by day."
-        right={showFigure ? (
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deepest fall</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {data.maxDrawdownPct === null ? "—" : `${data.maxDrawdownPct.toFixed(2)}%`}
-            </p>
-          </div>
-        ) : undefined}
-      />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
-        <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          {points.length < 2 ? (
-            <ModuleMessage>Not enough history yet to chart.</ModuleMessage>
-          ) : (
-            <DrawdownChart points={points} />
-          )}
-        </>
-      )}
-      {showFigure && exploring && data.drawdownPct && (
-        <ExploreView title="Drawdown" onClose={() => setExploring(false)}>
-          <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />
-        </ExploreView>
-      )}
-    </Module>
+    <>
+      {data.isStale && <UpdatingNote />}
+      <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />
+    </>
   );
 }
 
@@ -3008,7 +3157,7 @@ function drawdownEpisodes(series: TimeSeries): DrawdownEpisode[] {
 const DRAWDOWN_EPISODE_ROWS = 10;
 
 /**
- * DRAWDOWN EXPLORE — the detail view behind DrawdownModule: the chart, then the portfolio's
+ * DRAWDOWN EXPLORE — the drawdown panels of Volatility's detail view: the chart, then the portfolio's
  * deepest falls one by one, with how long each took to hit bottom and to climb back.
  */
 function DrawdownExplore({
@@ -3710,6 +3859,7 @@ function PortfolioCorrelationModule({ portfolioUuid }: { portfolioUuid: string }
 // (see portfolioService.getPortfolioSummary).
 interface PortfolioComposition {
   summary: PortfolioSummary;
+  positions: HoldingsResponse | null;
   sector: ExposureEntryResponse[] | null;
   region: ExposureEntryResponse[] | null;
 }
@@ -3868,13 +4018,14 @@ function HistoryPage({
     const loadComposition = async () => {
       setCompositionError(null);
       try {
-        const [summary, sector, region] = await Promise.all([
+        const [summary, positions, sector, region] = await Promise.all([
           portfolioService.getPortfolioSummary(portfolioUuid),
+          portfolioService.getHoldings(portfolioUuid),
           portfolioService.getSectorExposure(portfolioUuid),
           portfolioService.getRegionExposure(portfolioUuid),
         ]);
         if (cancelled) return;
-        setComposition({ summary, sector: sector?.entries ?? null, region: region?.entries ?? null });
+        setComposition({ summary, positions, sector: sector?.entries ?? null, region: region?.entries ?? null });
       } catch (err) {
         if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
       }
@@ -3941,7 +4092,7 @@ function HistoryPage({
           ) : composition ? (
             <>
               {isAggregate && <Tile><PortfoliosMixModule portfolioUuid={portfolioUuid} /></Tile>}
-              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} /></Tile>
+              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} positions={composition.positions} /></Tile>
               <Tile><SectorRegionModule sector={composition.sector} region={composition.region} /></Tile>
             </>
           ) : (
@@ -3999,7 +4150,6 @@ function HistoryPage({
         </HistorySection>
         <HistorySection id="risk">
           <Tile><VolatilityModule portfolioUuid={portfolioUuid} /></Tile>
-          <Tile><DrawdownModule portfolioUuid={portfolioUuid} /></Tile>
           {isAggregate && <Tile><PortfolioCorrelationModule portfolioUuid={portfolioUuid} /></Tile>}
           <RiskModelTab portfolioUuid={portfolioUuid} />
         </HistorySection>
