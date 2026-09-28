@@ -95,7 +95,7 @@ export function ComparisonView({
 
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={[{ label: "Portfolios", onClick: onHub }]} current="Compare" />
+      <Breadcrumb trail={[{ label: "Investments", onClick: onHub }]} current="Compare" />
       <PortfolioPageHeader
         bar={<ComparePicker selection={selection} onToggle={onToggle} />}
         nav={

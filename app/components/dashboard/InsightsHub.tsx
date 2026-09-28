@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Check, Columns3, Layers, Loader2, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Check, Columns3, Compass, Layers, Loader2, MoreHorizontal, Pencil, Trash2, Wand2, X } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
@@ -11,6 +11,8 @@ import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { NewPortfolioCard } from "./PortfolioBar";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PreviewBadge } from "../preview/PreviewKit";
+import { RealEstateCard } from "../preview/RealEstateCard";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -22,15 +24,20 @@ const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
  * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio
  * ("All portfolios" first), each with its value, its return since inception and the curve
  * behind it, opening that portfolio's page (renamed or deleted from its "…" menu), a card
- * to create one, then the way into Compare. The figures for every card come
+ * to create one, then the way into Compare. Alongside them sit the previews of what's coming
+ * (see components/preview): a sample real estate portfolio, Explore and Strategy, each marked
+ * as such. The figures for every card come
  * from one call (GET /v1/portfolios/comparison with no portfolio listed returns all of them),
  * refetched when a portfolio is added or removed.
  */
 export function InsightsHub({
-  onOpenPortfolio, onCompare,
+  onOpenPortfolio, onCompare, onOpenRealEstate, onExplore, onStrategy,
 }: {
   onOpenPortfolio: (uuid: string) => void;
   onCompare: () => void;
+  onOpenRealEstate: () => void;
+  onExplore: () => void;
+  onStrategy: () => void;
 }) {
   const { portfolios, deletePortfolio } = usePortfolio();
   const [toDelete, setToDelete] = useState<Portfolio | null>(null);
@@ -80,6 +87,7 @@ export function InsightsHub({
             onDelete={() => setToDelete(p)}
           />
         ))}
+        <RealEstateCard onOpen={onOpenRealEstate} />
         <NewPortfolioCard />
       </div>
 
@@ -90,6 +98,20 @@ export function InsightsHub({
           title="Compare"
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
+        />
+        <ActionCard
+          icon={<Compass className="h-5 w-5" />}
+          title="Explore"
+          badge={<PreviewBadge dark />}
+          text="Portfolios shared by other investors: browse them and like the ones you find interesting."
+          onClick={onExplore}
+        />
+        <ActionCard
+          icon={<Wand2 className="h-5 w-5" />}
+          title="Strategy"
+          badge={<PreviewBadge dark />}
+          text="Set target weights, rebalancing, PAC and costs, then backtest them into a virtual portfolio."
+          onClick={onStrategy}
         />
       </div>
       {deleteError && <p className="text-sm font-semibold text-rose-600">{deleteError}</p>}
@@ -334,9 +356,10 @@ export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete
 
 /** ACTION CARD — a way out of a hub page: dark, so it reads apart from the portfolio cards. */
 // `children`: a line of live detail under the text (PortfolioHome's "3 rules, 1 triggered"…).
+// `badge`: a pill beside the title (the previews' "Preview").
 export function ActionCard({
-  icon, title, text, onClick, className = "", children,
-}: { icon: React.ReactNode; title: string; text: string; onClick?: () => void; className?: string; children?: React.ReactNode }) {
+  icon, title, text, onClick, className = "", children, badge,
+}: { icon: React.ReactNode; title: string; text: string; onClick?: () => void; className?: string; children?: React.ReactNode; badge?: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -349,7 +372,7 @@ export function ActionCard({
         <ArrowUpRight className="h-4 w-4 text-stone-500 group-hover:text-[#C49A3C] transition-colors" />
       </div>
       <div>
-        <p className="text-lg font-black text-white" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{title}</p>
+        <p className="flex items-center gap-2 text-lg font-black text-white" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{title}{badge}</p>
         <p className="text-[13px] text-stone-400 mt-1 leading-relaxed">{text}</p>
         {children && <div className="mt-3">{children}</div>}
       </div>

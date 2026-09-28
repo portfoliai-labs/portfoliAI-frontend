@@ -22,13 +22,14 @@ import { NotificationsSection } from "../../components/dashboard/NotificationsSe
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { InsightsSection, openPortfoliosPage } from "../../components/dashboard/InsightsSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
+import { WalletsSection } from "../../components/preview/WalletsSection";
 import { Loader2 } from "lucide-react";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'news', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'wallets', 'news', 'settings', 'notifications'];
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -92,6 +93,9 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorPerformanceSection />
           : <InsightsSection key={sectionVisit} onNavigate={navigate} />;
+      case 'wallets':
+        // A preview on sample data (components/preview): investors only.
+        return isAdvisor ? <AdvisorDashboardOverview onNavigate={navigate} /> : <WalletsSection key={sectionVisit} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':

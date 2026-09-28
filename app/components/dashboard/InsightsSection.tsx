@@ -9,10 +9,17 @@ import { MAX_COMPARED } from "./PortfolioBar";
 import { InsightsHub } from "./InsightsHub";
 import { PortfolioHome, PortfolioTransactions, PortfolioReports, PortfolioAlerts, type PortfolioPage } from "./PortfolioHome";
 import type { Crumb } from "./Breadcrumb";
+import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
+import { ExploreCommunity } from "../preview/ExploreCommunity";
+import { StrategyBuilder } from "../preview/StrategyBuilder";
 
 type PortfoliosView =
   | { kind: "hub" }
   | { kind: "compare" }
+  // Previews of what's coming, on sample data (components/preview).
+  | { kind: "realEstate"; page: RealEstatePage }
+  | { kind: "explore" }
+  | { kind: "strategy" }
   | { kind: "portfolio"; uuid: string; page: PortfolioPage };
 
 const PORTFOLIO_PAGES: PortfolioPage[] = ["home", "insights", "transactions", "reports", "alerts"];
@@ -37,7 +44,7 @@ const viewFromHash = (): PortfoliosView => {
 };
 
 /**
- * PORTFOLIOS SECTION (investor; "performance" in the sidebar's ids, labelled Portfolios) —
+ * PORTFOLIOS SECTION (investor; "performance" in the sidebar's ids, labelled Investments) —
  * opens on the hub (InsightsHub): a card per portfolio, plus Compare. A portfolio opens on its
  * own page (PortfolioHome: its key figures, and the way into its Insights, Transactions,
  * Reports and Alerts). Every page under the hub shows where it is ("Portfolios / Main
@@ -45,7 +52,9 @@ const viewFromHash = (): PortfoliosView => {
  * top of the page below that. Opening a portfolio also makes it the selected one
  * (PortfolioContext), which the rest of the dashboard follows. Which page is open is local to
  * this section: leaving and coming back lands on the hub again (unless openPortfoliosPage asked
- * for another), while Compare's picked portfolios are remembered for next time.
+ * for another), while Compare's picked portfolios are remembered for next time. The hub also
+ * leads to the previews of what's coming (a sample real estate portfolio, Explore, Strategy),
+ * which run on mock data from lib/mock.
  */
 export function InsightsSection({ onNavigate }: { onNavigate: (section: string) => void }) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
@@ -85,8 +94,18 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
         setSelection(initialCompareSelection(portfolios, current?.uuid ?? null));
         go({ kind: "compare" });
       }}
+      onOpenRealEstate={() => go({ kind: "realEstate", page: "home" })}
+      onExplore={() => go({ kind: "explore" })}
+      onStrategy={() => go({ kind: "strategy" })}
     />
   );
+
+  const hubTrail: Crumb[] = [{ label: "Investments", onClick: toHub }];
+  if (view.kind === "realEstate") {
+    return <RealEstatePortfolio trail={hubTrail} page={view.page} onOpenPage={(page) => go({ kind: "realEstate", page })} />;
+  }
+  if (view.kind === "explore") return <ExploreCommunity trail={hubTrail} />;
+  if (view.kind === "strategy") return <StrategyBuilder trail={hubTrail} />;
 
   if (view.kind === "compare") {
     return <ComparisonView selection={selection} onToggle={toggle} onHub={toHub} onOpen={openPortfolio} />;
@@ -97,7 +116,7 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
     // Deleted meanwhile (or a stale link): back to the hub.
     if (!portfolio) return hub;
 
-    const hubCrumb: Crumb = { label: "Portfolios", onClick: toHub };
+    const hubCrumb: Crumb = { label: "Investments", onClick: toHub };
     const homeCrumb: Crumb = { label: portfolio.name, onClick: () => go({ kind: "portfolio", uuid: portfolio.uuid, page: "home" }) };
     const pageTrail = [hubCrumb, homeCrumb];
     const openPage = (page: PortfolioPage) => go({ kind: "portfolio", uuid: portfolio.uuid, page });

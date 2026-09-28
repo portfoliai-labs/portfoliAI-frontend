@@ -1,7 +1,8 @@
 "use client";
 
 import { useSectionTrail } from "./SectionTrail";
-import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper } from "lucide-react";
+import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Wallet } from "lucide-react";
+import { PreviewBadge } from "../preview/PreviewKit";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -13,7 +14,8 @@ interface SidebarProps {
   subscriptionTier?: SubscriptionTier | null;
 }
 
-type NavItem = { id: string; label: string; icon: typeof LayoutDashboard };
+// `preview`: a feature shown on sample data, not available yet (see components/preview).
+type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; preview?: boolean };
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
@@ -22,7 +24,8 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
   // opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'performance', label: 'Portfolios', icon: Briefcase },
+    { id: 'performance', label: 'Investments', icon: Briefcase },
+    { id: 'wallets', label: 'Wallets', icon: Wallet, preview: true },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -98,6 +101,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           <div className="flex items-center gap-3">
             <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? "" : "group-hover:scale-110"}`} />
             <span className="text-sm">{item.label}</span>
+            {item.preview && <PreviewBadge dark />}
           </div>
           {isActive && <ChevronRight className={`h-4 w-4 opacity-50 transition-transform ${trail ? "rotate-90" : ""}`} />}
         </button>
