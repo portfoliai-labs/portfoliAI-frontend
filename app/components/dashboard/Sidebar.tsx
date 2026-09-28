@@ -3,6 +3,7 @@
 import { useSectionTrail } from "./SectionTrail";
 import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Wallet } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
+import { useUser } from "../../context/UserContext";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -19,13 +20,15 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; previe
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
+  // The previews of what's coming (Wallets…) are for demo accounts only (see lib/demo).
+  const { isDemo } = useUser();
 
   // Investor: "which page" only. Which portfolio is picked on the pages themselves: Portfolios
   // opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'performance', label: 'Investments', icon: Briefcase },
-    { id: 'wallets', label: 'Wallets', icon: Wallet, preview: true },
+    ...(isDemo ? [{ id: 'wallets', label: 'Wallets', icon: Wallet, preview: true }] : []),
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -132,7 +135,8 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           {(isAdvisor ? consultantItems : investorItems).map((item) => renderItem(item))}
         </nav>
 
-        {subscriptionTier !== 'TESTER' && (
+        {/* Nothing to upgrade for a tester, nor for a demo account (see lib/demo). */}
+        {subscriptionTier !== 'TESTER' && subscriptionTier !== 'DEMO' && (
           <div className="p-5 border-t border-white/10">
             <div className="bg-[#131210] p-5 rounded-[1.5rem] border border-[#C49A3C]/20 text-white relative overflow-hidden">
               <div className="absolute -top-10 -right-10 w-24 h-24 bg-[#C49A3C]/10 blur-2xl rounded-full" />

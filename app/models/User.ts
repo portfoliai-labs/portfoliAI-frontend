@@ -5,7 +5,8 @@
 type UserRole = 'USER' | 'ADVISOR';
 
 // Matches SubscriptionTier enum from backend
-type SubscriptionTier = 'FREE' | 'TESTER';
+// DEMO: a read-only demo account (see lib/demo).
+type SubscriptionTier = 'FREE' | 'TESTER' | 'DEMO';
 
 // Matches FinancialKnowledgeLevel enum from backend
 type FinancialKnowledgeLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useUser } from "../../context/UserContext";
 import {
   FileText, Download, Search, Tag as TagIcon,
   Loader2, AlertCircle, X, Eye, Plus, Check, Calendar, LayoutGrid,
@@ -388,6 +389,8 @@ function DocumentCard({
   newTagName,
   setNewTagName
 }: DocumentCardProps) {
+  // A demo account (see lib/demo) sees the tags but can't add or remove them.
+  const { isDemo } = useUser();
   const period = describeReportPeriod(report);
   const title = period?.title ?? report.name ?? "Untitled Document";
   const generatedAt = new Date(report.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -419,15 +422,17 @@ function DocumentCard({
             {report.tags?.map((tag: string, index: number) => (
               <span key={`${report.document_id}-${tag}-${index}`} className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100">
                 {tag}
-                <X 
-                  className="h-3 w-3 cursor-pointer text-blue-400 hover:text-rose-500 transition-colors" 
-                  onClick={() => onRemoveTag(report.document_id, tag)} 
-                />
+                {!isDemo && (
+                  <X
+                    className="h-3 w-3 cursor-pointer text-blue-400 hover:text-rose-500 transition-colors"
+                    onClick={() => onRemoveTag(report.document_id, tag)}
+                  />
+                )}
               </span>
             ))}
             
             {/* Inline Add Tag Input */}
-            {taggingDocId === report.document_id ? (
+            {isDemo ? null : taggingDocId === report.document_id ? (
               <div className="flex items-center gap-1.5 animate-in fade-in zoom-in duration-200">
                 <input 
                   autoFocus 

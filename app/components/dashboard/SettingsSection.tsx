@@ -76,7 +76,7 @@ const CURRENCIES = [
 ];
 
 export function SettingsSection() {
-  const { user, logout, refreshUser } = useUser();
+  const { user, logout, refreshUser, isDemo } = useUser();
   const [activeTab, setActiveTab] = useState<TabId>("subscription");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -204,7 +204,8 @@ export function SettingsSection() {
   };
 
   const handleUpdateEmail = async () => {
-    if (!newEmail.trim()) return;
+    // Supabase, not apiFetch: its read-only guard doesn't cover this one.
+    if (isDemo || !newEmail.trim()) return;
     setSavingEmail(true);
     try {
       const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
@@ -221,6 +222,7 @@ export function SettingsSection() {
   };
 
   const handleUpdatePassword = async () => {
+    if (isDemo) return;
     if (newPassword.length < 6) {
       setMessage({ type: "error", text: "Password must be at least 6 characters" });
       setTimeout(() => setMessage(null), 3000);
@@ -248,6 +250,7 @@ export function SettingsSection() {
   };
 
   const handleDeleteAccount = async () => {
+    if (isDemo) return;
     await userService.deleteAccount();
     logout();
   };
@@ -276,6 +279,14 @@ export function SettingsSection() {
         })}
       </div>
 
+      {isDemo && (
+        <p className="text-xs font-semibold text-[#78716c]">
+          Settings can be looked at but not changed on a demo account: profile, email, password, preferences and the account itself are locked.
+        </p>
+      )}
+
+      {/* Every field and button below is disabled for a demo account (see lib/demo). */}
+      <fieldset disabled={isDemo} className="contents">
       {activeTab === "subscription" && (
         <div className="space-y-8">
           {/* Current plan */}
@@ -331,7 +342,8 @@ export function SettingsSection() {
           {/* Available plans — testers already have the best available access, nothing to upgrade to.
               Waits on `loading` too: subscription is null until the fetch resolves, so checking
               tier alone would flash the table on for a moment before hiding it for testers. */}
-          {!loading && subscription?.tier !== "TESTER" && <SubscriptionSection />}
+          {/* A demo account (see lib/demo) can't change plan either. */}
+          {!loading && subscription?.tier !== "TESTER" && subscription?.tier !== "DEMO" && <SubscriptionSection />}
         </div>
       )}
 
@@ -634,6 +646,8 @@ export function SettingsSection() {
           </div>
         </div>
       )}
+
+      </fieldset>
 
       {message && (
         <div className={`fixed bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 px-6 md:px-8 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 z-50 ${message.type === 'success' ? 'bg-[#1c1917] text-white' : 'bg-rose-500 text-white'}`}>

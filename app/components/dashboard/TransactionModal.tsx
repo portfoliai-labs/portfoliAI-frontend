@@ -9,6 +9,8 @@ import type { Portfolio } from "../../models/Portfolio";
 import { PortfolioSelect } from "./PortfolioSelect";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { RealEstateTransactionFields } from "../preview/RealEstateTransactionFields";
+import { useUser } from "../../context/UserContext";
+import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 
 interface TransactionModalProps {
   mode: "add" | "edit";
@@ -21,6 +23,8 @@ interface TransactionModalProps {
   // which stays in the portfolio it's in.
   portfolios?: Portfolio[];
   defaultPortfolioUuid?: string;
+  // The form can be filled in but not saved (a demo account, see lib/demo).
+  readOnly?: boolean;
 }
 
 // Colors mirror the operation badges in TransactionsSection.tsx (OPERATION_STYLES)
@@ -152,7 +156,9 @@ function PillButton({
   );
 }
 
-export function TransactionModal({ mode, initial, onClose, onSave, onDelete, portfolios, defaultPortfolioUuid }: TransactionModalProps) {
+export function TransactionModal({ mode, initial, onClose, onSave, onDelete, portfolios, defaultPortfolioUuid, readOnly = false }: TransactionModalProps) {
+  // The Real estate tab is a preview, shown to demo accounts only.
+  const { isDemo } = useUser();
   const [form, setForm] = useState<FormState>(() => toFormState(initial));
   const [portfolioUuid, setPortfolioUuid] = useState(initial?.portfolioUuid ?? defaultPortfolioUuid ?? portfolios?.[0]?.uuid);
   const [errors, setErrors] = useState<string[]>([]);
@@ -262,7 +268,13 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
           </button>
         </div>
 
-        {!isEdit && (
+        {readOnly && (
+          <p className="rounded-2xl bg-[#1c1917] px-4 py-3 text-xs font-semibold text-stone-300">
+            <span className="font-black text-white">Demo account — read only.</span> Try the form out; it can&apos;t be saved.
+          </p>
+        )}
+
+        {!isEdit && isDemo && (
           <div className="flex p-1 rounded-2xl bg-slate-100 gap-1">
             {([
               { value: "security", label: "Stocks, ETFs & funds", icon: LineChart },
@@ -354,7 +366,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
         </>)}
 
         <div className="flex items-center justify-between gap-3 pt-2">
-          {isEdit && onDelete ? (
+          {isEdit && onDelete && !readOnly ? (
             <button
               onClick={onDelete}
               className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors"
@@ -372,8 +384,8 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isProperty}
-              title={isProperty ? "Real estate transactions can't be saved yet" : undefined}
+              disabled={isProperty || readOnly}
+              title={readOnly ? DEMO_DISABLED_TITLE : isProperty ? "Real estate transactions can't be saved yet" : undefined}
               className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
             >
               {isEdit ? "Save changes" : isProperty ? "Add property — coming soon" : "Add transaction"}

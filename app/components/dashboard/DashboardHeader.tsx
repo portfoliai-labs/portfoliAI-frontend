@@ -14,6 +14,7 @@ import type { SubscriptionTier, SubscriptionResponse } from "../../models/User";
 const TIER_LABEL: Record<SubscriptionTier, string> = {
   FREE: 'Free Plan',
   TESTER: 'Tester',
+  DEMO: 'Demo',
 };
 
 interface DashboardHeaderProps {

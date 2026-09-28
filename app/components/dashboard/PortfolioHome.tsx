@@ -20,6 +20,8 @@ import { FileUploader } from "./FileUploader";
 import { ReportsList } from "./ReportsList";
 import { AlertsSettings } from "./AlertsSettings";
 import { useGenerateReport } from "./GenerateReport";
+import { useUser } from "../../context/UserContext";
+import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -45,6 +47,7 @@ export function PortfolioHome({
   onDeleted: () => void;
 }) {
   const { deletePortfolio } = usePortfolio();
+  const { isDemo } = useUser();
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -73,7 +76,7 @@ export function PortfolioHome({
           wide screens that would be a row of its own above everything, for one small button. */}
       <PortfolioHeadline
         portfolioUuid={portfolio.uuid}
-        action={!portfolio.isAggregate && (
+        action={!portfolio.isAggregate && !isDemo && (
           <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={() => setRenaming(true)} onDelete={() => setConfirmDelete(true)} />
         )}
       />
@@ -296,6 +299,7 @@ export function PortfolioTransactions({ portfolio, trail }: { portfolio: Portfol
 /** "Portfolios / Main portfolio / Reports": its archive, and "Generate report" for it. */
 export function PortfolioReports({ portfolio, trail }: { portfolio: Portfolio; trail: Crumb[] }) {
   const { generate, sending, toast } = useGenerateReport();
+  const { isDemo } = useUser();
   return (
     <div className="space-y-6">
       <Breadcrumb
@@ -305,8 +309,9 @@ export function PortfolioReports({ portfolio, trail }: { portfolio: Portfolio; t
           <button
             type="button"
             onClick={() => generate(portfolio)}
-            disabled={sending}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1c1917] text-white text-xs font-bold hover:bg-[#C49A3C] transition-colors disabled:opacity-60 shrink-0"
+            disabled={sending || isDemo}
+            title={isDemo ? DEMO_DISABLED_TITLE : undefined}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1c1917] text-white text-xs font-bold hover:bg-[#C49A3C] transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-[#1c1917] shrink-0"
           >
             {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
             Generate report

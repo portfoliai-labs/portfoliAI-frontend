@@ -1,5 +1,22 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Environment variables
+
+| Variable | What it's for |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | Backend base URL |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase auth |
+| `NEXT_PUBLIC_SITE_URL` | Public site URL (metadata); defaults to https://portfoliai.online |
+| `NEXT_PUBLIC_DEMO_URL` | Optional. Where demo accounts land instead of `/dashboard`: a path in this app (e.g. `/demo`) or a full URL. Unset, they stay on `/dashboard` |
+
+### Demo accounts
+
+An account on the `DEMO` subscription tier (`subscription_tier` on its profile) is a demo account. It stays
+on `/dashboard` (or is sent to `NEXT_PUBLIC_DEMO_URL`, when set), sees the preview features (Wallets,
+Real estate, Explore, Strategy — sample data), and is read-only: the frontend refuses its writes
+(`app/lib/demo.ts`) and disables the controls that would send them. The backend must refuse a
+demo account's writes as well; the frontend alone can be bypassed.
+
 ## Getting Started
 
 First, run the development server:

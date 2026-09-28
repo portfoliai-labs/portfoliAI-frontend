@@ -13,6 +13,8 @@ import { NewPortfolioCard } from "./PortfolioBar";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { RealEstateCard } from "../preview/RealEstateCard";
+import { useUser } from "../../context/UserContext";
+import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -24,9 +26,9 @@ const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
  * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio
  * ("All portfolios" first), each with its value, its return since inception and the curve
  * behind it, opening that portfolio's page (renamed or deleted from its "…" menu), a card
- * to create one, then the way into Compare. Alongside them sit the previews of what's coming
- * (see components/preview): a sample real estate portfolio, Explore and Strategy, each marked
- * as such. The figures for every card come
+ * to create one, then the way into Compare. For a demo account (see lib/demo), which can't
+ * create, rename or delete anything, alongside them sit the previews of what's coming (see
+ * components/preview): a sample real estate portfolio, Explore and Strategy, each marked as such. The figures for every card come
  * from one call (GET /v1/portfolios/comparison with no portfolio listed returns all of them),
  * refetched when a portfolio is added or removed.
  */
@@ -40,6 +42,7 @@ export function InsightsHub({
   onStrategy: () => void;
 }) {
   const { portfolios, deletePortfolio } = usePortfolio();
+  const { isDemo } = useUser();
   const [toDelete, setToDelete] = useState<Portfolio | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -85,10 +88,21 @@ export function InsightsHub({
             entry={entries.byUuid?.get(p.uuid) ?? (loaded ? null : undefined)}
             onOpen={() => onOpenPortfolio(p.uuid)}
             onDelete={() => setToDelete(p)}
+            readOnly={isDemo}
           />
         ))}
-        <RealEstateCard onOpen={onOpenRealEstate} />
-        <NewPortfolioCard />
+        {isDemo && <RealEstateCard onOpen={onOpenRealEstate} />}
+        {isDemo ? (
+          <div
+            title={DEMO_DISABLED_TITLE}
+            className="min-h-44 h-full w-full rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-300 cursor-not-allowed"
+          >
+            <span className="text-[13px] font-bold">New portfolio</span>
+            <span className="text-[11px] font-semibold">Not available on a demo account</span>
+          </div>
+        ) : (
+          <NewPortfolioCard />
+        )}
       </div>
 
       {/* Its own row, never beside a portfolio: same columns as above, so it keeps a tile's size. */}
@@ -99,20 +113,20 @@ export function InsightsHub({
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
         />
-        <ActionCard
+        {isDemo && <ActionCard
           icon={<Compass className="h-5 w-5" />}
           title="Explore"
           badge={<PreviewBadge dark />}
           text="Portfolios shared by other investors: browse them and like the ones you find interesting."
           onClick={onExplore}
-        />
-        <ActionCard
+        />}
+        {isDemo && <ActionCard
           icon={<Wand2 className="h-5 w-5" />}
           title="Strategy"
           badge={<PreviewBadge dark />}
           text="Set target weights, rebalancing, PAC and costs, then backtest them into a virtual portfolio."
           onClick={onStrategy}
-        />
+        />}
       </div>
       {deleteError && <p className="text-sm font-semibold text-rose-600">{deleteError}</p>}
 
@@ -140,13 +154,15 @@ export function InsightsHub({
  * automatically, can be neither renamed nor deleted, so it has no menu.
  */
 function PortfolioCard({
-  portfolio, color, entry, onOpen, onDelete,
+  portfolio, color, entry, onOpen, onDelete, readOnly = false,
 }: {
   portfolio: Portfolio;
   color: string;
   entry: PortfolioComparisonEntry | null | undefined;
   onOpen: () => void;
   onDelete: () => void;
+  // No "…" menu: a demo account can't rename or delete.
+  readOnly?: boolean;
 }) {
   const { renamePortfolio } = usePortfolio();
   const value = entry?.value ?? null;
@@ -246,7 +262,7 @@ function PortfolioCard({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 shrink-0">
-            {!portfolio.isAggregate && <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={startRename} onDelete={onDelete} />}
+            {!portfolio.isAggregate && !readOnly && <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={startRename} onDelete={onDelete} />}
             <span className="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 group-hover:bg-[#C49A3C] group-hover:text-white transition-colors">
               <ArrowUpRight className="h-4 w-4" />
             </span>

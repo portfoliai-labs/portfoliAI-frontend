@@ -8,6 +8,8 @@ import { useAlertRules } from "../../hooks/useAlertRules";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Toggle } from "./Toggle";
 import { TONE_STYLES } from "./AlertGauge";
+import { useUser } from "../../context/UserContext";
+import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import {
   alertState, describeAlert, describeParams, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL,
 } from "../../lib/alerts";
@@ -40,6 +42,8 @@ const formatDate = (iso: string) =>
  */
 export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: string; clientName?: string }) {
   const { rules, setRules, loading, error, reload } = useAlertRules(portfolioUuid);
+  // A demo account (see lib/demo) sees its rules but can't create, change or delete them.
+  const { isDemo } = useUser();
   // null = form closed; { rule: null } = creating; { rule } = editing that rule.
   const [form, setForm] = useState<{ rule: AlertRuleResponse | null } | null>(null);
   const [assetOptions, setAssetOptions] = useState<AssetOption[] | null>(null);
@@ -130,7 +134,8 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
           </div>
           <button
             onClick={() => { setMessage(null); setForm({ rule: null }); }}
-            disabled={atLimit || form !== null || loading || rules === null}
+            disabled={isDemo || atLimit || form !== null || loading || rules === null}
+            title={isDemo ? DEMO_DISABLED_TITLE : undefined}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1c1917] hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" /> New alert
@@ -204,7 +209,7 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
                       {!rule.notifyEmail && !rule.notifyInApp && <span>Dashboard only</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  {!isDemo && <div className="flex items-center gap-2">
                     <div className={busy ? "pointer-events-none opacity-60" : ""}>
                       <Toggle
                         checked={rule.enabled}
@@ -226,7 +231,7 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
+                  </div>}
                 </li>
               );
             })}
