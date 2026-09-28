@@ -4,8 +4,8 @@
 import { Eye } from "lucide-react";
 
 /**
- * DEMO BANNER — the strip at the top of every page of the demo dashboard (see lib/demo): this
- * account can look at everything, including the previews of what's coming, but change nothing.
+ * DEMO BANNER — the strip at the top of every dashboard page for a demo account (see lib/demo):
+ * it can look at everything, including the previews of what's coming, but change nothing.
  */
 export function DemoBanner() {
   return (
