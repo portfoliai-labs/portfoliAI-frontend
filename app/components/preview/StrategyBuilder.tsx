@@ -457,9 +457,9 @@ function Step({ n, icon, title, text, children }: { n: number; icon: React.React
     <section className="bg-white rounded-3xl border border-slate-200 shadow-sm">
       <div className="px-6 md:px-7 pt-5 pb-4 border-b border-slate-100 flex items-start gap-3">
         <span className="w-8 h-8 rounded-xl bg-[#C49A3C]/10 text-[#C49A3C] flex items-center justify-center shrink-0">{icon}</span>
-        <div>
+        <div className="flex-1 min-w-0">
           <h3 className="text-sm font-black text-slate-900"><span className="text-[#C49A3C] mr-1.5">{n}.</span>{title}</h3>
-          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed max-w-2xl">{text}</p>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{text}</p>
         </div>
       </div>
       <div className="p-6 md:p-7">{children}</div>

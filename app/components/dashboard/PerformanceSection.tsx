@@ -283,10 +283,10 @@ function ModuleHead({
         onExplore ? "group/explore cursor-pointer hover:bg-slate-50/70 transition-colors" : ""
       }`}
     >
-      <div className="min-w-0">
+      <div className="flex-1 min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
         {icon ? <div className="flex items-center gap-2.5">{icon}{heading}</div> : heading}
-        {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
+        {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
       </div>
       {right}
     </div>
@@ -3579,7 +3579,7 @@ function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
           {data.overlappingAssets.length > 0 && (
             <div className="px-6 md:px-7 py-6 border-t border-slate-100">
               <h3 className="text-sm font-black text-slate-900">Held in more than one portfolio</h3>
-              <p className="text-xs text-slate-500 mt-1 mb-4 max-w-xl leading-relaxed">
+              <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
                 Your combined position in these is bigger than any single portfolio shows.
               </p>
               <div className="divide-y divide-slate-100">

@@ -58,12 +58,12 @@ function Module({ children }: { children: React.ReactNode }) {
 function ModuleHead({ eyebrow, title, desc, right }: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode }) {
   return (
     <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
-      <div className="min-w-0">
+      <div className="flex-1 min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
         <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
           {title}
         </h2>
-        {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">{desc}</p>}
+        {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
       </div>
       {right}
     </div>

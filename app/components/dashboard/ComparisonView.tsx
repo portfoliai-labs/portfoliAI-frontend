@@ -186,7 +186,7 @@ function ModuleHead({ eyebrow, title, desc }: { eyebrow: string; title: string; 
       <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
         {title}
       </h2>
-      {desc && <p className="text-[13px] text-slate-500 mt-1 max-w-xl leading-relaxed">{desc}</p>}
+      {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
     </div>
   );
 }

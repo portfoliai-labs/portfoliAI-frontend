@@ -74,7 +74,7 @@ export function Panel({
   return (
     <section className={`bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden ${className}`}>
       <div className="px-6 md:px-7 pt-5 pb-4 flex flex-wrap items-start justify-between gap-3 border-b border-slate-100">
-        <div className="min-w-0">
+        <div className="flex-1 min-w-0">
           <h3 className="text-sm font-black text-slate-900">{title}</h3>
           {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
         </div>

@@ -32,13 +32,13 @@ export function WalletsOverviewModule({ onNavigate }: { onNavigate?: (section: s
   return (
     <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
-        <div className="min-w-0">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C]">EUR</p>
             <PreviewBadge label="Sample data" />
           </div>
           <h2 className="text-lg md:text-xl font-black text-slate-900" style={serif}>All wallets</h2>
-          <p className="text-[13px] text-slate-500 mt-1 max-w-md leading-relaxed">Your everyday money: accounts, cards and savings.</p>
+          <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">Your everyday money: accounts, cards and savings.</p>
         </div>
         {onNavigate && (
           <button
