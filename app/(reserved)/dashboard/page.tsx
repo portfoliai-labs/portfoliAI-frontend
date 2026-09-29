@@ -1,7 +1,7 @@
 // app/(reserved)/dashboard/page.tsx
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useUser } from "../../context/UserContext";
 import { usePortfolio } from "../../context/PortfolioContext";
@@ -25,6 +25,7 @@ import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { WalletsSection } from "../../components/preview/WalletsSection";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
+import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
@@ -47,17 +48,47 @@ function DashboardPageContent() {
   // always resetting to overview.
   const requestedSection = searchParams.get('section');
 
-  const [activeSection, setActiveSection] = useState<string>(
-    requestedSection && VALID_SECTIONS.includes(requestedSection) ? requestedSection : 'overview'
-  );
+  // A reload keeps the history entry, and with it the section it was on (see lib/dashboardHistory).
+  const [activeSection, setActiveSection] = useState<string>(() => {
+    if (requestedSection && VALID_SECTIONS.includes(requestedSection)) return requestedSection;
+    const fromHistory = readDashboardEntry()?.section;
+    return fromHistory && VALID_SECTIONS.includes(fromHistory) ? fromHistory : 'overview';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   // Bumped when the section already open is opened again (from the sidebar, or a link to one of
   // its pages), so a section with pages of its own (Portfolios' hub and what's under it) starts
   // over, as a fresh visit would.
   const [sectionVisit, setSectionVisit] = useState(0);
-  const openSection = (section: string) => {
-    if (section === activeSection) setSectionVisit((n) => n + 1);
+
+  // The browser's back and forward buttons move between sections too: each section opened is a
+  // history entry, and landing on one shows its section (the section's own pages follow the
+  // same entry, see InsightsSection).
+  useEffect(() => {
+    if (readDashboardEntry()?.section !== activeSection) pushDashboardEntry({ section: activeSection }, true);
+    const onPopState = () => {
+      const section = readDashboardEntry()?.section;
+      if (section && VALID_SECTIONS.includes(section)) setActiveSection(section);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+    // Only the first entry is recorded here; later ones are pushed by showSection/openSection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const showSection = (section: string) => {
+    if (readDashboardEntry()?.section !== section) pushDashboardEntry({ section });
     setActiveSection(section);
+  };
+  const openSection = (section: string) => {
+    if (section !== activeSection) {
+      showSection(section);
+      return;
+    }
+    // Opened again from where it already is: back to its first page, as a new entry unless
+    // it's already there.
+    const entry = readDashboardEntry();
+    if (entry?.view || entry?.overlay) pushDashboardEntry({ section });
+    setSectionVisit((n) => n + 1);
   };
 
   const isAdvisor = user?.role === 'ADVISOR';
@@ -70,7 +101,7 @@ function DashboardPageContent() {
       openPortfoliosPage(openSection, portfolio.uuid, 'transactions');
       return;
     }
-    setActiveSection(section);
+    showSection(section);
   };
 
   const renderContent = (() => {

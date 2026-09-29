@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 import {
   ComposedChart, Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine,
 } from "recharts";
@@ -24,6 +25,16 @@ type WalletPage = "home" | "transactions" | "insights" | "reports" | "budgets" |
 type View = { kind: "hub" } | { kind: "wallet"; id: string; page: WalletPage };
 
 const ALL = "all";
+// The dashboard's section id for this one (see the dashboard page).
+const SECTION = "wallets";
+
+// The page the current history entry was on; the hub when it's another section's or none.
+const viewFromHistory = (): View => {
+  const entry = readDashboardEntry();
+  const view = entry?.section === SECTION ? (entry.view as View | undefined) : undefined;
+  if (!view || (view.kind === "wallet" && view.id !== ALL && !WALLETS.some((w) => w.id === view.id))) return { kind: "hub" };
+  return view;
+};
 const eur = (v: number, d = 0) => formatCurrency(v, "EUR", d);
 const scopeOf = (id: string) => (id === ALL ? null : id);
 const nameOf = (id: string) => (id === ALL ? "All wallets" : WALLETS.find((w) => w.id === id)!.name);
@@ -36,46 +47,47 @@ const PAGE_LABELS: Record<Exclude<WalletPage, "home">, string> = {
 };
 
 /**
- * Opens Wallets on one wallet's page (`"all"` for All wallets) rather than on the hub, from
- * elsewhere in the dashboard (the Dashboard's wallet tiles): like openPortfoliosPage, the page
- * rides in the URL hash (#wallet=<id>), which WalletsSection reads when it mounts and clears.
- */
-export function openWalletsPage(onNavigate: (section: string) => void, walletId: string) {
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#wallet=${encodeURIComponent(walletId)}`);
-  onNavigate("wallets");
-}
-
-const viewFromHash = (): View => {
-  if (typeof window === "undefined") return { kind: "hub" };
-  const match = window.location.hash.match(/^#wallet=([\w-]+)$/);
-  if (!match || (match[1] !== ALL && !WALLETS.some((w) => w.id === match[1]))) return { kind: "hub" };
-  return { kind: "wallet", id: match[1], page: "home" };
-};
-
-/**
  * WALLETS SECTION (preview) — everyday money, next to the investments: current accounts, cards,
- * savings and cash, with what comes in and goes out. Built like Portfolios: a hub of wallets
- * ("All wallets" first), each opening its own page (balance, the year's income, spending and
- * balance), and from there its Transactions, Insights, Budgets, Reports and Alerts, with the
- * trail shown in the Sidebar through Breadcrumb. All figures come from lib/mock/wallets.
+ * savings and cash, with what comes in and goes out. Built like Portfolios: a hub of wallets,
+ * each opening its own page (balance, the year's income, spending and balance), and from there
+ * its Transactions, Insights, Budgets, Reports and Alerts, with the trail shown in the Sidebar
+ * through Breadcrumb. All wallets together are the hub's Combined card, which opens straight on
+ * their Insights, as Portfolios' Combined does. All figures come from lib/mock/wallets.
  */
 export function WalletsSection() {
-  const [view, setView] = useState<View>(viewFromHash);
-  // The hash only carries the request to open a wallet (openWalletsPage): clear it.
+  const [view, setView] = useState<View>(viewFromHistory);
+  // Every page is a history entry, as under Investments (see lib/dashboardHistory): back and
+  // forward show the page the entry landed on.
   useEffect(() => {
-    if (window.location.hash.startsWith("#wallet=")) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    }
+    const onPopState = () => {
+      if (readDashboardEntry()?.section !== SECTION) return;
+      const next = viewFromHistory();
+      setView((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const go = (next: View) => {
+    pushDashboardEntry({ section: SECTION, view: next });
     setView(next);
     window.scrollTo({ top: 0 });
   };
 
-  if (view.kind === "hub") return <WalletsHub onOpen={(id) => go({ kind: "wallet", id, page: "home" })} />;
+  if (view.kind === "hub") {
+    return <WalletsHub onOpen={(id) => go({ kind: "wallet", id, page: id === ALL ? "insights" : "home" })} />;
+  }
 
   const hubCrumb: Crumb = { label: "Wallets", onClick: () => go({ kind: "hub" }) };
-  const homeCrumb: Crumb = { label: nameOf(view.id), onClick: () => go({ kind: "wallet", id: view.id, page: "home" }) };
+  // All wallets skip their own page: their row in the Sidebar leads back to their Insights, or to
+  // the top of it when already there.
+  const homeCrumb: Crumb = {
+    label: nameOf(view.id),
+    onClick: () => {
+      if (view.id !== ALL) go({ kind: "wallet", id: view.id, page: "home" });
+      else if (view.page !== "insights") go({ kind: "wallet", id: ALL, page: "insights" });
+      else window.scrollTo({ top: 0 });
+    },
+  };
   const openPage = (page: WalletPage) => go({ kind: "wallet", id: view.id, page });
   const scope = scopeOf(view.id);
 
@@ -133,14 +145,6 @@ function WalletsHub({ onOpen }: { onOpen: (id: string) => void }) {
         alerts, next to your investments. The wallets and transactions below are sample data; nothing is connected or saved.
       </PreviewBanner>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        <WalletCard
-          id={ALL}
-          title="All wallets"
-          subtitle={`${WALLETS.length} wallets`}
-          icon={<Layers className="h-4 w-4" />}
-          color="#C49A3C"
-          onOpen={() => onOpen(ALL)}
-        />
         {WALLETS.map((w) => (
           <WalletCard key={w.id} id={w.id} title={w.name} subtitle={`${w.kind} · ${w.institution}`} icon={KIND_ICON[w.kind]} color={w.color} onOpen={() => onOpen(w.id)} />
         ))}
@@ -154,6 +158,15 @@ function WalletsHub({ onOpen }: { onOpen: (id: string) => void }) {
           <span className="text-[13px] font-bold">Connect a bank or add a wallet</span>
           <PreviewBadge label="Soon" />
         </button>
+      </div>
+      {/* Its own row, like the Portfolios hub's: all wallets together are a view, not a wallet. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        <ActionCard
+          icon={<Layers className="h-5 w-5" />}
+          title="Combined"
+          text="All your wallets as one: balance, income and spending together."
+          onClick={() => onOpen(ALL)}
+        />
       </div>
     </div>
   );

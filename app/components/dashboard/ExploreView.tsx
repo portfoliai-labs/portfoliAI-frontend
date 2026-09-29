@@ -13,7 +13,7 @@ export interface ExploreHeader {
  * EXPLORE HOST — what the Insights page (PerformanceSection) provides to its modules so one of
  * them can take the page over with its detail view, the way a month from the heatmap does:
  * `slot` is where the detail is drawn, `show` tells the page which detail is open (so it can
- * hide the rest and put the "Insights / …" breadcrumb in the header), or that none is.
+ * hide the rest, and the browser's back button can close it), or that none is.
  */
 export const ExploreHostContext = createContext<{ slot: HTMLElement | null; show: (header: ExploreHeader | null) => void } | null>(null);
 
@@ -53,17 +53,23 @@ export function ExploreView({ title, onClose, children }: { title: string; onClo
 }
 
 /**
- * EXPLORE PANEL — one block of a detail view: a white card with a small heading, same look
- * as the modules on the page but lighter, since the breadcrumb above already says what
- * it's about.
+ * EXPLORE PANEL — one block of a detail view, in the same card and heading as the modules on
+ * the page (see Module and ModuleHead in PerformanceSection): a gold eyebrow, the title, and a
+ * line saying what it shows; `right` sits beside the heading (a headline figure).
  */
 export function ExplorePanel({
-  title, right, children,
-}: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+  eyebrow, title, desc, right, children,
+}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="@container bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 md:px-7 pt-5 pb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100">
-        <h3 className="text-sm font-black text-slate-900">{title}</h3>
+    <section className="@container bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
+          <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+            {title}
+          </h2>
+          {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
+        </div>
         {right}
       </div>
       {children}
@@ -128,7 +134,9 @@ export function DataTable<T>({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]">
+      {/* Coloured explicitly: the cards are always white, but the page's own text colour turns
+          near-white in dark mode (see globals.css), which a cell without a colour would inherit. */}
+      <table className="w-full text-[13px] text-slate-700">
         <thead>
           <tr className="border-b border-slate-100">
             {columns.map((c) => {

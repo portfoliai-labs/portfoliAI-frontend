@@ -15,16 +15,15 @@ import { portfolioService } from "../../services/portfolioService";
 import type { Portfolio, PortfolioSnapshot, TodayDashboard } from "../../models/Portfolio";
 import { formatCurrency } from "../../lib/format";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { InfoTip } from "./PerformanceSection";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
 import { openPortfoliosPage } from "./InsightsSection";
 import { DailyArticleModule } from "./NewsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
-import { portfolioColorMap } from "../../lib/chartColors";
 import { useUser } from "../../context/UserContext";
-import { WalletsOverviewModule } from "../preview/WalletsOverview";
+import { walletsSummary, type WalletsSummary } from "../preview/WalletsOverview";
+import { PreviewBadge } from "../preview/PreviewKit";
 
 // One portfolio's GET /v1/portfolios/{p}/overview: null snapshot = no data yet (no transactions,
 // or the aggregate's first build hasn't landed), `failed` = the request itself errored.
@@ -34,18 +33,19 @@ type SnapshotState =
   | { status: "ready"; snapshot: PortfolioSnapshot | null };
 
 /**
- * DASHBOARD — every portfolio at a glance, not tied to the selected portfolio: the
- * aggregate "All portfolios" on top (or the only portfolio, for a user with just one), with a
- * tile per portfolio (its market value) along its bottom edge; for a demo account the wallets
- * the same way (a preview on sample data, see components/preview); then every portfolio's
- * alerts and the article of the day. Headline
- * figures only (invested, market value with today's and this month's moves, unrealized P&L):
- * the longer-term figures and the charts live in each portfolio's Insights, reached from its
- * card. The overview endpoint never mixes history with fresh data (no isStale).
+ * DASHBOARD — the whole wealth at a glance, not tied to the selected portfolio: the net worth
+ * on top (every portfolio's market value, from the aggregate "All portfolios" or the only
+ * portfolio, plus, for a demo account, the wallets' balance — a preview on sample data, see
+ * components/preview), with a summary of the portfolios and of the wallets under it; then every
+ * portfolio's alerts and the article of the day. Headline figures only: the rest lives under
+ * Investments and Wallets, which the summaries open. The overview endpoint never mixes history
+ * with fresh data (no isStale).
  */
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
   const { isDemo } = useUser();
+  // Wallets are a preview on sample data that only demo accounts see.
+  const wallets = useMemo(() => (isDemo ? walletsSummary() : null), [isDemo]);
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotState>>({});
 
   // Refetch only when the set of portfolios changes, not on every new array from the context
@@ -68,15 +68,9 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     return () => { cancelled = true; };
   }, [uuidsKey]);
 
-  // The aggregate, when there is one, is the headline. The per-portfolio tiles along its bottom
-  // only show with two or more portfolios of the user's own: with just one, its tile would
-  // repeat the headline's figures.
+  // Every portfolio together: the aggregate when there is one, otherwise the only portfolio.
   const aggregate = portfolios.find((p) => p.isAggregate);
   const headline = aggregate ?? portfolios[0];
-  const others = useMemo(() => {
-    const own = portfolios.filter((p) => !p.isAggregate);
-    return aggregate && own.length > 1 ? own : [];
-  }, [aggregate, portfolios]);
 
   // Alerts are managed on each portfolio's page under Portfolios; "Manage alerts" (and the
   // empty state's button) open the selected portfolio's (see openPortfoliosPage).
@@ -112,38 +106,25 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   return (
     <div className="space-y-6 pb-12">
 
-      {/* HEADLINE — the aggregate (or the only portfolio). A lone portfolio with no data yet
-          gets the full-page "no data" window, since there's nothing else on the page; the
-          aggregate with no data yet just says it's being prepared, the cards below still
-          carry each portfolio's own figures. */}
+      {/* NET WORTH — a lone portfolio with no data yet gets the full-page "no data" window
+          instead (unless there are wallets to add up), since there's nothing else on the page. */}
       {headlineState.status === "failed" ? (
         <ErrorBanner message="Failed to load portfolio data" />
-      ) : noDataAtAll ? (
+      ) : noDataAtAll && !wallets ? (
         <NoDataEmptyState
           title="No portfolio data yet"
           message="Add or upload your transactions and this is where you'll see what your portfolio is worth today."
           onNavigate={onNavigate ? (section) => openPortfolio(headline.uuid, section) : undefined}
         />
       ) : (
-        <HeadlineModule
+        <NetWorthModule
           portfolio={headline}
           snapshot={headlineState.snapshot}
-          onOpen={onNavigate ? () => openPortfolio(headline.uuid, "performance") : undefined}
-        >
-          {/* EACH PORTFOLIO — part of the headline, since the aggregate is made of them. */}
-          {others.length > 0 && (
-            <PortfolioTiles
-              portfolios={others}
-              colorOf={portfolioColorMap(portfolios)}
-              snapshots={snapshots}
-              onOpen={(uuid, hasData) => openPortfolio(uuid, hasData ? "performance" : "upload")}
-            />
-          )}
-        </HeadlineModule>
+          wallets={wallets}
+          onOpenPortfolios={onNavigate ? () => onNavigate("performance") : undefined}
+          onOpenWallets={onNavigate ? () => onNavigate("wallets") : undefined}
+        />
       )}
-
-      {/* WALLETS — a preview on sample data, for demo accounts only. */}
-      {isDemo && <WalletsOverviewModule onNavigate={onNavigate} />}
 
       {/* ALERTS — every portfolio's, aggregate included, as one list sorted by urgency. */}
       {!noDataAtAll && (
@@ -177,105 +158,148 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 /**
- * AMOUNT WITH DELTA — a Stat value: the amount on its own line, with the percentage change in
- * its own colored, directional line underneath instead of squeezed into "€X (+Y%)"
- * parentheses — see PerformanceSection.tsx's identical helper for the full rationale.
+ * NET WORTH MODULE — everything the user owns, in their reference currency: every portfolio at
+ * today's market prices plus the wallets' balance, with a bar showing how it splits, then a
+ * summary of each: the portfolios (market value, how the market moved it today and this month,
+ * unrealized P&L) and the wallets (balance, this month's money in and out). The summaries open
+ * Investments and Wallets. The portfolios' figures are the aggregate's (recomputed from every
+ * portfolio's transactions combined) or the only portfolio's. Wallets in another currency than
+ * the portfolios' are shown but not added in, since there's no rate to convert them with.
  */
-function AmountWithDelta({ amount, pct }: { amount: string; pct: number | null }) {
-  if (pct === null) return <>{amount}</>;
-  const isGain = pct >= 0;
-  const Icon = isGain ? TrendingUp : TrendingDown;
-  return (
-    <>
-      {amount}
-      <div className={`flex items-center gap-1 font-sans text-sm font-bold mt-1 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-        <Icon className="h-3.5 w-3.5" />
-        {formatPct(pct)}
-      </div>
-    </>
-  );
-}
-
-/**
- * HEADLINE MODULE — what the whole wealth (the aggregate) or the lone portfolio is worth
- * today, in the user's reference currency. The aggregate's figures are recomputed from every
- * portfolio's transactions combined, so they aren't necessarily the sum of the tiles below.
- * `children`: what's attached along its bottom edge (the per-portfolio tiles).
- */
-function HeadlineModule({
-  portfolio, snapshot, onOpen, children,
-}: { portfolio: Portfolio; snapshot: PortfolioSnapshot | null; onOpen?: () => void; children?: React.ReactNode }) {
+function NetWorthModule({
+  portfolio, snapshot, wallets, onOpenPortfolios, onOpenWallets,
+}: {
+  portfolio: Portfolio;
+  // null: nothing computed yet (the aggregate's first build, or a portfolio with no data).
+  snapshot: PortfolioSnapshot | null;
+  wallets: WalletsSummary | null;
+  onOpenPortfolios?: () => void;
+  onOpenWallets?: () => void;
+}) {
   const moves = useRecentMoves(portfolio.uuid);
-  const openButton = onOpen && (
-    <button
-      onClick={onOpen}
-      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 border border-slate-200 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors"
-    >
-      Open portfolio <ArrowRight className="h-3.5 w-3.5" />
-    </button>
-  );
-
-  if (snapshot === null) {
-    return (
-      <Module>
-        <ModuleHead eyebrow="Combined" title={portfolio.name} right={openButton} />
-        <div className="flex flex-col items-center text-center gap-2 px-6 py-10">
-          <Loader2 className="h-5 w-5 animate-spin text-[#C49A3C]" />
-          <p className="text-sm text-slate-500 max-w-sm">
-            The combined figures across your portfolios are being prepared. Check back in a few minutes.
-          </p>
-        </div>
-        {children}
-      </Module>
-    );
-  }
-
-  const currency = snapshot.currency;
-  const pnlIsGain = snapshot.totalUnrealizedPnl >= 0;
+  const currency = snapshot?.currency ?? wallets?.currency ?? "EUR";
+  const investments = snapshot?.totalMarketValue ?? 0;
+  const walletsCount = wallets && wallets.currency === currency ? wallets.balance : 0;
+  const total = investments + walletsCount;
+  const shareOf = (value: number) => (total > 0 ? Math.max(0, (value / total) * 100) : 0);
+  const pnlPct = snapshot ? unrealizedPct(snapshot) : null;
 
   return (
     <Module>
       <ModuleHead
         eyebrow={currency}
-        title={portfolio.name}
-        desc={`As of ${chartDateLabel(snapshot.snapshotAt)} — from daily market prices.`}
-        right={openButton}
+        title="Net Worth"
+        desc={wallets ? "Everything you own: your portfolios at today's prices, plus your wallets' balance." : "Your portfolios at today's market prices."}
       />
-      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-        <Stat
-          title="Total Invested"
-          value={formatCurrency(snapshot.totalInvestedCapital, currency, 0)}
-          icon={<Wallet className="h-4 w-4" />}
-          info="Capital deployed to date."
-          color="gold"
-        />
-        <Stat
-          title="Market Value"
-          value={
-            <>
-              {formatCurrency(snapshot.totalMarketValue, currency, 0)}
-              {moves && (
-                <>
-                  <MoveLine label="today" amount={moves.dayMarketEffect} pct={moves.previousDayValue !== 0 ? moves.dayMarketEffectPct : null} currency={moves.currency} />
-                  <MoveLine label="this month" amount={moves.mtdMarketEffect} pct={moves.monthStartValue !== 0 ? moves.mtdMarketEffectPct : null} currency={moves.currency} />
-                </>
-              )}
-            </>
-          }
-          icon={<Coins className="h-4 w-4" />}
-          info="What your positions are worth today. Below it, how the market moved it today and this month, leaving out money you added or withdrew."
-          color="gold"
-        />
-        <Stat
-          title="Unrealized P&L"
-          value={<AmountWithDelta amount={signedCurrency(snapshot.totalUnrealizedPnl, currency)} pct={unrealizedPct(snapshot)} />}
-          icon={pnlIsGain ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          info="Against your invested capital."
-          color={pnlIsGain ? "emerald" : "red"}
-        />
+      <div className="p-6 md:p-7 space-y-5">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
+          <p className="text-4xl md:text-5xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+            {formatCurrency(total, currency, 0)}
+          </p>
+          {snapshot && <p className="text-[13px] text-slate-500 mt-1.5">As of {chartDateLabel(snapshot.snapshotAt)}, from daily market prices.</p>}
+        </div>
+        {wallets && walletsCount !== 0 && total > 0 && (
+          <div className="space-y-2">
+            <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
+              <div className="h-full" style={{ width: `${shareOf(investments)}%`, background: PORTFOLIOS_COLOR }} />
+              <div className="h-full" style={{ width: `${shareOf(walletsCount)}%`, background: WALLETS_COLOR }} />
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-slate-600">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: PORTFOLIOS_COLOR }} />Portfolios {shareOf(investments).toFixed(0)}%</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: WALLETS_COLOR }} />Wallets {shareOf(walletsCount).toFixed(0)}%</span>
+            </div>
+          </div>
+        )}
       </div>
-      {children}
+      <div className={`grid grid-cols-1 ${wallets ? "md:grid-cols-2 md:divide-x" : ""} divide-y md:divide-y-0 divide-slate-100 border-t border-slate-100`}>
+        <SummaryTile
+          icon={<Coins className="h-4 w-4" />}
+          color={PORTFOLIOS_COLOR}
+          title="All portfolios"
+          value={snapshot ? formatCurrency(snapshot.totalMarketValue, snapshot.currency, 0) : null}
+          pending={portfolio.isAggregate
+            ? "The combined figures across your portfolios are being prepared. Check back in a few minutes."
+            : "No transactions yet: add some to see what your portfolio is worth."}
+          onOpen={onOpenPortfolios}
+        >
+          {snapshot && moves && (
+            <>
+              <MoveLine label="today" amount={moves.dayMarketEffect} pct={moves.previousDayValue !== 0 ? moves.dayMarketEffectPct : null} currency={moves.currency} />
+              <MoveLine label="this month" amount={moves.mtdMarketEffect} pct={moves.monthStartValue !== 0 ? moves.mtdMarketEffectPct : null} currency={moves.currency} />
+            </>
+          )}
+          {snapshot && (
+            <MoveLine
+              label="unrealized"
+              amount={snapshot.totalUnrealizedPnl}
+              pct={pnlPct}
+              currency={snapshot.currency}
+            />
+          )}
+        </SummaryTile>
+        {wallets && (
+          <SummaryTile
+            icon={<Wallet className="h-4 w-4" />}
+            color={WALLETS_COLOR}
+            title="All wallets"
+            badge={<PreviewBadge label="Sample data" />}
+            value={formatCurrency(wallets.balance, wallets.currency, 0)}
+            onOpen={onOpenWallets}
+          >
+            <MoveLine label="in this month" amount={wallets.income} pct={null} currency={wallets.currency} />
+            <MoveLine label="out this month" amount={-wallets.expenses} pct={null} currency={wallets.currency} />
+          </SummaryTile>
+        )}
+      </div>
     </Module>
+  );
+}
+
+const PORTFOLIOS_COLOR = "#C49A3C";
+const WALLETS_COLOR = "#0f766e";
+
+/**
+ * SUMMARY TILE — one part of the net worth: its total, with a few lines under it, opening the
+ * section it summarises. `value` null: nothing to show yet, `pending` says why.
+ */
+function SummaryTile({
+  icon, color, title, badge, value, pending, onOpen, children,
+}: {
+  icon: React.ReactNode;
+  color: string;
+  title: string;
+  badge?: React.ReactNode;
+  value: string | null;
+  pending?: string;
+  onOpen?: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      className="group text-left p-6 md:p-7 flex flex-col gap-2.5 enabled:hover:bg-slate-50/70 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="w-9 h-9 rounded-xl border flex items-center justify-center" style={{ color, background: `${color}14`, borderColor: `${color}33` }}>
+          {icon}
+        </span>
+        {onOpen && <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors" />}
+      </div>
+      <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">{title}{badge}</p>
+      {value === null ? (
+        <p className="text-sm text-slate-500">{pending}</p>
+      ) : (
+        <div>
+          <p className="font-black text-slate-900 text-xl md:text-2xl tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+            {value}
+          </p>
+          {children}
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -312,60 +336,6 @@ function MoveLine({ label, amount, pct, currency }: { label: string; amount: num
         {signedCurrency(amount, currency)}{pct !== null && ` · ${formatPct(pct)}`}
       </span>
       <span className="text-slate-400 font-semibold">{label}</span>
-    </div>
-  );
-}
-
-/**
- * PORTFOLIO TILES — a strip along the bottom of the headline, one small tile per portfolio
- * with its market value only (the rest is on its page). A tile opens its portfolio; one with no
- * data yet offers to add transactions to it instead.
- */
-function PortfolioTiles({
-  portfolios, colorOf, snapshots, onOpen,
-}: {
-  portfolios: Portfolio[];
-  colorOf: (uuid: string) => string;
-  snapshots: Record<string, SnapshotState>;
-  onOpen: (uuid: string, hasData: boolean) => void;
-}) {
-  return (
-    <div className="border-t border-slate-100 bg-slate-50/60 p-4 md:p-5">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1">Portfolios</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {portfolios.map((p) => {
-          const state = snapshots[p.uuid] ?? { status: "loading" };
-          const snapshot = state.status === "ready" ? state.snapshot : null;
-          return (
-            <button
-              key={p.uuid}
-              onClick={() => onOpen(p.uuid, snapshot !== null)}
-              className="group text-left bg-white rounded-2xl border border-slate-200 hover:border-[#C49A3C]/50 transition-colors px-4 py-3.5 flex items-center justify-between gap-3"
-            >
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-[13px] font-bold text-slate-700 truncate">
-                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: colorOf(p.uuid) }} />
-                  <span className="truncate">{p.name}</span>
-                </p>
-                <div className="mt-1 pl-4.5">
-                  {state.status === "loading" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-[#C49A3C]" />
-                  ) : state.status === "failed" ? (
-                    <p className="text-xs font-semibold text-rose-600">Unavailable</p>
-                  ) : snapshot === null ? (
-                    <p className="text-xs font-semibold text-slate-400">No transactions yet</p>
-                  ) : (
-                    <p className="text-lg font-black text-slate-900 tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                      {formatCurrency(snapshot.totalMarketValue, snapshot.currency, 0)}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors shrink-0" />
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -493,45 +463,6 @@ function ModuleHead({
         {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
       </div>
       {right}
-    </div>
-  );
-}
-
-/**
- * STAT — one segment of a Module's stat strip.
- */
-interface StatProps {
-  title: string;
-  // A plain string for a single figure, or richer content (see AmountWithDelta) for a figure
-  // that needs more than one line.
-  value: React.ReactNode;
-  icon: React.ReactNode;
-  // Shown in a tooltip when the user hovers (or focuses) the icon.
-  info: string;
-  color: "emerald" | "red" | "gold";
-}
-
-function Stat({ title, value, icon, info, color }: StatProps) {
-  const colorMap = {
-    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
-    red: "bg-red-50 text-red-600 border-red-100",
-    gold: "bg-[#C49A3C]/10 text-[#C49A3C] border-[#C49A3C]/20",
-  };
-
-  return (
-    <div className="p-6 md:p-7 flex flex-col gap-2.5">
-      <InfoTip text={info}>
-        <div className={`w-9 h-9 rounded-xl border flex items-center justify-center cursor-help ${colorMap[color]}`}>
-          {icon}
-        </div>
-      </InfoTip>
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
-      <div
-        className="font-black text-slate-900 text-xl md:text-2xl"
-        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-      >
-        {value}
-      </div>
     </div>
   );
 }

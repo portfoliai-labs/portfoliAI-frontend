@@ -12,6 +12,7 @@ import type { Crumb } from "./Breadcrumb";
 import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
 import { ExploreCommunity } from "../preview/ExploreCommunity";
 import { StrategyBuilder } from "../preview/StrategyBuilder";
+import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 
 type PortfoliosView =
   | { kind: "hub" }
@@ -22,61 +23,76 @@ type PortfoliosView =
   | { kind: "strategy" }
   | { kind: "portfolio"; uuid: string; page: PortfolioPage };
 
-const PORTFOLIO_PAGES: PortfolioPage[] = ["home", "insights", "transactions", "reports", "alerts"];
+// The dashboard's section id for this one (see the dashboard page).
+const SECTION = "performance";
 
 /**
  * Opens Portfolios on one portfolio's page rather than on the hub, from elsewhere in the
- * dashboard (the Dashboard's portfolio cards, "Manage alerts", "Add transactions"): the page
- * rides in the URL hash (#portfolio=<uuid>/<page>), which InsightsSection reads when it mounts
- * and then clears.
+ * dashboard (the Dashboard's portfolio cards, "Manage alerts", "Add transactions"): the page is
+ * recorded in the history entry (see lib/dashboardHistory), which InsightsSection reads when it
+ * mounts. One entry for the whole move: the one `onNavigate` may have just pushed for the
+ * section is replaced by the page.
  */
 export function openPortfoliosPage(onNavigate: (section: string) => void, portfolioUuid: string, page: PortfolioPage = "home") {
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#portfolio=${encodeURIComponent(portfolioUuid)}/${page}`);
-  onNavigate("performance");
+  const before = window.history.state;
+  onNavigate(SECTION);
+  const view: PortfoliosView = { kind: "portfolio", uuid: portfolioUuid, page };
+  pushDashboardEntry({ section: SECTION, view }, window.history.state !== before);
 }
 
-const viewFromHash = (): PortfoliosView => {
-  if (typeof window === "undefined") return { kind: "hub" };
-  const match = window.location.hash.match(/^#portfolio=([^/]+)\/(\w+)$/);
-  if (!match) return { kind: "hub" };
-  const page = PORTFOLIO_PAGES.find((p) => p === match[2]) ?? "home";
-  return { kind: "portfolio", uuid: decodeURIComponent(match[1]), page };
+// The view the current history entry was on; the hub when it's another section's or none.
+const viewFromHistory = (): PortfoliosView => {
+  const entry = readDashboardEntry();
+  return entry?.section === SECTION && entry.view ? (entry.view as PortfoliosView) : { kind: "hub" };
 };
 
 /**
  * PORTFOLIOS SECTION (investor; "performance" in the sidebar's ids, labelled Investments) —
  * opens on the hub (InsightsHub): a card per portfolio, plus Compare. A portfolio opens on its
  * own page (PortfolioHome: its key figures, and the way into its Insights, Transactions,
- * Reports and Alerts). Every page under the hub shows where it is ("Portfolios / Main
- * portfolio / Insights / Dividends") through Breadcrumb: in the Sidebar on wide screens, at the
- * top of the page below that. Opening a portfolio also makes it the selected one
+ * Reports and Alerts). Every page under the hub publishes where it is ("Portfolios / Main
+ * portfolio / Insights / Dividends") through Breadcrumb, and the Sidebar shows the portfolio
+ * (or Compare) under Investments. Opening a portfolio also makes it the selected one
  * (PortfolioContext), which the rest of the dashboard follows. Which page is open is local to
  * this section: leaving and coming back lands on the hub again (unless openPortfoliosPage asked
- * for another), while Compare's picked portfolios are remembered for next time. The hub also
+ * for another), while Compare's picked portfolios are remembered for next time. Every page is a
+ * browser history entry, so back and forward move between them (see lib/dashboardHistory). The hub also
  * leads to the previews of what's coming (a sample real estate portfolio, Explore, Strategy),
  * which run on mock data from lib/mock.
  */
 export function InsightsSection({ onNavigate }: { onNavigate: (section: string) => void }) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
-  const [view, setView] = useState<PortfoliosView>(viewFromHash);
+  const [view, setView] = useState<PortfoliosView>(viewFromHistory);
   const [selection, setSelection] = useState<string[]>([]);
+  // Bumped to start Insights over (back at the top of the page), when "All portfolios" is picked
+  // in the Sidebar while already on its Insights (see below).
+  const [insightsVisit, setInsightsVisit] = useState(0);
 
-  // The hash only carries the request to open a page (openPortfoliosPage); clear it so coming
-  // back later, from the sidebar, lands on the hub.
+  // Back and forward: show the page the entry landed on, if it's one of this section's (another
+  // section's entry is the dashboard page's to handle).
   useEffect(() => {
-    if (window.location.hash.startsWith("#portfolio=")) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    }
+    const onPopState = () => {
+      if (readDashboardEntry()?.section !== SECTION) return;
+      const next = viewFromHistory();
+      setView((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const go = (next: PortfoliosView) => {
+    pushDashboardEntry({ section: SECTION, view: next });
     setView(next);
     window.scrollTo({ top: 0 });
   };
   const toHub = () => go({ kind: "hub" });
+  // "All portfolios" (the hub's Combined) opens straight on its Insights: for now it has no page
+  // of its own in between (no transactions of its own, and its alerts and reports are its
+  // portfolios').
   const openPortfolio = (uuid: string) => {
     selectPortfolio(uuid);
-    go({ kind: "portfolio", uuid, page: "home" });
+    const isAggregate = portfolios.find((p) => p.uuid === uuid)?.isAggregate ?? false;
+    go({ kind: "portfolio", uuid, page: isAggregate ? "insights" : "home" });
   };
 
   const toggle = (uuid: string) => {
@@ -117,7 +133,20 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
     if (!portfolio) return hub;
 
     const hubCrumb: Crumb = { label: "Investments", onClick: toHub };
-    const homeCrumb: Crumb = { label: portfolio.name, onClick: () => go({ kind: "portfolio", uuid: portfolio.uuid, page: "home" }) };
+    // The portfolio's own page; for "All portfolios", which skips it, its Insights: from a detail
+    // view or a month, back through their history entries (a month sits over a detail), which
+    // closes them; from Insights itself, back to the top of it.
+    const backToInsights = () => {
+      const overlay = readDashboardEntry()?.overlay;
+      if (overlay) window.history.go(overlay === "month" ? -2 : -1);
+      else {
+        setInsightsVisit((n) => n + 1);
+        window.scrollTo({ top: 0 });
+      }
+    };
+    const homeCrumb: Crumb = portfolio.isAggregate
+      ? { label: portfolio.name, onClick: backToInsights }
+      : { label: portfolio.name, onClick: () => go({ kind: "portfolio", uuid: portfolio.uuid, page: "home" }) };
     const pageTrail = [hubCrumb, homeCrumb];
     const openPage = (page: PortfolioPage) => go({ kind: "portfolio", uuid: portfolio.uuid, page });
 
@@ -126,7 +155,7 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
         return (
           // Keyed so switching portfolios drops the month-drilldown cache, which is per year.
           <PerformanceSection
-            key={portfolio.uuid}
+            key={`${portfolio.uuid}:${insightsVisit}`}
             portfolioUuid={portfolio.uuid}
             isAggregate={portfolio.isAggregate}
             trail={pageTrail}

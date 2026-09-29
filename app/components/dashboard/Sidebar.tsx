@@ -57,34 +57,27 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
   };
 
   /**
-   * The trail under its section's entry: one row per page below the section (labels[0] is the
-   * section itself, the entry above), each indented a step further, the current page last and
-   * highlighted. The rows above it lead back to their page.
+   * The trail under its section's entry: just the page one level below the section (labels[0] is
+   * the section itself, the entry above) — the portfolio open, Compare… — never the pages under
+   * it (the browser's back button leads up through those). Highlighted, and leading back to that
+   * page when the user is further down.
    */
   const renderTrail = () => {
     if (!trail) return null;
-    const rows = [...trail.labels.slice(1).map((label, i) => ({ label, index: i + 1 })), { label: trail.current, index: -1 }];
+    const isCurrent = trail.labels.length <= 1;
+    const label = isCurrent ? trail.current : trail.labels[1];
     return (
       <div className="flex flex-col gap-0.5 mt-1 mb-1">
-        {rows.map((row, depth) => {
-          const isCurrent = row.index === -1;
-          return (
-            <button
-              key={`${depth}-${row.label}`}
-              type="button"
-              onClick={isCurrent ? undefined : () => goToCrumb(row.index)}
-              aria-current={isCurrent ? "page" : undefined}
-              style={{ marginLeft: `${1.25 + depth * 0.875}rem` }}
-              className={`flex items-center gap-2.5 rounded-lg pl-3 pr-3 py-2 text-left border-l-2 transition-colors ${
-                isCurrent
-                  ? "border-[#C49A3C] text-white bg-white/5 cursor-default"
-                  : "border-white/10 text-[#a8a29e] hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <span className="text-[13px] font-semibold truncate">{row.label}</span>
-            </button>
-          );
-        })}
+        <button
+          type="button"
+          onClick={isCurrent ? undefined : () => goToCrumb(1)}
+          aria-current={isCurrent ? "page" : undefined}
+          className={`ml-5 flex items-center gap-2.5 rounded-lg pl-3 pr-3 py-2 text-left border-l-2 border-[#C49A3C] text-white bg-white/5 transition-colors ${
+            isCurrent ? "cursor-default" : "hover:bg-white/10"
+          }`}
+        >
+          <span className="text-[13px] font-semibold truncate">{label}</span>
+        </button>
       </div>
     );
   };
