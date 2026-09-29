@@ -22,7 +22,7 @@ import { NotificationsSection } from "../../components/dashboard/NotificationsSe
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { InsightsSection, openPortfoliosPage } from "../../components/dashboard/InsightsSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
-import { WalletsSection } from "../../components/preview/WalletsSection";
+import { ExploreCommunity } from "../../components/preview/ExploreCommunity";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
@@ -31,7 +31,11 @@ import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHisto
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'wallets', 'news', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'explore', 'news', 'settings', 'notifications'];
+// Sections that became part of another: Wallets now sits under Assets ("performance"), next to
+// the portfolios. A link or a history entry to the old one lands on the new.
+const MOVED_SECTIONS: Record<string, string> = { wallets: 'performance' };
+const resolveSection = (section: string | null | undefined) => (section ? MOVED_SECTIONS[section] ?? section : section);
 
 /**
  * DashboardPage - Main protected dashboard view.
@@ -46,12 +50,12 @@ function DashboardPageContent() {
   const searchParams = useSearchParams();
   // Lets links into the dashboard land on a specific tab via `?section=...` instead of
   // always resetting to overview.
-  const requestedSection = searchParams.get('section');
+  const requestedSection = resolveSection(searchParams.get('section'));
 
   // A reload keeps the history entry, and with it the section it was on (see lib/dashboardHistory).
   const [activeSection, setActiveSection] = useState<string>(() => {
     if (requestedSection && VALID_SECTIONS.includes(requestedSection)) return requestedSection;
-    const fromHistory = readDashboardEntry()?.section;
+    const fromHistory = resolveSection(readDashboardEntry()?.section);
     return fromHistory && VALID_SECTIONS.includes(fromHistory) ? fromHistory : 'overview';
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -66,7 +70,7 @@ function DashboardPageContent() {
   useEffect(() => {
     if (readDashboardEntry()?.section !== activeSection) pushDashboardEntry({ section: activeSection }, true);
     const onPopState = () => {
-      const section = readDashboardEntry()?.section;
+      const section = resolveSection(readDashboardEntry()?.section);
       if (section && VALID_SECTIONS.includes(section)) setActiveSection(section);
     };
     window.addEventListener('popstate', onPopState);
@@ -101,7 +105,7 @@ function DashboardPageContent() {
       openPortfoliosPage(openSection, portfolio.uuid, 'transactions');
       return;
     }
-    showSection(section);
+    showSection(resolveSection(section) ?? section);
   };
 
   const renderContent = (() => {
@@ -126,10 +130,10 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorPerformanceSection />
           : <InsightsSection key={sectionVisit} onNavigate={navigate} />;
-      case 'wallets':
+      case 'explore':
         // A preview on sample data (components/preview): demo investors only.
         if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
-        return isDemo ? <WalletsSection key={sectionVisit} /> : <DashboardOverview onNavigate={navigate} />;
+        return isDemo ? <ExploreCommunity /> : <DashboardOverview onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':

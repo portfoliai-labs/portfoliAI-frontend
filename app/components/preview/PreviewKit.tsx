@@ -5,7 +5,7 @@ import { FlaskConical, Lock } from "lucide-react";
 
 /**
  * PREVIEW KIT — the pieces every not-yet-available feature is built from (Real estate, Wallets,
- * Explore, Strategy, the property form in the transaction modal). Those pages run on sample data
+ * Explore, the property form in the transaction modal). Those pages run on sample data
  * from lib/mock and save nothing: they're here to show where the product is heading, and each
  * one says so up front (PreviewBanner), on its way in (PreviewBadge) and on every action that
  * would need a backend (ComingSoonButton).

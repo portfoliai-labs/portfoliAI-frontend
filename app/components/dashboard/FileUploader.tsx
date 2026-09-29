@@ -124,21 +124,24 @@ function groupByPortfolio<T>(items: T[], portfolioOf: (item: T) => string): Map<
 //   portfolio_uuid), or from one portfolio when the filter picks it; writes on a saved row go
 //   to the portfolio it belongs to, and new rows to the portfolio picked where they're added.
 // - the advisor (portfolioUuid: a client's portfolio): that one portfolio, nothing to pick.
-export function FileUploader({ portfolioUuid: fixedPortfolioUuid }: { portfolioUuid?: string } = {}) {
+// `readOnly`: a virtual portfolio's (a backtest's) generated transactions — the saved list only,
+// with nothing to add, import, edit or delete.
+export function FileUploader({ portfolioUuid: fixedPortfolioUuid, readOnly = false }: { portfolioUuid?: string; readOnly?: boolean } = {}) {
   const { portfolios: allPortfolios, current } = usePortfolio();
   // A demo account (see lib/demo) sees the list and can open the form, but can't import, save,
   // edit or delete anything.
   const { isDemo } = useUser();
   const isFixed = fixedPortfolioUuid !== undefined;
-  // The portfolios that hold transactions — the aggregate only lists them.
-  const ownPortfolios = useMemo(() => (isFixed ? [] : allPortfolios.filter(p => !p.isAggregate)), [isFixed, allPortfolios]);
+  // The portfolios that hold the user's transactions — the aggregate only lists them, and a
+  // backtest's are generated (virtual portfolios take no writes).
+  const ownPortfolios = useMemo(() => (isFixed ? [] : allPortfolios.filter(p => !p.isVirtual)), [isFixed, allPortfolios]);
   const aggregate = isFixed ? undefined : allPortfolios.find(p => p.isAggregate);
   // Pickers and portfolio labels only make sense with a choice to make.
   const pickable = ownPortfolios.length > 1 ? ownPortfolios : undefined;
   // Where new rows go unless the user picks otherwise: the portfolio open elsewhere in the
   // app, or the default one while that's the aggregate.
   const defaultTarget = fixedPortfolioUuid
-    ?? (current && !current.isAggregate ? current.uuid : (ownPortfolios.find(p => p.isDefault) ?? ownPortfolios[0])?.uuid)
+    ?? (current && !current.isVirtual ? current.uuid : (ownPortfolios.find(p => p.isDefault) ?? ownPortfolios[0])?.uuid)
     ?? "";
   const portfolioName = (uuid?: string) => allPortfolios.find(p => p.uuid === uuid)?.name ?? "";
   const [loading, setLoading] = useState(false);
@@ -846,7 +849,7 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid }: { portfolioU
       )}
 
       {/* TOOLBAR: upload actions, full width */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {!readOnly && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div
           onClick={() => !isDemo && fileInputRef.current?.click()}
           title={isDemo ? DEMO_DISABLED_TITLE : undefined}
@@ -876,7 +879,7 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid }: { portfolioU
             <p className="text-xs text-slate-400 truncate">Insert a single row manually</p>
           </div>
         </button>
-      </div>
+      </div>}
 
       {/* File chips: click to (re)open the column mapping modal for that file */}
       {files.length > 0 && (
@@ -958,11 +961,13 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid }: { portfolioU
         emptyMessage={
           hasActiveFilters
             ? "No transactions match the current filters."
+            : readOnly
+            ? "No transactions yet: the backtest is still generating them."
             : "No transactions yet. Add one manually or upload a file to get started."
         }
         filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} portfolios={pickable} />}
-        onDeleteAll={isDemo ? undefined : () => setConfirmDeleteAll(true)}
-        readOnly={isDemo}
+        onDeleteAll={isDemo || readOnly ? undefined : () => setConfirmDeleteAll(true)}
+        readOnly={isDemo || readOnly}
         deletingAll={deletingAllExisting}
       />
     </div>

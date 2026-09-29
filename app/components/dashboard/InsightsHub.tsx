@@ -2,64 +2,55 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Check, Columns3, Compass, Layers, Loader2, MoreHorizontal, Pencil, Trash2, Wand2, X } from "lucide-react";
-import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
+import { ArrowUpRight, Columns3, History, MoreHorizontal, Pencil, Telescope, Trash2, Wand2 } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
+import { portfolioColorMap } from "../../lib/chartColors";
 import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
-import { portfolioColorMap } from "../../lib/chartColors";
-import { NewPortfolioCard } from "./PortfolioBar";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { PreviewBadge } from "../preview/PreviewKit";
-import { RealEstateCard } from "../preview/RealEstateCard";
+import { NewPortfolioDialog } from "./PortfolioBar";
+import { realEstateHolderItem } from "../preview/RealEstateCard";
+import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { useUser } from "../../context/UserContext";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
+import { PreviewBadge } from "../preview/PreviewKit";
+import { VIRTUAL_COLOR } from "./BacktestMarks";
+import { FeaturedCard, PortfolioHolder, portfolioHolderItem, type HolderItem } from "./PortfolioHolder";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
-const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+// The virtual portfolios' cards in their holder: shades of VIRTUAL_COLOR, one per card.
+const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6", "#0369a1"];
 
 /**
- * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio,
- * each with its value, its return since inception and the curve behind it, opening that
- * portfolio's page (renamed or deleted from its "…" menu), a card to create one, then the ways
- * of looking at them together: Combined (the aggregate "All portfolios", which isn't a portfolio
- * of its own — no transactions, no rename or delete — so it sits with the views rather than
- * with the portfolios; there with two portfolios or more) and Compare. For a demo account (see lib/demo), which can't
- * create, rename or delete anything, alongside them sit the previews of what's coming (see
- * components/preview): a sample real estate portfolio, Explore and Strategy, each marked as such. The figures for every card come
- * from one call (GET /v1/portfolios/comparison with no portfolio listed returns all of them),
- * refetched when a portfolio is added or removed.
+ * INVESTMENTS HUB — Assets / Investments: every portfolio on one row, in three columns. First the
+ * real portfolio with the most money invested, on a big card as tall as the row
+ * (FeaturedPortfolioCard); then the other real ones (the default first) and, for a demo account,
+ * the sample real estate (a preview), gathered in a card holder (PortfolioHolder), which pulls
+ * each one out on hover to show its return and the curve behind it, with at its front the card that
+ * creates a portfolio (NewPortfolioDialog); then the virtual ones ("All portfolios", every real portfolio
+ * together, there with two or more, and the strategies backtested with Strategy, see
+ * models/Strategy) in a holder of their own, in their blue (BacktestMarks), or the way to
+ * backtest one while there are none. The sleeves sit on one line, each stack rising from it. A
+ * card opens its portfolio's page, where it's renamed or deleted. Under them, Compare, Strategy
+ * and Discovery (searching for new assets; coming soon). A demo
+ * account (see lib/demo) can't create anything. The figures for every card come from one call
+ * (GET /v1/portfolios/comparison with no portfolio listed returns all of them), refetched when a
+ * portfolio is added or removed.
  */
 export function InsightsHub({
-  onOpenPortfolio, onCompare, onOpenRealEstate, onExplore, onStrategy,
+  trail, onOpenPortfolio, onCompare, onOpenRealEstate, onStrategy,
 }: {
+  // The pages above it ("Assets").
+  trail: Crumb[];
   onOpenPortfolio: (uuid: string) => void;
   onCompare: () => void;
   onOpenRealEstate: () => void;
-  onExplore: () => void;
   onStrategy: () => void;
 }) {
-  const { portfolios, deletePortfolio } = usePortfolio();
+  const { portfolios } = usePortfolio();
   const { isDemo } = useUser();
-  const [toDelete, setToDelete] = useState<Portfolio | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const handleDelete = async () => {
-    if (!toDelete) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deletePortfolio(toDelete.uuid);
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Unable to delete this portfolio.");
-    } finally {
-      setDeleting(false);
-      setToDelete(null);
-    }
-  };
+  const [creating, setCreating] = useState(false);
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
   const uuidsKey = portfolios.map((p) => p.uuid).join(",");
   const [entries, setEntries] = useState<{ key: string; byUuid: Map<string, PortfolioComparisonEntry> | null }>({ key: "", byUuid: null });
@@ -72,247 +63,146 @@ export function InsightsHub({
     return () => { cancelled = true; };
   }, [uuidsKey]);
 
-  // Still loading until the answer for the current list of portfolios is in.
+  // Still loading until the answer for the current list of portfolios is in; the previous figures
+  // stay up meanwhile.
   const loaded = entries.key === uuidsKey;
+  const entryOf = (uuid: string) => entries.byUuid?.get(uuid) ?? (loaded ? null : undefined);
   const canCompare = portfolios.filter((p) => !p.isAggregate).length >= 2;
-  const aggregate = portfolios.find((p) => p.isAggregate);
+
+  // The default portfolio leads (the list already puts it first among the real ones).
+  const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  // The one with the most money invested gets the big card; the default until the figures are in.
+  const invested = (uuid: string) => entries.byUuid?.get(uuid)?.value?.investedCapital ?? -1;
+  const featured = real.reduce<typeof real[number] | undefined>((best, p) => (!best || invested(p.uuid) > invested(best.uuid) ? p : best), undefined);
+  const others = real.filter((p) => p !== featured);
+  const realItems: HolderItem[] = [
+    ...others.map((p) => portfolioHolderItem(p, colorOf(p.uuid), entryOf(p.uuid), () => onOpenPortfolio(p.uuid))),
+    ...(isDemo ? [realEstateHolderItem(onOpenRealEstate)] : []),
+    // At the front, the way to add one: a dialog for its name. A demo account can't.
+    {
+      key: "new-portfolio",
+      name: "New portfolio",
+      color: "",
+      add: true,
+      value: null,
+      headline: null,
+      points: [],
+      empty: isDemo ? DEMO_DISABLED_TITLE : "Start another portfolio: its own transactions, insights, reports and alerts.",
+      cta: isDemo ? "Not available" : "Create",
+      onOpen: () => { if (!isDemo) setCreating(true); },
+    },
+  ];
+  const portfolioCount = others.length;
+  const virtualItems = portfolios.filter((p) => p.isVirtual).map((p, i) =>
+    portfolioHolderItem(p, VIRTUAL_SHADES[i % VIRTUAL_SHADES.length], entryOf(p.uuid), () => onOpenPortfolio(p.uuid)));
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {portfolios.filter((p) => !p.isAggregate).map((p) => (
-          <PortfolioCard
-            key={p.uuid}
-            portfolio={p}
-            color={colorOf(p.uuid)}
-            // The previous figures stay up while a new list of portfolios loads.
-            entry={entries.byUuid?.get(p.uuid) ?? (loaded ? null : undefined)}
-            onOpen={() => onOpenPortfolio(p.uuid)}
-            onDelete={() => setToDelete(p)}
-            readOnly={isDemo}
+      <Breadcrumb trail={trail} current="Investments" />
+      {/* One row: the largest portfolio as tall as the row, then the holders, their sleeves on one
+          line and each stack rising from it as high as its cards go. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 items-end">
+        {featured && (
+          <FeaturedPortfolioCard
+            portfolio={featured}
+            color={colorOf(featured.uuid)}
+            entry={entryOf(featured.uuid)}
+            onOpen={() => onOpenPortfolio(featured.uuid)}
           />
-        ))}
-        {isDemo && <RealEstateCard onOpen={onOpenRealEstate} />}
-        {isDemo ? (
-          <div
-            title={DEMO_DISABLED_TITLE}
-            className="min-h-44 h-full w-full rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-300 cursor-not-allowed"
-          >
-            <span className="text-[13px] font-bold">New portfolio</span>
-            <span className="text-[11px] font-semibold">Not available on a demo account</span>
-          </div>
+        )}
+        <PortfolioHolder items={realItems} label={portfolioCount > 0 ? `${portfolioCount} more` : "Portfolios"} />
+        {virtualItems.length > 0 ? (
+          <PortfolioHolder items={virtualItems} label={`${virtualItems.length} virtual`} tone="virtual" />
         ) : (
-          <NewPortfolioCard />
+          <button
+            type="button"
+            onClick={onStrategy}
+            className="min-h-44 w-full rounded-3xl border-2 border-dashed border-sky-300 bg-sky-50/40 flex flex-col items-center justify-center gap-2 px-6 text-center text-sky-700 hover:border-sky-500 transition-colors"
+          >
+            <History className="h-6 w-6" />
+            <span className="text-[13px] font-bold">No virtual portfolios yet</span>
+            <span className="text-[11px] font-semibold text-sky-700/70">Backtest a strategy and it shows up here.</span>
+          </button>
         )}
       </div>
 
-      {/* Its own row, never beside a portfolio: same columns as above, so it keeps a tile's size. */}
+      {/* The ways on from here, in a row of their own under the portfolios: same columns as above. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {aggregate && (
-          <ActionCard
-            icon={<Layers className="h-5 w-5" />}
-            title="Combined"
-            text="All your portfolios as one: value, returns and risk, from every transaction together."
-            onClick={() => onOpenPortfolio(aggregate.uuid)}
-          />
-        )}
         <ActionCard
           icon={<Columns3 className="h-5 w-5" />}
           title="Compare"
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
         />
-        {isDemo && <ActionCard
-          icon={<Compass className="h-5 w-5" />}
-          title="Explore"
-          badge={<PreviewBadge dark />}
-          text="Portfolios shared by other investors: browse them and like the ones you find interesting."
-          onClick={onExplore}
-        />}
-        {isDemo && <ActionCard
+        <ActionCard
           icon={<Wand2 className="h-5 w-5" />}
           title="Strategy"
-          badge={<PreviewBadge dark />}
-          text="Set target weights, rebalancing, PAC and costs, then backtest them into a virtual portfolio."
+          text="Set target weights, rebalancing, PAC and costs, then backtest them on historical prices into a virtual portfolio."
           onClick={onStrategy}
-        />}
-      </div>
-      {deleteError && <p className="text-sm font-semibold text-rose-600">{deleteError}</p>}
-
-      {toDelete && (
-        <ConfirmDialog
-          title={`Delete "${toDelete.name}"?`}
-          description="This permanently deletes this portfolio and every transaction, alert and report in it. This can't be undone."
-          confirming={deleting}
-          onConfirm={handleDelete}
-          onClose={() => setToDelete(null)}
         />
-      )}
+        {/* Not built yet: there's no asset search to back it (only GET /v1/assets/{ticker}). */}
+        <ActionCard
+          icon={<Telescope className="h-5 w-5" />}
+          title="Discovery"
+          badge={<PreviewBadge dark label="Soon" />}
+          text="Search and explore new assets — stocks, ETFs, bonds, crypto — before adding them to a portfolio."
+        />
+      </div>
+      {creating && <NewPortfolioDialog onClose={() => setCreating(false)} />}
     </div>
   );
 }
 
+const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+const formatSigned = (amount: number, currency: string) => `${amount >= 0 ? "+" : ""}${formatCurrency(amount, currency, 0)}`;
+
 /**
- * PORTFOLIO CARD — one portfolio on the hub, opening its own page (PortfolioHome) on a click. `entry` undefined
- * while loading, null when the backend has nothing for it (no figures computed yet, or the
- * request failed): the card still opens the portfolio, whose own page explains what's missing.
- *
- * It also has a "…" menu in its corner: Rename turns the name into a field right on the card,
- * Delete asks first (InsightsHub's ConfirmDialog). The default portfolio can't be deleted (the
- * backend answers 409). "All portfolios" never gets a card: it's the Combined action card.
+ * FEATURED PORTFOLIO CARD — the hub's largest real portfolio (by money invested) on the row's
+ * FeaturedCard: its value, return since inception and a year, what went in and the gain on what's
+ * still held, and the return curve. `entry` undefined while loading, null when there's nothing yet.
  */
-function PortfolioCard({
-  portfolio, color, entry, onOpen, onDelete, readOnly = false,
-}: {
+function FeaturedPortfolioCard({ portfolio, color, entry, onOpen }: {
   portfolio: Portfolio;
   color: string;
   entry: PortfolioComparisonEntry | null | undefined;
   onOpen: () => void;
-  onDelete: () => void;
-  // No "…" menu: a demo account can't rename or delete.
-  readOnly?: boolean;
 }) {
-  const { renamePortfolio } = usePortfolio();
   const value = entry?.value ?? null;
   const performance = entry?.performance ?? null;
   const totalReturn = performance?.totalReturnPct ?? null;
   const points = useMemo(() => (performance?.cumulativeReturnPct ? toChartPoints(performance.cumulativeReturnPct) : []), [performance]);
 
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(portfolio.name);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const startRename = () => {
-    setName(portfolio.name);
-    setError(null);
-    setRenaming(true);
-  };
-  const saveRename = async () => {
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === portfolio.name) {
-      setRenaming(false);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await renamePortfolio(portfolio.uuid, trimmed);
-      setRenaming(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to rename this portfolio.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
-    <div
-      role="button"
-      tabIndex={renaming ? -1 : 0}
-      onClick={renaming ? undefined : onOpen}
-      onKeyDown={(e) => {
-        if (renaming || e.target !== e.currentTarget) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className={`group min-h-44 h-full text-left bg-white rounded-3xl border border-slate-200 shadow-sm p-5 md:p-6 flex flex-col gap-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40 ${
-        renaming ? "" : "cursor-pointer hover:border-[#C49A3C]/50 hover:shadow-md"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
-          {renaming ? (
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveRename();
-                if (e.key === "Escape") setRenaming(false);
-              }}
-              maxLength={80}
-              aria-label="Portfolio name"
-              className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-white border border-[#C49A3C]/50 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-[#C49A3C]/10"
-            />
-          ) : (
-            <>
-              <span className="text-lg font-black text-slate-900 truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                {portfolio.name}
-              </span>
-              {portfolio.isDefault && (
-                <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
-              )}
-            </>
+    <FeaturedCard
+      eyebrow="Largest portfolio"
+      name={portfolio.name}
+      badge={portfolio.isDefault ? (
+        <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
+      ) : undefined}
+      color={color}
+      value={entry === undefined ? undefined : value ? formatCurrency(value.marketValue, value.currency, 0) : null}
+      line={totalReturn !== null && (
+        <>
+          <span className={totalReturn >= 0 ? "text-emerald-600" : "text-rose-600"}>{formatPct(totalReturn)}</span>
+          <span className="text-slate-400 font-semibold"> since inception</span>
+          {performance?.annualizedReturnPct != null && (
+            <span className="text-slate-400 font-semibold"> · {formatPct(performance.annualizedReturnPct)} a year</span>
           )}
-        </div>
-        {renaming ? (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={saveRename}
-              disabled={saving || !name.trim()}
-              aria-label="Save name"
-              className="p-2 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            </button>
-            <button type="button" onClick={() => setRenaming(false)} aria-label="Cancel" className="p-2 rounded-lg text-slate-400 hover:bg-slate-100">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 shrink-0">
-            {!readOnly && <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={startRename} onDelete={onDelete} />}
-            <span className="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 group-hover:bg-[#C49A3C] group-hover:text-white transition-colors">
-              <ArrowUpRight className="h-4 w-4" />
-            </span>
-          </div>
-        )}
-      </div>
-      {error && <p className="-mt-2 text-xs font-medium text-rose-600">{error}</p>}
-
-      {entry === undefined ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-[#C49A3C]" />
-        </div>
-      ) : value === null ? (
-        <p className="flex-1 flex items-end text-[13px] font-semibold text-slate-400">No figures yet — add transactions to get started.</p>
-      ) : (
-        <div className="flex-1 flex items-end justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-2xl font-black text-slate-900 tabular-nums truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {formatCurrency(value.marketValue, value.currency, 0)}
-            </p>
-            {totalReturn !== null && (
-              <p className="text-[13px] font-bold tabular-nums mt-1">
-                <span className={totalReturn >= 0 ? "text-emerald-600" : "text-rose-600"}>{formatPct(totalReturn)}</span>
-                <span className="text-slate-400 font-semibold"> since inception</span>
-              </p>
-            )}
-          </div>
-          {points.length >= 2 && (
-            <div className="w-28 h-12 shrink-0">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 112, height: 48 }}>
-                <LineChart data={points} margin={{ top: 4, right: 2, left: 2, bottom: 4 }}>
-                  <YAxis hide domain={["dataMin", "dataMax"]} />
-                  <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
+        </>
       )}
-    </div>
+      figures={value ? [
+        { label: "Invested", value: formatCurrency(value.investedCapital, value.currency, 0) },
+        { label: "Unrealized", value: formatSigned(value.unrealizedPnl, value.currency), tone: value.unrealizedPnl >= 0 ? "gain" : "loss" },
+      ] : []}
+      points={points}
+      empty="No figures yet — add transactions to get started."
+      onOpen={onOpen}
+    />
   );
 }
 
 /**
- * PORTFOLIO CARD MENU — the "…" with Rename and Delete, on a portfolio card and at the top of
- * its page. Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
+ * PORTFOLIO CARD MENU — the "…" with Rename and Delete, at the top of a portfolio's page. Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
  */
 export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boolean; onRename: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);

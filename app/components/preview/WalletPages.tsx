@@ -1,15 +1,16 @@
-// components/preview/WalletsSection.tsx
+// components/preview/WalletPages.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
+import { useMemo, useState } from "react";
 import {
   ComposedChart, Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine,
 } from "recharts";
 import {
-  ArrowUpRight, BellRing, CreditCard, Download, FileText, Landmark, Layers, Lightbulb, PiggyBank, Plus, Receipt, Search, Target, TrendingUp, Upload, Wallet as WalletIcon,
+  BellRing, Download, FileText, Lightbulb, Plus, Receipt, Search, Target, TrendingUp, Upload,
 } from "lucide-react";
 import { Breadcrumb, type Crumb } from "../dashboard/Breadcrumb";
+import { FeaturedCard, PortfolioHolder, type HolderItem } from "../dashboard/PortfolioHolder";
+import { VIRTUAL_COLOR } from "../dashboard/BacktestMarks";
 import { ActionCard } from "../dashboard/InsightsHub";
 import { DataTable, type DataColumn } from "../dashboard/ExploreView";
 import { Toggle } from "../dashboard/Toggle";
@@ -17,24 +18,19 @@ import { formatCompact, formatCurrency } from "../../lib/format";
 import {
   BUDGETS, CATEGORY_COLORS, INCOME_CATEGORIES, MONTHS, RECURRING, WALLETS, WALLET_ALERTS,
   monthlySummary, spendingByCategory, topMerchants, transactionsOf,
-  type Category, type Wallet, type WalletTransaction,
+  type Category, type WalletTransaction,
 } from "../../lib/mock/wallets";
 import { AXIS_TICK, ComingSoonButton, Panel, Pills, PreviewBadge, PreviewBanner, Stat, TOOLTIP_STYLE, formatPct, serif } from "./PreviewKit";
 
-type WalletPage = "home" | "transactions" | "insights" | "reports" | "budgets" | "alerts";
-type View = { kind: "hub" } | { kind: "wallet"; id: string; page: WalletPage };
+export type WalletPage = "home" | "transactions" | "insights" | "reports" | "budgets" | "alerts";
 
-const ALL = "all";
-// The dashboard's section id for this one (see the dashboard page).
-const SECTION = "wallets";
+/** The id of all wallets together (the Assets hub's "Combined wallets"). */
+export const ALL_WALLETS = "all";
+const ALL = ALL_WALLETS;
 
-// The page the current history entry was on; the hub when it's another section's or none.
-const viewFromHistory = (): View => {
-  const entry = readDashboardEntry();
-  const view = entry?.section === SECTION ? (entry.view as View | undefined) : undefined;
-  if (!view || (view.kind === "wallet" && view.id !== ALL && !WALLETS.some((w) => w.id === view.id))) return { kind: "hub" };
-  return view;
-};
+/** Whether `id` is a wallet (or all of them): a history entry can outlive the sample data. */
+export const isWalletId = (id: string) => id === ALL || WALLETS.some((w) => w.id === id);
+
 const eur = (v: number, d = 0) => formatCurrency(v, "EUR", d);
 const scopeOf = (id: string) => (id === ALL ? null : id);
 const nameOf = (id: string) => (id === ALL ? "All wallets" : WALLETS.find((w) => w.id === id)!.name);
@@ -47,63 +43,45 @@ const PAGE_LABELS: Record<Exclude<WalletPage, "home">, string> = {
 };
 
 /**
- * WALLETS SECTION (preview) — everyday money, next to the investments: current accounts, cards,
- * savings and cash, with what comes in and goes out. Built like Portfolios: a hub of wallets,
- * each opening its own page (balance, the year's income, spending and balance), and from there
- * its Transactions, Insights, Budgets, Reports and Alerts, with the trail shown in the Sidebar
- * through Breadcrumb. All wallets together are the hub's Combined card, which opens straight on
- * their Insights, as Portfolios' Combined does. All figures come from lib/mock/wallets.
+ * WALLET PAGES (preview) — everyday money, next to the investments under Assets (see
+ * InsightsSection), from Assets / Wallets (WalletsHub): current accounts, cards, savings and cash, with what comes in and goes out.
+ * Built like a portfolio: each wallet opens its own page (balance, the year's income, spending
+ * and balance), and from there its Transactions, Insights, Budgets, Reports and Alerts, with the
+ * trail shown in the Sidebar through Breadcrumb. All wallets together (ALL_WALLETS) skip their
+ * own page and open straight on their Insights, as the portfolios' Combined does. All figures
+ * come from lib/mock/wallets.
  */
-export function WalletsSection() {
-  const [view, setView] = useState<View>(viewFromHistory);
-  // Every page is a history entry, as under Investments (see lib/dashboardHistory): back and
-  // forward show the page the entry landed on.
-  useEffect(() => {
-    const onPopState = () => {
-      if (readDashboardEntry()?.section !== SECTION) return;
-      const next = viewFromHistory();
-      setView((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-  const go = (next: View) => {
-    pushDashboardEntry({ section: SECTION, view: next });
-    setView(next);
-    window.scrollTo({ top: 0 });
-  };
-
-  if (view.kind === "hub") {
-    return <WalletsHub onOpen={(id) => go({ kind: "wallet", id, page: id === ALL ? "insights" : "home" })} />;
-  }
-
-  const hubCrumb: Crumb = { label: "Wallets", onClick: () => go({ kind: "hub" }) };
+export function WalletView({ id, page, trail, onOpenPage }: {
+  id: string;
+  page: WalletPage;
+  // The pages above the wallet ("Assets / Wallets").
+  trail: Crumb[];
+  onOpenPage: (page: WalletPage) => void;
+}) {
   // All wallets skip their own page: their row in the Sidebar leads back to their Insights, or to
   // the top of it when already there.
   const homeCrumb: Crumb = {
-    label: nameOf(view.id),
+    label: nameOf(id),
     onClick: () => {
-      if (view.id !== ALL) go({ kind: "wallet", id: view.id, page: "home" });
-      else if (view.page !== "insights") go({ kind: "wallet", id: ALL, page: "insights" });
+      if (id !== ALL) onOpenPage("home");
+      else if (page !== "insights") onOpenPage("insights");
       else window.scrollTo({ top: 0 });
     },
   };
-  const openPage = (page: WalletPage) => go({ kind: "wallet", id: view.id, page });
-  const scope = scopeOf(view.id);
+  const scope = scopeOf(id);
 
-  if (view.page === "home") {
-    return <WalletHome id={view.id} trail={[hubCrumb]} onOpenPage={openPage} />;
+  if (page === "home") {
+    return <WalletHome id={id} trail={trail} onOpenPage={onOpenPage} />;
   }
 
-  const trail = [hubCrumb, homeCrumb];
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current={PAGE_LABELS[view.page]} right={pageAction(view.page)} />
-      {view.page === "transactions" && <WalletTransactions scope={scope} />}
-      {view.page === "insights" && <WalletInsights scope={scope} />}
-      {view.page === "budgets" && <WalletBudgets scope={scope} />}
-      {view.page === "reports" && <WalletReports scope={scope} name={nameOf(view.id)} />}
-      {view.page === "alerts" && <WalletAlerts />}
+      <Breadcrumb trail={[...trail, homeCrumb]} current={PAGE_LABELS[page]} right={pageAction(page)} />
+      {page === "transactions" && <WalletTransactions scope={scope} />}
+      {page === "insights" && <WalletInsights scope={scope} />}
+      {page === "budgets" && <WalletBudgets scope={scope} />}
+      {page === "reports" && <WalletReports scope={scope} name={nameOf(id)} />}
+      {page === "alerts" && <WalletAlerts />}
     </div>
   );
 }
@@ -130,90 +108,95 @@ function pageAction(page: WalletPage) {
 
 // ── Hub ────────────────────────────────────────────────────────────────────────────────────
 
-const KIND_ICON: Record<Wallet["kind"], React.ReactNode> = {
-  "Current account": <Landmark className="h-4 w-4" />,
-  "Credit card": <CreditCard className="h-4 w-4" />,
-  Savings: <PiggyBank className="h-4 w-4" />,
-  Cash: <WalletIcon className="h-4 w-4" />,
-};
+const signed = (v: number) => `${v >= 0 ? "+" : "−"}${eur(Math.abs(v))}`;
 
-function WalletsHub({ onOpen }: { onOpen: (id: string) => void }) {
+/**
+ * WALLETS HUB — Assets / Wallets, laid out like Investments: the wallet with the largest balance on
+ * a big card (FeaturedCard) as tall as the row; the other wallets in a card holder (PortfolioHolder)
+ * that pulls each one out on hover, with at its front the (not yet available) way to add one; and
+ * all wallets together in a holder of their own, in the virtual blue, like "All portfolios" — it
+ * opens straight on their Insights, as the portfolios' does.
+ */
+export function WalletsHub({ trail, onOpen }: { trail: Crumb[]; onOpen: (id: string, page: WalletPage) => void }) {
+  const wallets = useMemo(() => WALLETS.map((w) => {
+    const summary = monthlySummary(w.id);
+    const year = summary.reduce((acc, m) => ({ income: acc.income + m.income, expenses: acc.expenses + m.expenses }), { income: 0, expenses: 0 });
+    return { wallet: w, summary, month: summary.at(-1)!, year };
+  }), []);
+  const all = useMemo(() => monthlySummary(null), []);
+  const featured = wallets.reduce((best, w) => (w.month.balance > best.month.balance ? w : best));
+
+  const items: HolderItem[] = [
+    ...wallets.filter((w) => w !== featured).map(({ wallet, summary, month }) => ({
+      key: wallet.id,
+      name: wallet.name,
+      color: wallet.color,
+      value: eur(month.balance),
+      headline: signed(month.net),
+      caption: "this month",
+      points: summary.map((m) => ({ value: m.balance })),
+      empty: "",
+      onOpen: () => onOpen(wallet.id, "home"),
+    })),
+    {
+      key: "add-wallet",
+      name: "Add a wallet",
+      color: "",
+      add: true,
+      value: null,
+      headline: null,
+      points: [],
+      empty: "Connect a bank, or add an account, card or cash by hand — coming soon.",
+      cta: "Soon",
+      onOpen: () => {},
+    },
+  ];
+  const combined: HolderItem[] = [{
+    key: ALL,
+    name: "All wallets",
+    color: VIRTUAL_COLOR,
+    badge: <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-white/15 text-[9px] font-black uppercase tracking-wider">Combined</span>,
+    value: eur(all.at(-1)!.balance),
+    headline: signed(all.at(-1)!.net),
+    caption: "this month",
+    points: all.map((m) => ({ value: m.balance })),
+    empty: "",
+    onOpen: () => onOpen(ALL, "insights"),
+  }];
+
   return (
     <div className="space-y-6 pb-12">
+      <Breadcrumb trail={trail} current="Wallets" />
       <PreviewBanner feature="Wallets">
         Wallets will hold your everyday money — accounts, cards, savings and cash — with income, spending, budgets and
         alerts, next to your investments. The wallets and transactions below are sample data; nothing is connected or saved.
       </PreviewBanner>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {WALLETS.map((w) => (
-          <WalletCard key={w.id} id={w.id} title={w.name} subtitle={`${w.kind} · ${w.institution}`} icon={KIND_ICON[w.kind]} color={w.color} onOpen={() => onOpen(w.id)} />
-        ))}
-        <button
-          type="button"
-          disabled
-          title="Coming soon"
-          className="min-h-44 h-full w-full rounded-3xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 cursor-not-allowed"
-        >
-          <Plus className="h-6 w-6" />
-          <span className="text-[13px] font-bold">Connect a bank or add a wallet</span>
-          <PreviewBadge label="Soon" />
-        </button>
-      </div>
-      {/* Its own row, like the Portfolios hub's: all wallets together are a view, not a wallet. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        <ActionCard
-          icon={<Layers className="h-5 w-5" />}
-          title="Combined"
-          text="All your wallets as one: balance, income and spending together."
-          onClick={() => onOpen(ALL)}
+      {/* The same row as Investments': the largest as tall as the row, the holders' sleeves on one line. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 items-end">
+        <FeaturedCard
+          eyebrow="Largest wallet"
+          name={featured.wallet.name}
+          badge={<PreviewBadge label="Sample" />}
+          color={featured.wallet.color}
+          value={eur(featured.month.balance)}
+          line={
+            <>
+              <span className={featured.month.net >= 0 ? "text-emerald-600" : "text-rose-600"}>{signed(featured.month.net)}</span>
+              <span className="text-slate-400 font-semibold"> this month · {featured.wallet.kind}</span>
+            </>
+          }
+          figures={[
+            { label: "In, 12 months", value: eur(featured.year.income), tone: "gain" },
+            { label: "Out, 12 months", value: eur(featured.year.expenses), tone: "loss" },
+          ]}
+          points={featured.summary.map((m) => ({ value: m.balance }))}
+          empty=""
+          onOpen={() => onOpen(featured.wallet.id, "home")}
         />
+        <PortfolioHolder items={items} label={`${items.length - 1} more`} />
+        <PortfolioHolder items={combined} label="Combined" tone="virtual" />
       </div>
     </div>
-  );
-}
-
-function WalletCard({ id, title, subtitle, icon, color, onOpen }: { id: string; title: string; subtitle: string; icon: React.ReactNode; color: string; onOpen: () => void }) {
-  const summary = useMemo(() => monthlySummary(scopeOf(id)), [id]);
-  const balance = summary.at(-1)!.balance;
-  const month = summary.at(-1)!;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group min-h-44 h-full text-left bg-white rounded-3xl border border-slate-200 shadow-sm p-5 md:p-6 flex flex-col gap-4 hover:border-[#C49A3C]/50 hover:shadow-md transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-    >
-      <div className="flex items-center justify-between gap-3 w-full">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}1a`, color }}>{icon}</span>
-          <div className="min-w-0">
-            <p className="text-lg font-black text-slate-900 truncate leading-tight" style={serif}>{title}</p>
-            <p className="text-[11px] font-semibold text-slate-400 truncate">{subtitle}</p>
-          </div>
-        </div>
-        <span className="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 group-hover:bg-[#C49A3C] group-hover:text-white transition-colors shrink-0">
-          <ArrowUpRight className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="flex-1 flex items-end justify-between gap-4 w-full">
-        <div className="min-w-0">
-          <p className={`text-2xl font-black tabular-nums truncate ${balance < 0 ? "text-rose-600" : "text-slate-900"}`} style={serif}>{eur(balance)}</p>
-          <p className="text-[12px] font-bold tabular-nums mt-1">
-            <span className="text-emerald-600">+{eur(month.income)}</span>
-            <span className="text-slate-300"> · </span>
-            <span className="text-rose-600">−{eur(month.expenses)}</span>
-            <span className="text-slate-400 font-semibold"> this month</span>
-          </p>
-        </div>
-        <div className="w-24 h-12 shrink-0">
-          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 96, height: 48 }}>
-            <LineChart data={summary} margin={{ top: 4, right: 2, left: 2, bottom: 4 }}>
-              <YAxis hide domain={["dataMin", "dataMax"]} />
-              <Line type="monotone" dataKey="balance" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </button>
   );
 }
 

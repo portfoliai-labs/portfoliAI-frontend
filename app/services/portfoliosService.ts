@@ -3,6 +3,7 @@
 // to portfolioService.ts, which reads the DASHBOARD DATA inside one already-known portfolio.
 import type { Portfolio } from "../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../models/PortfolioData";
+import type { StrategyParams, StrategyPortfolioPayload } from "../models/Strategy";
 import { apiFetch } from "./apiClient";
 
 export const portfoliosService = {
@@ -18,6 +19,22 @@ export const portfoliosService = {
       method: "POST",
       body: JSON.stringify({ name }),
     });
+  },
+
+  // POST /v1/portfolios/strategies {name, strategy} — 201 with a virtual portfolio, still empty:
+  // its transactions are generated in the background (see models/Strategy). 422 when the
+  // strategy doesn't add up, 409 if the name is taken; refused for a demo account.
+  async createStrategy(payload: StrategyPortfolioPayload): Promise<Portfolio> {
+    return apiFetch<Portfolio>("/v1/portfolios/strategies", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // GET /v1/portfolios/{p}/strategy — the strategy a backtest was made from; 404 for a
+  // portfolio that isn't one.
+  async getStrategy(portfolioUuid: string): Promise<StrategyParams> {
+    return apiFetch<StrategyParams>(`/v1/portfolios/${portfolioUuid}/strategy`);
   },
 
   // GET /v1/portfolios/comparison?portfolio=…&portfolio=… — side-by-side figures, one entry

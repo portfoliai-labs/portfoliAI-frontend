@@ -11,7 +11,8 @@ import { toChartPoints } from "../../lib/series";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { MAX_COMPARED, ComparePicker } from "./PortfolioBar";
 import { PortfolioPageHeader, PortfolioPageHeaderNote } from "./PortfolioPageHeader";
-import { Breadcrumb } from "./Breadcrumb";
+import { Breadcrumb, type Crumb } from "./Breadcrumb";
+import { VirtualBadge } from "./BacktestMarks";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
@@ -79,12 +80,12 @@ export function initialCompareSelection(portfolios: Portfolio[], currentUuid: st
  * portfolio list's order, not the order they were picked in, so they don't shuffle.
  */
 export function ComparisonView({
-  selection, onToggle, onHub, onOpen,
+  selection, onToggle, trail, onOpen,
 }: {
   selection: string[];
   onToggle: (uuid: string) => void;
-  // Back to the Insights hub, from the breadcrumb.
-  onHub: () => void;
+  // The pages above Compare ("Assets / Investments").
+  trail: Crumb[];
   // Opens one portfolio's own Insights, from its column header.
   onOpen: (uuid: string) => void;
 }) {
@@ -95,7 +96,7 @@ export function ComparisonView({
 
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={[{ label: "Investments", onClick: onHub }]} current="Compare" />
+      <Breadcrumb trail={trail} current="Compare" />
       <PortfolioPageHeader
         bar={<ComparePicker selection={selection} onToggle={onToggle} />}
         nav={
@@ -347,6 +348,7 @@ function ComparisonBody({
                       <Swatch color={colorOf(e.portfolio.uuid)} dashed={e.portfolio.isAggregate} />
                       <span className="text-[13px] font-black">{e.portfolio.name}</span>
                     </button>
+                    {e.portfolio.isVirtual && <span className="flex justify-end mt-1"><VirtualBadge portfolio={e.portfolio} /></span>}
                     {isUpdating(e) && (
                       <span className="flex items-center gap-1 justify-end text-[11px] font-bold text-amber-600 mt-1">
                         <Loader2 className="h-3 w-3 animate-spin" /> Updating
@@ -469,6 +471,7 @@ function CumulativeReturnsModule({ entries, colorOf }: { entries: PortfolioCompa
                 <span key={e.portfolio.uuid} className="flex items-center gap-2 text-xs">
                   <Swatch color={colorOf(e.portfolio.uuid)} dashed={e.portfolio.isAggregate} />
                   <span className="font-bold text-slate-700">{e.portfolio.name}</span>
+                  {e.portfolio.isVirtual && <VirtualBadge portfolio={e.portfolio} />}
                   {last !== undefined && <span className="text-slate-500 tabular-nums">{formatPct(last)}</span>}
                 </span>
               );

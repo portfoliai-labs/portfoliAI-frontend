@@ -1,7 +1,7 @@
 "use client";
 
 import { useSectionTrail } from "./SectionTrail";
-import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Wallet } from "lucide-react";
+import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
 import { UserRole, SubscriptionTier } from "../../models/User";
@@ -20,15 +20,15 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; previe
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
-  // The previews of what's coming (Wallets…) are for demo accounts only (see lib/demo).
+  // The previews of what's coming (Explore…) are for demo accounts only (see lib/demo).
   const { isDemo } = useUser();
 
-  // Investor: "which page" only. Which portfolio is picked on the pages themselves: Portfolios
-  // opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
+  // Investor: "which page" only. Which portfolio or wallet is picked on the pages themselves:
+  // Assets opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'performance', label: 'Investments', icon: Briefcase },
-    ...(isDemo ? [{ id: 'wallets', label: 'Wallets', icon: Wallet, preview: true }] : []),
+    { id: 'performance', label: 'Assets', icon: Briefcase },
+    ...(isDemo ? [{ id: 'explore', label: 'Explore', icon: Compass, preview: true }] : []),
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

@@ -1,6 +1,6 @@
 // lib/mock/wallets.ts
 //
-// SAMPLE DATA for the Wallets preview (components/preview/WalletsSection): three made-up
+// SAMPLE DATA for the Wallets preview (components/preview/WalletPages, under Assets): three made-up
 // accounts with a year of everyday money in and out (salary, rent, groceries, bills…), the
 // budgets set on them, their alerts and monthly statements. Generated from fixed seeds so the
 // pages look the same on every visit.

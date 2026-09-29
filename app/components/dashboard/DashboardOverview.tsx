@@ -3,8 +3,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import {
-  Wallet,
-  Coins,
   TrendingUp,
   TrendingDown,
   AlertCircle,
@@ -17,7 +15,7 @@ import { formatCurrency } from "../../lib/format";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
-import { openPortfoliosPage } from "./InsightsSection";
+import { openInvestmentsHub, openPortfoliosPage, openWalletPage, openWalletsHub } from "./InsightsSection";
 import { DailyArticleModule } from "./NewsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
@@ -36,9 +34,9 @@ type SnapshotState =
  * DASHBOARD — the whole wealth at a glance, not tied to the selected portfolio: the net worth
  * on top (every portfolio's market value, from the aggregate "All portfolios" or the only
  * portfolio, plus, for a demo account, the wallets' balance — a preview on sample data, see
- * components/preview), with a summary of the portfolios and of the wallets under it; then every
+ * components/preview), with the portfolios and the wallets under it, as totals and one by one; then every
  * portfolio's alerts and the article of the day. Headline figures only: the rest lives under
- * Investments and Wallets, which the summaries open. The overview endpoint never mixes history
+ * Assets, which the summaries open. The overview endpoint never mixes history
  * with fresh data (no isStale).
  */
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
@@ -51,7 +49,8 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   // Refetch only when the set of portfolios changes, not on every new array from the context
   // (a rename replaces the array but not the uuids). A portfolio with no entry yet reads as
   // loading; on a refetch the previous figures stay up until the new ones land.
-  const uuidsKey = portfolios.map((p) => p.uuid).join(",");
+  // The aggregate's (the headline) and each real portfolio's, never a backtest's.
+  const uuidsKey = portfolios.filter((p) => p.isAggregate || !p.isVirtual).map((p) => p.uuid).join(",");
   useEffect(() => {
     const uuids = uuidsKey ? uuidsKey.split(",") : [];
     let cancelled = false;
@@ -68,9 +67,12 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
     return () => { cancelled = true; };
   }, [uuidsKey]);
 
-  // Every portfolio together: the aggregate when there is one, otherwise the only portfolio.
+  // Every portfolio together: the aggregate when there is one, otherwise the only real portfolio.
+  // A strategy's backtest is simulated money: never the net worth, and not in the aggregate.
   const aggregate = portfolios.find((p) => p.isAggregate);
-  const headline = aggregate ?? portfolios[0];
+  const headline = aggregate ?? portfolios.find((p) => !p.isVirtual);
+  // The real portfolios, each shown on its own under the total.
+  const members = useMemo(() => portfolios.filter((p) => !p.isVirtual), [portfolios]);
 
   // Alerts are managed on each portfolio's page under Portfolios; "Manage alerts" (and the
   // empty state's button) open the selected portfolio's (see openPortfoliosPage).
@@ -120,9 +122,13 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
         <NetWorthModule
           portfolio={headline}
           snapshot={headlineState.snapshot}
+          members={members}
+          snapshots={snapshots}
           wallets={wallets}
-          onOpenPortfolios={onNavigate ? () => onNavigate("performance") : undefined}
-          onOpenWallets={onNavigate ? () => onNavigate("wallets") : undefined}
+          onOpenPortfolios={onNavigate ? () => openInvestmentsHub(onNavigate) : undefined}
+          onOpenPortfolio={onNavigate ? (uuid) => openPortfolio(uuid, "performance") : undefined}
+          onOpenWallets={onNavigate ? () => openWalletsHub(onNavigate) : undefined}
+          onOpenWallet={onNavigate ? (id) => openWalletPage(onNavigate, id, "home") : undefined}
         />
       )}
 
@@ -159,147 +165,270 @@ function ErrorBanner({ message }: { message: string }) {
 
 /**
  * NET WORTH MODULE — everything the user owns, in their reference currency: every portfolio at
- * today's market prices plus the wallets' balance, with a bar showing how it splits, then a
- * summary of each: the portfolios (market value, how the market moved it today and this month,
- * unrealized P&L) and the wallets (balance, this month's money in and out). The summaries open
- * Investments and Wallets. The portfolios' figures are the aggregate's (recomputed from every
- * portfolio's transactions combined) or the only portfolio's. Wallets in another currency than
- * the portfolios' are shown but not added in, since there's no rate to convert them with.
+ * today's market prices plus the wallets' balance. On top the total, with how the market moved the
+ * portfolios today and this month, and one bar split into every portfolio and every wallet, each in
+ * a shade of its group's colour (gold for investments, teal for wallets) so the bar reads both ways:
+ * what each is, and how much of the whole each group is. Under it, one column per group: its total,
+ * a line about it (the portfolios' unrealized P&L, the wallets' money in and out this month), then a
+ * row for each portfolio or wallet — its share of the net worth, its value and how it's doing — in
+ * the same shade as its piece of the bar. A column's head opens its hub under Assets, a row that
+ * portfolio's or wallet's page.
+ *
+ * The portfolios' total is the aggregate's (recomputed from every portfolio's transactions
+ * combined) or the only portfolio's; each row is that portfolio's own overview. A strategy's
+ * backtest is simulated money: never here. Wallets in another currency than the portfolios' are
+ * shown but not added in, since there's no rate to convert them with; a wallet in debt (a credit
+ * card) takes no room in the bar.
  */
 function NetWorthModule({
-  portfolio, snapshot, wallets, onOpenPortfolios, onOpenWallets,
+  portfolio, snapshot, members, snapshots, wallets,
+  onOpenPortfolios, onOpenPortfolio, onOpenWallets, onOpenWallet,
 }: {
   portfolio: Portfolio;
   // null: nothing computed yet (the aggregate's first build, or a portfolio with no data).
   snapshot: PortfolioSnapshot | null;
+  // The real portfolios, each with its own overview.
+  members: Portfolio[];
+  snapshots: Record<string, SnapshotState>;
   wallets: WalletsSummary | null;
   onOpenPortfolios?: () => void;
+  onOpenPortfolio?: (uuid: string) => void;
   onOpenWallets?: () => void;
+  onOpenWallet?: (id: string) => void;
 }) {
   const moves = useRecentMoves(portfolio.uuid);
   const currency = snapshot?.currency ?? wallets?.currency ?? "EUR";
   const investments = snapshot?.totalMarketValue ?? 0;
-  const walletsCount = wallets && wallets.currency === currency ? wallets.balance : 0;
-  const total = investments + walletsCount;
+  const walletsCounted = wallets && wallets.currency === currency ? wallets.balance : 0;
+  const total = investments + walletsCounted;
   const shareOf = (value: number) => (total > 0 ? Math.max(0, (value / total) * 100) : 0);
   const pnlPct = snapshot ? unrealizedPct(snapshot) : null;
 
+  const portfolioRows = members.map((p, i) => {
+    const state = snapshots[p.uuid] ?? { status: "loading" as const };
+    return { portfolio: p, state, own: state.status === "ready" ? state.snapshot : null, shade: shadeOf(GOLD_SHADES, i) };
+  });
+  const walletRows = (wallets?.wallets ?? []).map((w, i) => ({ wallet: w, shade: shadeOf(TEAL_SHADES, i) }));
+
+  // The bar, piece by piece: each portfolio's own value while they're all in, else the group as
+  // one piece; then each wallet with money in it.
+  const allIn = portfolioRows.length > 0 && portfolioRows.every((r) => r.state.status === "ready");
+  const segments = [
+    ...(allIn
+      ? portfolioRows.filter((r) => r.own && r.own.currency === currency).map((r) => ({ key: r.portfolio.uuid, label: r.portfolio.name, value: r.own!.totalMarketValue, color: r.shade }))
+      : [{ key: "investments", label: "Investments", value: investments, color: GOLD }]),
+    ...(walletsCounted !== 0 ? walletRows.map((r) => ({ key: r.wallet.id, label: r.wallet.name, value: r.wallet.balance, color: r.shade })) : []),
+  ].filter((s) => s.value > 0);
+
   return (
     <Module>
-      <ModuleHead
-        eyebrow={currency}
-        title="Net Worth"
-        desc={wallets ? "Everything you own: your portfolios at today's prices, plus your wallets' balance." : "Your portfolios at today's market prices."}
-      />
       <div className="p-6 md:p-7 space-y-5">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
-          <p className="text-4xl md:text-5xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            {formatCurrency(total, currency, 0)}
-          </p>
-          {snapshot && <p className="text-[13px] text-slate-500 mt-1.5">As of {chartDateLabel(snapshot.snapshotAt)}, from daily market prices.</p>}
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C]">Net worth · {currency}</p>
+            <p className="text-4xl md:text-5xl font-black text-slate-900 tabular-nums mt-1.5" style={serif}>
+              {formatCurrency(total, currency, 0)}
+            </p>
+            <p className="text-[13px] text-slate-500 mt-1.5">
+              {snapshot ? `As of ${chartDateLabel(snapshot.snapshotAt)}, from daily market prices` : "Your portfolios at today's market prices"}
+              {wallets && ", plus your wallets' balance"}.
+            </p>
+          </div>
+          {snapshot && moves && (
+            <dl className="flex gap-6">
+              <Move label="Today" amount={moves.dayMarketEffect} pct={moves.previousDayValue !== 0 ? moves.dayMarketEffectPct : null} currency={moves.currency} />
+              <Move label="This month" amount={moves.mtdMarketEffect} pct={moves.monthStartValue !== 0 ? moves.mtdMarketEffectPct : null} currency={moves.currency} />
+            </dl>
+          )}
         </div>
-        {wallets && walletsCount !== 0 && total > 0 && (
-          <div className="space-y-2">
-            <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
-              <div className="h-full" style={{ width: `${shareOf(investments)}%`, background: PORTFOLIOS_COLOR }} />
-              <div className="h-full" style={{ width: `${shareOf(walletsCount)}%`, background: WALLETS_COLOR }} />
+
+        {segments.length > 0 && (
+          <div className="space-y-2.5">
+            <div className="flex h-3 gap-0.5 rounded-full overflow-hidden">
+              {segments.map((s) => (
+                <div key={s.key} title={`${s.label} · ${shareOf(s.value).toFixed(0)}%`} className="h-full first:rounded-l-full last:rounded-r-full" style={{ width: `${shareOf(s.value)}%`, background: s.color }} />
+              ))}
             </div>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-slate-600">
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: PORTFOLIOS_COLOR }} />Portfolios {shareOf(investments).toFixed(0)}%</span>
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: WALLETS_COLOR }} />Wallets {shareOf(walletsCount).toFixed(0)}%</span>
-            </div>
+            {wallets && walletsCounted !== 0 && (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-slate-600">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: GOLD }} />Investments {shareOf(investments).toFixed(0)}%</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: TEAL }} />Wallets {shareOf(walletsCounted).toFixed(0)}%</span>
+              </div>
+            )}
           </div>
         )}
       </div>
-      <div className={`grid grid-cols-1 ${wallets ? "md:grid-cols-2 md:divide-x" : ""} divide-y md:divide-y-0 divide-slate-100 border-t border-slate-100`}>
-        <SummaryTile
-          icon={<Coins className="h-4 w-4" />}
-          color={PORTFOLIOS_COLOR}
-          title="All portfolios"
+
+      <div className={`grid grid-cols-1 ${wallets ? "lg:grid-cols-2 lg:divide-x" : ""} divide-y lg:divide-y-0 divide-slate-100 border-t border-slate-100`}>
+        <GroupColumn
+          title="Investments"
+          color={GOLD}
           value={snapshot ? formatCurrency(snapshot.totalMarketValue, snapshot.currency, 0) : null}
           pending={portfolio.isAggregate
             ? "The combined figures across your portfolios are being prepared. Check back in a few minutes."
             : "No transactions yet: add some to see what your portfolio is worth."}
+          summary={snapshot && <><Delta amount={snapshot.totalUnrealizedPnl} pct={pnlPct} currency={snapshot.currency} /> unrealized</>}
           onOpen={onOpenPortfolios}
         >
-          {snapshot && moves && (
-            <>
-              <MoveLine label="today" amount={moves.dayMarketEffect} pct={moves.previousDayValue !== 0 ? moves.dayMarketEffectPct : null} currency={moves.currency} />
-              <MoveLine label="this month" amount={moves.mtdMarketEffect} pct={moves.monthStartValue !== 0 ? moves.mtdMarketEffectPct : null} currency={moves.currency} />
-            </>
-          )}
-          {snapshot && (
-            <MoveLine
-              label="unrealized"
-              amount={snapshot.totalUnrealizedPnl}
-              pct={pnlPct}
-              currency={snapshot.currency}
+          {portfolioRows.map(({ portfolio: p, state, own, shade }) => (
+            <GroupRow
+              key={p.uuid}
+              color={shade}
+              name={p.name}
+              share={own && own.currency === currency ? shareOf(own.totalMarketValue) : null}
+              value={own ? formatCurrency(own.totalMarketValue, own.currency, 0) : state.status === "loading" ? "…" : "—"}
+              delta={own ? <Delta amount={null} pct={unrealizedPct(own)} currency={own.currency} /> : null}
+              onOpen={onOpenPortfolio ? () => onOpenPortfolio(p.uuid) : undefined}
             />
-          )}
-        </SummaryTile>
+          ))}
+        </GroupColumn>
         {wallets && (
-          <SummaryTile
-            icon={<Wallet className="h-4 w-4" />}
-            color={WALLETS_COLOR}
-            title="All wallets"
+          <GroupColumn
+            title="Wallets"
+            color={TEAL}
             badge={<PreviewBadge label="Sample data" />}
             value={formatCurrency(wallets.balance, wallets.currency, 0)}
+            summary={
+              <>
+                <span className="text-emerald-600">+{formatCurrency(wallets.income, wallets.currency, 0)}</span> in
+                <span className="text-slate-300"> · </span>
+                <span className="text-rose-600">−{formatCurrency(wallets.expenses, wallets.currency, 0)}</span> out this month
+              </>
+            }
             onOpen={onOpenWallets}
           >
-            <MoveLine label="in this month" amount={wallets.income} pct={null} currency={wallets.currency} />
-            <MoveLine label="out this month" amount={-wallets.expenses} pct={null} currency={wallets.currency} />
-          </SummaryTile>
+            {walletRows.map(({ wallet: w, shade }) => (
+              <GroupRow
+                key={w.id}
+                color={shade}
+                name={w.name}
+                share={wallets.currency === currency ? shareOf(w.balance) : null}
+                value={formatCurrency(w.balance, wallets.currency, 0)}
+                negative={w.balance < 0}
+                delta={<Delta amount={w.net} pct={null} currency={wallets.currency} />}
+                onOpen={onOpenWallet ? () => onOpenWallet(w.id) : undefined}
+              />
+            ))}
+          </GroupColumn>
         )}
       </div>
     </Module>
   );
 }
 
-const PORTFOLIOS_COLOR = "#C49A3C";
-const WALLETS_COLOR = "#0f766e";
+// Each group's colour, and the shades its members take in order: light to dark, so neighbours
+// in the bar stay apart.
+const GOLD = "#C49A3C";
+const TEAL = "#0f766e";
+const GOLD_SHADES = ["#8A6A28", "#C49A3C", "#E0BE72", "#A8813A", "#EDD5A2", "#6B5220"];
+const TEAL_SHADES = ["#0b5750", "#0f766e", "#2ea99b", "#79cbbf", "#134e4a"];
+const shadeOf = (shades: string[], i: number) => shades[i % shades.length];
+const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
+
+/** One of the headline's market moves: "Today · +1,240 EUR · +0.84%". */
+function Move({ label, amount, pct, currency }: { label: string; amount: number; pct: number | null; currency: string }) {
+  const gain = amount >= 0;
+  const Icon = gain ? TrendingUp : TrendingDown;
+  return (
+    <div>
+      <dt className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</dt>
+      <dd className={`flex items-center gap-1.5 text-[15px] font-black tabular-nums mt-1 ${gain ? "text-emerald-600" : "text-rose-600"}`}>
+        <Icon className="h-4 w-4 shrink-0" />
+        {signedCurrency(amount, currency)}
+        {pct !== null && <span className="text-xs font-bold opacity-80">{formatPct(pct)}</span>}
+      </dd>
+    </div>
+  );
+}
+
+/** A signed change in its gain/loss colour: an amount, a percentage, or both. */
+function Delta({ amount, pct, currency }: { amount: number | null; pct: number | null; currency: string }) {
+  const sign = amount ?? pct ?? 0;
+  return (
+    <span className={`font-bold tabular-nums ${sign >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+      {amount !== null && signedCurrency(amount, currency)}
+      {amount !== null && pct !== null && " · "}
+      {pct !== null && formatPct(pct)}
+    </span>
+  );
+}
 
 /**
- * SUMMARY TILE — one part of the net worth: its total, with a few lines under it, opening the
- * section it summarises. `value` null: nothing to show yet, `pending` says why.
+ * GROUP COLUMN — one kind of asset under the net worth: its head (name, total, a line about it,
+ * opening its hub under Assets), then its rows. `value` null: nothing to show yet, `pending` says why.
  */
-function SummaryTile({
-  icon, color, title, badge, value, pending, onOpen, children,
+function GroupColumn({
+  title, color, badge, value, pending, summary, onOpen, children,
 }: {
-  icon: React.ReactNode;
-  color: string;
   title: string;
+  color: string;
   badge?: React.ReactNode;
   value: string | null;
   pending?: string;
+  summary?: React.ReactNode;
   onOpen?: () => void;
-  children?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      disabled={!onOpen}
-      className="group text-left p-6 md:p-7 flex flex-col gap-2.5 enabled:hover:bg-slate-50/70 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="w-9 h-9 rounded-xl border flex items-center justify-center" style={{ color, background: `${color}14`, borderColor: `${color}33` }}>
-          {icon}
-        </span>
-        {onOpen && <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors" />}
-      </div>
-      <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">{title}{badge}</p>
-      {value === null ? (
-        <p className="text-sm text-slate-500">{pending}</p>
-      ) : (
-        <div>
-          <p className="font-black text-slate-900 text-xl md:text-2xl tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            {value}
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        className="group text-left px-6 md:px-7 pt-5 pb-4 enabled:hover:bg-slate-50/70 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+            {title}
+            {badge}
           </p>
-          {children}
+          {onOpen && <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-[#C49A3C] transition-colors" />}
         </div>
-      )}
-    </button>
+        {value === null ? (
+          <p className="text-sm text-slate-500 mt-2">{pending}</p>
+        ) : (
+          <>
+            <p className="font-black text-slate-900 text-2xl tabular-nums mt-1.5" style={serif}>{value}</p>
+            {summary && <p className="text-xs font-semibold text-slate-400 mt-1">{summary}</p>}
+          </>
+        )}
+      </button>
+      <ul className="px-3 md:px-4 pb-3 border-t border-slate-100 pt-1.5">{children}</ul>
+    </div>
+  );
+}
+
+/** One portfolio or wallet in its column: name, share of the net worth, value, how it's doing. */
+function GroupRow({
+  color, name, share, value, negative = false, delta, onOpen,
+}: {
+  color: string;
+  name: string;
+  // Its share of the whole net worth, in percent; null when it isn't counted in it.
+  share: number | null;
+  value: string;
+  negative?: boolean;
+  delta: React.ReactNode;
+  onOpen?: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        className="w-full grid grid-cols-[minmax(0,1fr)_2.75rem_6.5rem_5.5rem] items-center gap-2 rounded-xl px-3 py-2.5 text-left enabled:hover:bg-slate-50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+      >
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: color }} />
+          <span className="text-[13px] font-bold text-slate-800 truncate">{name}</span>
+        </span>
+        <span className="text-[11px] font-bold text-slate-400 tabular-nums text-right">{share === null ? "" : `${share.toFixed(0)}%`}</span>
+        <span className={`text-[13px] font-black tabular-nums text-right ${negative ? "text-rose-600" : "text-slate-900"}`}>{value}</span>
+        <span className="text-[11px] text-right truncate">{delta}</span>
+      </button>
+    </li>
   );
 }
 
@@ -319,25 +448,6 @@ function useRecentMoves(portfolioUuid: string) {
     return () => { cancelled = true; };
   }, [portfolioUuid]);
   return today && !today.isStale ? today : null;
-}
-
-/**
- * One move under the market value: "▲ +1,240 € · +0.84% today", in the same small coloured line
- * as the unrealized P&L's percentage. The percentage is dropped without a baseline (a
- * portfolio newer than the day or the month).
- */
-function MoveLine({ label, amount, pct, currency }: { label: string; amount: number; pct: number | null; currency: string }) {
-  const isGain = amount >= 0;
-  const Icon = isGain ? TrendingUp : TrendingDown;
-  return (
-    <div className="flex items-center gap-1.5 font-sans text-sm font-bold mt-1">
-      <Icon className={`h-3.5 w-3.5 shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`} />
-      <span className={`tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-        {signedCurrency(amount, currency)}{pct !== null && ` · ${formatPct(pct)}`}
-      </span>
-      <span className="text-slate-400 font-semibold">{label}</span>
-    </div>
-  );
 }
 
 // Most urgent first: a triggered alert leads, a switched-off one comes last. Rules of the same

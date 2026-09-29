@@ -20,6 +20,7 @@ import { usePortfolio } from "../../context/PortfolioContext";
 import { useDetail, useInsights, type Insights, type SectionState } from "../../hooks/useInsights";
 import { pushDashboardEntry, readDashboardEntry, type DashboardOverlay } from "../../lib/dashboardHistory";
 import { NoDataEmptyState } from "./NoDataEmptyState";
+import { BacktestBanner } from "./BacktestMarks";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
@@ -63,9 +64,12 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * in as they arrive. Stale modules are followed through /insights/status (see useInsights).
  */
 export function PerformanceSection({
-  portfolioUuid, isAggregate = false, onNavigate, trail,
+  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
+  // A strategy's backtest (a virtual portfolio): the page opens under BacktestBanner, and before
+  // its job has run it says so rather than asking for transactions.
+  backtest?: boolean;
   // The pages above this one in the investor's Portfolios ("Portfolios / Main portfolio"), where
   // this page is "Insights" and a month or a detail one level deeper, published to the Sidebar
   // (see Breadcrumb). Without it (an advisor's view of a client, which has its own header) the
@@ -184,6 +188,7 @@ export function PerformanceSection({
       ) : trail ? (
         <Breadcrumb trail={trail} current="Insights" />
       ) : null}
+      {backtest && !selected && !explore && <BacktestBanner portfolioUuid={portfolioUuid} />}
 
       {performance.failed ? (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
@@ -195,11 +200,18 @@ export function PerformanceSection({
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
         </div>
       ) : performance.data.value === null ? (
-        <NoDataEmptyState
-          title="No performance data yet"
-          message="Add or upload your transactions and this is where you'll track how your portfolio moves over time."
-          onNavigate={onNavigate}
-        />
+        backtest ? (
+          <NoDataEmptyState
+            title="The backtest is running"
+            message="Its trades are being generated on historical prices, then its history is built like any portfolio's. Come back in a few minutes."
+          />
+        ) : (
+          <NoDataEmptyState
+            title="No performance data yet"
+            message="Add or upload your transactions and this is where you'll track how your portfolio moves over time."
+            onNavigate={onNavigate}
+          />
+        )
       ) : (
         <>
         {selected && (

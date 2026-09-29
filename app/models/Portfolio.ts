@@ -14,13 +14,23 @@
 // default, then oldest first; an advisor lists a client's the same way via
 // GET /v1/advisor/clients/{client_uuid}/portfolios, then reaches each through the same
 // /v1/portfolios/{p}/... paths the client would.
+//
+// `isVirtual` marks a portfolio the backend puts together rather than one the user writes: the
+// aggregate is one, and so is a strategy's backtest (POST /v1/portfolios/strategies, see
+// models/Strategy). Neither takes transactions, imports or reports (409). A backtest can be
+// renamed and deleted like a standard portfolio, and it isn't one of the aggregate's members:
+// it's simulated money, never counted in the user's wealth.
 interface Portfolio {
   uuid: string;
   name: string;
   isDefault: boolean;
+  isVirtual: boolean;
   isAggregate: boolean;
   createdAt: string;
 }
+
+/** A strategy's backtest: virtual, and not the aggregate. */
+const isBacktest = (p: Pick<Portfolio, "isVirtual" | "isAggregate">) => p.isVirtual && !p.isAggregate;
 
 // A single day's snapshot of the portfolio's live state in one currency — unlike the rest of
 // this file, these figures DO come from current market prices (totalMarketValue, totalUnrealizedPnl),
@@ -89,3 +99,4 @@ interface TodayDashboard {
 }
 
 export type { Portfolio, PortfolioSnapshot, DailyValueChange, TodayDashboard };
+export { isBacktest };

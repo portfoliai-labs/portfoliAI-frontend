@@ -22,8 +22,13 @@ import { AlertsSettings } from "./AlertsSettings";
 import { useGenerateReport } from "./GenerateReport";
 import { useUser } from "../../context/UserContext";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
-import type { Portfolio } from "../../models/Portfolio";
+import { BacktestBanner } from "./BacktestMarks";
+import { isBacktest, type Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
+
+// How often, and for how long, a backtest's page asks for its figures while its job is running.
+const BACKTEST_POLL_MS = 15_000;
+const BACKTEST_WAIT_MS = 5 * 60_000;
 
 export type PortfolioPage = "home" | "insights" | "transactions" | "reports" | "alerts";
 
@@ -36,7 +41,9 @@ const formatSigned = (amount: number, currency: string) => `${amount >= 0 ? "+" 
  * Transactions, Reports and Alerts, each card with a line of what's there. Rename and delete
  * sit in the "…" in the figures' corner ("All portfolios", built automatically, has neither).
  * The aggregate has no reports (the backend doesn't make them), and its transactions are every
- * portfolio's, added to whichever one is picked.
+ * portfolio's, added to whichever one is picked. A strategy's backtest (a virtual portfolio) opens
+ * under a strip saying so, with the strategy it plays (BacktestBanner); its transactions are the
+ * generated ones, read only, and it has no reports either.
  */
 export function PortfolioHome({
   portfolio, trail, onOpenPage, onDeleted,
@@ -48,6 +55,7 @@ export function PortfolioHome({
 }) {
   const { deletePortfolio } = usePortfolio();
   const { isDemo } = useUser();
+  const backtest = isBacktest(portfolio);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -71,11 +79,13 @@ export function PortfolioHome({
     <div className="space-y-6 pb-12">
       <Breadcrumb trail={trail} current={portfolio.name} />
       {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
+      {backtest && <BacktestBanner portfolioUuid={portfolio.uuid} showStrategy />}
 
       {/* Rename / delete in the headline's corner rather than as the breadcrumb's action: on
           wide screens that would be a row of its own above everything, for one small button. */}
       <PortfolioHeadline
         portfolioUuid={portfolio.uuid}
+        backtest={backtest}
         action={!portfolio.isAggregate && !isDemo && (
           <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={() => setRenaming(true)} onDelete={() => setConfirmDelete(true)} />
         )}
@@ -119,16 +129,35 @@ export function PortfolioHome({
  * /v1/portfolios/comparison: what it's worth, its return since inception and per year, the
  * gain on what's still held, and the return curve since its first day.
  */
-function PortfolioHeadline({ portfolioUuid, action }: { portfolioUuid: string; action?: React.ReactNode }) {
+function PortfolioHeadline({ portfolioUuid, backtest = false, action }: { portfolioUuid: string; backtest?: boolean; action?: React.ReactNode }) {
   const [state, setState] = useState<{ entry: PortfolioComparisonEntry | null; loading: boolean }>({ entry: null, loading: true });
+  const [waitedOut, setWaitedOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    portfoliosService.compare([portfolioUuid])
-      .then((list) => { if (!cancelled) setState({ entry: list[0] ?? null, loading: false }); })
-      .catch(() => { if (!cancelled) setState({ entry: null, loading: false }); });
-    return () => { cancelled = true; };
-  }, [portfolioUuid]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const load = () => {
+      portfoliosService.compare([portfolioUuid])
+        .then((list) => {
+          if (cancelled) return;
+          const entry = list[0] ?? null;
+          setState({ entry, loading: false });
+          // A backtest just created has no figures until its job has generated the transactions
+          // and its history is built: ask again every 15s, for up to 5 minutes.
+          if (backtest && !entry?.value) {
+            if (Date.now() - startedAt < BACKTEST_WAIT_MS) timer = setTimeout(load, BACKTEST_POLL_MS);
+            else setWaitedOut(true);
+          }
+        })
+        .catch(() => { if (!cancelled) setState({ entry: null, loading: false }); });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [portfolioUuid, backtest]);
 
   const value = state.entry?.value ?? null;
   const performance = state.entry?.performance ?? null;
@@ -137,17 +166,28 @@ function PortfolioHeadline({ portfolioUuid, action }: { portfolioUuid: string; a
   const lineColor = totalReturn === null || totalReturn >= 0 ? "#10b981" : "#f43f5e";
 
   return (
-    <section className="relative bg-white rounded-4xl border border-slate-200 shadow-sm">
+    <section className={`relative bg-white rounded-4xl shadow-sm ${backtest ? "border-2 border-dashed border-sky-300" : "border border-slate-200"}`}>
       {action && <div className="absolute top-5 right-5 md:top-6 md:right-6 z-10">{action}</div>}
       {state.loading ? (
         <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" /></div>
       ) : value === null ? (
-        <p className="p-6 md:p-7 text-sm font-semibold text-slate-500">No figures yet — add transactions and they&apos;ll show up here.</p>
+        backtest ? (
+          <p className="p-6 md:p-7 pr-16 flex items-center gap-2.5 text-sm font-semibold text-slate-500">
+            {!waitedOut && <Loader2 className="h-4 w-4 animate-spin text-sky-600 shrink-0" />}
+            {waitedOut
+              ? "The backtest is taking longer than usual. Come back in a few minutes."
+              : "Running the backtest: generating its trades on historical prices and building its history. This takes a few minutes."}
+          </p>
+        ) : (
+          <p className="p-6 md:p-7 text-sm font-semibold text-slate-500">No figures yet — add transactions and they&apos;ll show up here.</p>
+        )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <div className="p-6 md:p-7 flex flex-col justify-between gap-6">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">Value today</p>
+              <p className={`text-[10px] font-black uppercase tracking-[0.14em] mb-1.5 ${backtest ? "text-sky-700" : "text-[#C49A3C]"}`}>
+                {backtest ? "Simulated value today" : "Value today"}
+              </p>
               <p className="text-3xl md:text-4xl font-black text-slate-900 tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
                 {formatCurrency(value.marketValue, value.currency, 0)}
               </p>
@@ -223,7 +263,11 @@ function TransactionsCard({ portfolio, onOpen }: { portfolio: Portfolio; onOpen:
     <ActionCard
       icon={<Receipt className="h-5 w-5" />}
       title="Transactions"
-      text={portfolio.isAggregate ? "Every portfolio's buys, sells and dividends, in one list." : "Its buys, sells and dividends: add, import or edit them."}
+      text={portfolio.isAggregate
+        ? "Every portfolio's buys, sells and dividends, in one list."
+        : isBacktest(portfolio)
+          ? "The trades the backtest generated: the initial purchase, contributions, withdrawals and rebalances. Read only."
+          : "Its buys, sells and dividends: add, import or edit them."}
       onClick={onOpen}
     >
       <CardDetail>{total === null ? null : `${total.toLocaleString("en-US")} ${total === 1 ? "transaction" : "transactions"}`}</CardDetail>
@@ -234,7 +278,7 @@ function TransactionsCard({ portfolio, onOpen }: { portfolio: Portfolio; onOpen:
 function ReportsCard({ portfolio, onOpen }: { portfolio: Portfolio; onOpen: () => void }) {
   const [latest, setLatest] = useState<{ count: number; date: string | null } | null>(null);
   useEffect(() => {
-    if (portfolio.isAggregate) return;
+    if (portfolio.isVirtual) return;
     let cancelled = false;
     reportService.getAllDocuments(portfolio.uuid)
       .then((docs) => {
@@ -244,11 +288,16 @@ function ReportsCard({ portfolio, onOpen }: { portfolio: Portfolio; onOpen: () =
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [portfolio.uuid, portfolio.isAggregate]);
+  }, [portfolio.uuid, portfolio.isVirtual]);
 
   if (portfolio.isAggregate) {
     return (
       <ActionCard icon={<FileText className="h-5 w-5" />} title="Reports" text="Reports are made for each portfolio on its own — open one to generate its report." />
+    );
+  }
+  if (portfolio.isVirtual) {
+    return (
+      <ActionCard icon={<FileText className="h-5 w-5" />} title="Reports" text="Reports are made for real portfolios only — a backtest's figures are all on its Insights." />
     );
   }
 
@@ -291,7 +340,10 @@ export function PortfolioTransactions({ portfolio, trail }: { portfolio: Portfol
       {/* A standard portfolio is fixed: its own list, and new rows go into it. The aggregate
           can't hold transactions itself, so it gets the all-portfolios list, where each new
           row picks the portfolio it goes into. */}
-      {portfolio.isAggregate ? <FileUploader /> : <FileUploader portfolioUuid={portfolio.uuid} />}
+      {isBacktest(portfolio) && <BacktestBanner portfolioUuid={portfolio.uuid} />}
+      {portfolio.isAggregate
+        ? <FileUploader />
+        : <FileUploader portfolioUuid={portfolio.uuid} readOnly={portfolio.isVirtual} />}
     </div>
   );
 }
@@ -305,7 +357,7 @@ export function PortfolioReports({ portfolio, trail }: { portfolio: Portfolio; t
       <Breadcrumb
         trail={trail}
         current="Reports"
-        right={!portfolio.isAggregate && (
+        right={!portfolio.isVirtual && (
           <button
             type="button"
             onClick={() => generate(portfolio)}
@@ -329,6 +381,7 @@ export function PortfolioAlerts({ portfolio, trail }: { portfolio: Portfolio; tr
   return (
     <div className="space-y-6 pb-12">
       <Breadcrumb trail={trail} current="Alerts" />
+      {isBacktest(portfolio) && <BacktestBanner portfolioUuid={portfolio.uuid} />}
       <AlertsSettings portfolioUuid={portfolio.uuid} />
     </div>
   );
