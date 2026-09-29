@@ -2176,26 +2176,29 @@ function MonthlyReturnsHeatmap({
 }
 
 /**
- * REALIZED BARS — assets' realized trading P&L as bars growing from a centre line, gains to the
- * right and losses to the left, all on one scale. Under each, what it paid in dividends and
- * whether it's still held.
+ * REALIZED ROWS — the assets whose sales made or lost the most, one compact row each: the asset and
+ * whether it's still held (plus its dividends), a bar growing from a centre line (gains to the
+ * right, losses to the left, all on one scale), then the figure.
  */
-function RealizedBars({ rows, currency }: { rows: RealizedPnlEntryResponse[]; currency: string }) {
+function RealizedRows({ rows, currency }: { rows: RealizedPnlEntryResponse[]; currency: string }) {
   const maxAbs = Math.max(0, ...rows.map((r) => Math.abs(r.realizedTradingPnl)));
   return (
-    <div className="space-y-5">
+    <ul className="divide-y divide-slate-100">
       {rows.map((r) => {
         const isGain = r.realizedTradingPnl >= 0;
-        const halfWidthPct = maxAbs > 0 ? (Math.abs(r.realizedTradingPnl) / maxAbs) * 50 : 0;
+        const halfWidthPct = maxAbs > 0 ? Math.max(1.5, (Math.abs(r.realizedTradingPnl) / maxAbs) * 50) : 0;
         return (
-          <div key={r.assetId}>
-            <div className="flex items-baseline justify-between gap-4 mb-1.5">
-              <span className="text-sm font-bold text-slate-900 truncate">{r.ticker ? `${r.name} (${r.ticker})` : r.name}</span>
-              <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-                {formatSignedCurrency(r.realizedTradingPnl, currency)}
-              </span>
+          <li key={r.assetId} className="grid grid-cols-[minmax(0,1fr)_auto] @xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_7rem] items-center gap-x-5 gap-y-2 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-slate-900 truncate">
+                {r.ticker ? <>{r.ticker} <span className="font-semibold text-slate-400">· {r.name}</span></> : r.name}
+              </p>
+              <p className="text-[11px] font-semibold text-slate-400 truncate">
+                {r.isHeld ? "Still partly held" : "Closed"}
+                {r.dividendIncome !== 0 && ` · + ${formatCurrency(r.dividendIncome, currency, 0)} dividends`}
+              </p>
             </div>
-            <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+            <div className="order-last col-span-2 @xl:order-none @xl:col-span-1 relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
               <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
               {isGain ? (
                 <div className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500" style={{ width: `${halfWidthPct}%` }} />
@@ -2203,13 +2206,38 @@ function RealizedBars({ rows, currency }: { rows: RealizedPnlEntryResponse[]; cu
                 <div className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500" style={{ width: `${halfWidthPct}%` }} />
               )}
             </div>
-            <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400">
-              <span>{r.isHeld ? "Still partly held" : "Closed"}</span>
-              {r.dividendIncome !== 0 && <span>+ {formatCurrency(r.dividendIncome, currency, 0)} in dividends</span>}
-            </div>
-          </div>
+            <span className={`text-sm font-black tabular-nums text-right ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+              {formatSignedCurrency(r.realizedTradingPnl, currency)}
+            </span>
+          </li>
         );
       })}
+    </ul>
+  );
+}
+
+// One of the realized P&L module's headline figures: a label with its explanation, the figure,
+// and a line under it.
+function RealizedFigure({ label, info, value, note, tone, emphasis = false }: {
+  label: string; info: string; value: string; note: string; tone?: "gain" | "loss"; emphasis?: boolean;
+}) {
+  return (
+    <div className="px-6 md:px-7 py-5">
+      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+        {label}
+        <InfoTip text={info}>
+          <Info className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+        </InfoTip>
+      </p>
+      <p
+        className={`font-black tabular-nums mt-1.5 ${emphasis ? "text-3xl" : "text-xl"} ${
+          tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900"
+        }`}
+        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      >
+        {value}
+      </p>
+      <p className="text-[11px] font-semibold text-slate-400 mt-1">{note}</p>
     </div>
   );
 }
@@ -2217,15 +2245,17 @@ function RealizedBars({ rows, currency }: { rows: RealizedPnlEntryResponse[]; cu
 /**
  * REALIZED P&L MODULE — the Income & Costs section's realized P&L: what selling has locked in
  * since inception, in the reference currency (each sale converted at its own date, the PDF
- * report's figures), with the dividends received on the side, then the five assets whose sales
- * made or lost the most. Its detail is Profit & Loss's: every asset (RealizedPnlExplore,
- * /insights/realized-pnl), then every dividend figure and payer (DividendsExplore).
+ * report's figures). A band of three figures (the total, from sales, from dividends), then the
+ * five assets whose sales made or lost the most, one row each (RealizedRows). Its detail is
+ * Profit & Loss's (ProfitLossExplore): the realized and dividend figures, then every asset in one
+ * table.
  */
 function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot<InsightsRealizedPnlModule>; currency: string; portfolioUuid: string }) {
   const [exploring, setExploring] = useState(false);
   const data = slot.module;
   const hasAny = data !== null && (data.topAssets.length > 0 || data.totalRealizedPnl !== 0);
   const canExplore = hasAny && !slot.updating;
+  const toneOf = (v: number): "gain" | "loss" => (v >= 0 ? "gain" : "loss");
 
   return (
     <Module>
@@ -2234,17 +2264,6 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
         title="Realized P&L"
         desc="What selling has locked in since inception, plus the dividends received."
         onExplore={canExplore ? () => setExploring(true) : undefined}
-        right={hasAny && !slot.updating ? (
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total</p>
-            <p
-              className={`text-2xl font-black tabular-nums mt-1 ${data.totalRealizedPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-              style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-            >
-              {formatSignedCurrency(data.totalRealizedPnl, currency)}
-            </p>
-          </div>
-        ) : undefined}
       />
       <SlotPlaceholder slot={slot} preparingMessage={PREPARING_TICK} />
       {data !== null && !slot.updating && (
@@ -2253,35 +2272,45 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
           {!hasAny ? (
             <ModuleMessage>No closed positions yet.</ModuleMessage>
           ) : (
-            <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] divide-y divide-slate-100 @3xl:divide-y-0 @3xl:divide-x">
-              <FigureList>
-                <FigureRow
+            <>
+              <div className="grid grid-cols-1 @xl:grid-cols-3 divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/40">
+                <RealizedFigure
+                  label="Total"
+                  info="From sales plus dividends, since inception."
+                  value={formatSignedCurrency(data.totalRealizedPnl, currency)}
+                  note="Sales and dividends together"
+                  tone={toneOf(data.totalRealizedPnl)}
+                  emphasis
+                />
+                <RealizedFigure
                   label="From sales"
                   info="Sale proceeds minus what those units cost, each sale converted at its own date."
                   value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)}
-                  tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"}
+                  note="Proceeds minus what the units cost"
+                  tone={toneOf(data.totalRealizedTradingPnl)}
                 />
-                <FigureRow
+                <RealizedFigure
                   label="From dividends"
                   info="Dividends received since inception, from the holdings you still have and the ones you sold."
                   value={formatCurrency(data.totalDividendIncome, currency, 0)}
+                  note="Received, held or sold since"
                 />
-              </FigureList>
-              <div className="p-6 md:p-7">
+              </div>
+              <div className="px-6 md:px-7 pt-5 pb-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Biggest gains and losses from sales</p>
                 {data.topAssets.length === 0 ? (
-                  <p className="text-sm text-slate-400">Nothing sold yet: the total is all dividends.</p>
+                  <p className="text-sm text-slate-400 py-3">Nothing sold yet: the total is all dividends.</p>
                 ) : (
-                  <RealizedBars rows={data.topAssets} currency={currency} />
+                  <RealizedRows rows={data.topAssets} currency={currency} />
                 )}
               </div>
-            </div>
+            </>
           )}
         </>
       )}
       {canExplore && exploring && (
         <ExploreView title="Profit & Loss" onClose={() => setExploring(false)}>
-          <RealizedPnlExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
-          <DividendsExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
+          <ProfitLossExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
         </ExploreView>
       )}
     </Module>
@@ -2289,37 +2318,129 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
 }
 
 /**
- * REALIZED P&L EXPLORE — the first part of Profit & Loss's detail, /insights/realized-pnl: the
- * totals, then every asset sold or that paid dividends, sortable.
+ * PROFIT & LOSS EXPLORE — the Realized P&L module's detail: what selling has locked in
+ * (/insights/realized-pnl) and every dividend figure (/insights/dividends), then every asset in one
+ * table (AssetPnlTable). The two load on their own, and the table shows as soon as either has.
  */
-function RealizedPnlExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
-  const detail = useDetail(() => portfolioService.getRealizedPnl(portfolioUuid), portfolioUuid, revision);
-  return <DetailBody detail={detail}>{(data) => <RealizedPnlDetail data={data} />}</DetailBody>;
+function ProfitLossExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const realized = useDetail(() => portfolioService.getRealizedPnl(portfolioUuid), portfolioUuid, revision);
+  const dividends = useDetail(() => portfolioService.getDividends(portfolioUuid), portfolioUuid, revision);
+  const loading = realized.loading || dividends.loading;
+  return (
+    <>
+      <DetailBody detail={realized}>{(data) => <RealizedPnlFigures data={data} />}</DetailBody>
+      <DetailBody detail={dividends}>{(data) => <DividendsFigures data={data} />}</DetailBody>
+      {!loading && (realized.data || dividends.data) && (
+        <AssetPnlTable realized={realized.data} dividends={dividends.data} />
+      )}
+    </>
+  );
 }
 
-function RealizedPnlDetail({ data }: { data: RealizedPnlResponse }) {
+function RealizedPnlFigures({ data }: { data: RealizedPnlResponse }) {
   const { currency } = data;
-  const columns = useMemo((): DataColumn<RealizedPnlEntryResponse>[] => [
-    { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} sub={a.isHeld ? "Still partly held" : "Closed"} /> },
-    { key: "trading", label: "From sales", align: "right", sortValue: (a) => a.realizedTradingPnl, render: (a) => <SignedAmount amount={a.realizedTradingPnl} currency={currency} /> },
-    { key: "dividends", label: "Dividends", align: "right", sortValue: (a) => a.dividendIncome, render: (a) => formatCurrency(a.dividendIncome, currency, 0) },
-    { key: "total", label: "Total", align: "right", sortValue: (a) => a.realizedPnl, render: (a) => <SignedAmount amount={a.realizedPnl} currency={currency} /> },
+  return (
+      <ExplorePanel eyebrow={currency} title="Realized P&L" desc="What selling has locked in since inception, each sale converted at its own date, plus the dividends received.">
+        {/* The same band of three figures as the module on the page. */}
+        <div className="@container">
+          <div className="grid grid-cols-1 @xl:grid-cols-3 divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100">
+            <RealizedFigure label="Total" info="From sales plus dividends, since inception." value={formatSignedCurrency(data.totalRealizedPnl, currency)} note="Sales and dividends together" tone={data.totalRealizedPnl >= 0 ? "gain" : "loss"} emphasis />
+            <RealizedFigure label="From sales" info="Sale proceeds minus what those units cost, each sale converted at its own date." value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)} note="Proceeds minus what the units cost" tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"} />
+            <RealizedFigure label="From dividends" info="Dividends received since inception, from the holdings you still have and the ones you sold." value={formatCurrency(data.totalDividendIncome, currency, 0)} note="Received, held or sold since" />
+          </div>
+        </div>
+      </ExplorePanel>
+  );
+}
+
+// One asset's row in Profit & Loss's table: its realized P&L and its dividends, joined on the
+// asset. null where the asset has no such figure (never sold, or never paid), or its half of the
+// data didn't load.
+interface AssetPnlRow {
+  assetId: string;
+  ticker: string | null;
+  name: string;
+  isHeld: boolean | null;
+  fromSales: number | null;
+  dividends: number | null;
+  total: number | null;
+  trailing12M: number | null;
+  prior12M: number | null;
+  growthYoyPct: number | null;
+  yieldPct: number | null;
+  yieldOnCostPct: number | null;
+}
+
+/**
+ * Every asset sold or that has paid: the realized P&L's rows in their order (largest gains and
+ * losses from sales first, dividend-only assets last), each with its dividend figures, then any
+ * payer the realized P&L doesn't list. An asset's lifetime dividends are the realized P&L's (so
+ * they add up to its total), or the dividends' when it isn't there.
+ */
+function joinAssetPnl(realized: RealizedPnlResponse | null, dividends: DividendsResponse | null): AssetPnlRow[] {
+  const payers = new Map((dividends?.byAsset ?? []).filter((a) => a.lifetimeIncome > 0).map((a) => [a.assetId, a]));
+  const fromDividends = (d: DividendsResponse["byAsset"][number] | undefined) => ({
+    trailing12M: d?.trailing12MIncome ?? null,
+    prior12M: d?.prior12MIncome ?? null,
+    growthYoyPct: d?.growthYoyPct ?? null,
+    yieldPct: d?.yieldPct ?? null,
+    yieldOnCostPct: d?.yieldOnCostPct ?? null,
+  });
+  const rows: AssetPnlRow[] = (realized?.byAsset ?? []).map((r) => ({
+    assetId: r.assetId,
+    ticker: r.ticker,
+    name: r.name,
+    isHeld: r.isHeld,
+    fromSales: r.realizedTradingPnl,
+    dividends: r.dividendIncome,
+    total: r.realizedPnl,
+    ...fromDividends(payers.get(r.assetId)),
+  }));
+  const listed = new Set(rows.map((r) => r.assetId));
+  for (const d of payers.values()) {
+    if (listed.has(d.assetId)) continue;
+    rows.push({
+      assetId: d.assetId, ticker: d.ticker, name: d.name, isHeld: null,
+      fromSales: null, dividends: d.lifetimeIncome, total: null,
+      ...fromDividends(d),
+    });
+  }
+  return rows;
+}
+
+/**
+ * ASSET P&L TABLE — Profit & Loss's every asset, in one table instead of one for the realized P&L
+ * and one for the dividends (which repeated each asset's lifetime dividends): what selling it
+ * locked in, what it has paid, the total, then its dividends over the last two years and its
+ * yields. Every column sorts; it scrolls sideways when it doesn't fit.
+ */
+function AssetPnlTable({ realized, dividends }: { realized: RealizedPnlResponse | null; dividends: DividendsResponse | null }) {
+  const currency = realized?.currency ?? dividends?.currency ?? "EUR";
+  const rows = useMemo(() => joinAssetPnl(realized, dividends), [realized, dividends]);
+  const money = (v: number | null) => (v === null ? <span className="text-slate-300">—</span> : formatCurrency(v, currency, 0));
+  const signed = (v: number | null) => (v === null ? <span className="text-slate-300">—</span> : <SignedAmount amount={v} currency={currency} />);
+  const columns = useMemo((): DataColumn<AssetPnlRow>[] => [
+    { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} sub={a.isHeld === null ? undefined : a.isHeld ? "Still partly held" : "Closed"} /> },
+    { key: "sales", label: "From sales", align: "right", sortValue: (a) => a.fromSales, render: (a) => signed(a.fromSales) },
+    { key: "dividends", label: "Dividends", align: "right", sortValue: (a) => a.dividends, render: (a) => money(a.dividends) },
+    { key: "total", label: "Total", align: "right", sortValue: (a) => a.total, render: (a) => signed(a.total) },
+    { key: "t12m", label: "Div. last 12m", align: "right", sortValue: (a) => a.trailing12M, render: (a) => money(a.trailing12M) },
+    { key: "p12m", label: "Div. prior 12m", align: "right", sortValue: (a) => a.prior12M, render: (a) => money(a.prior12M) },
+    { key: "yoy", label: "Change", align: "right", sortValue: (a) => a.growthYoyPct, render: (a) => <SignedPct pct={a.growthYoyPct} /> },
+    { key: "yield", label: "Yield", align: "right", sortValue: (a) => a.yieldPct, render: (a) => plainPctOrDash(a.yieldPct) },
+    { key: "yoc", label: "On cost", align: "right", sortValue: (a) => a.yieldOnCostPct, render: (a) => plainPctOrDash(a.yieldOnCostPct) },
+  // money and signed only read currency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [currency]);
 
   return (
-    <>
-      <ExplorePanel eyebrow={currency} title="Realized P&L" desc="What selling has locked in since inception, each sale converted at its own date, plus the dividends received.">
-        <FigureList>
-          <FigureRow label="Total" info="From sales plus dividends, since inception." value={formatSignedCurrency(data.totalRealizedPnl, currency)} tone={data.totalRealizedPnl >= 0 ? "gain" : "loss"} emphasis />
-          <FigureRow label="From sales" info="Sale proceeds minus what those units cost, each sale converted at its own date." value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)} tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"} />
-          <FigureRow label="From dividends" info="Dividends received since inception, from the holdings you still have and the ones you sold." value={formatCurrency(data.totalDividendIncome, currency, 0)} />
-        </FigureList>
-      </ExplorePanel>
-      <ExplorePanel eyebrow={currency} title="Realized P&L by Asset" desc="Every asset sold or that paid dividends, the largest gains and losses from sales first.">
-        {/* The backend's order: largest trading P&L either way first, dividend-only assets last. */}
-        <DataTable columns={columns} rows={data.byAsset} rowKey={(a) => a.assetId} />
-      </ExplorePanel>
-    </>
+    <ExplorePanel
+      eyebrow={currency}
+      title="By Asset"
+      desc="Every asset sold or that has paid dividends: what selling it locked in, what it has paid, and its dividends over the last two years. The largest gains and losses from sales first."
+    >
+      <DataTable columns={columns} rows={rows} rowKey={(a) => a.assetId} />
+    </ExplorePanel>
   );
 }
 
@@ -3095,7 +3216,7 @@ function RankedBars({
  * headline, the yields behind it, and the biggest payers over the last 12 months (the section
  * sends the top TOP_ROWS). wholePortfolioYieldPct is the portfolio's yield as a whole (not just
  * the holdings that pay), which is what "what does my portfolio yield" means. No detail of its
- * own: every dividend figure and asset is in Profit & Loss's (RealizedPnlExplore).
+ * own: every dividend figure and asset is in Profit & Loss's (ProfitLossExplore).
  */
 function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividendsModule>; currency: string }) {
   const data = slot.module;
@@ -3165,31 +3286,11 @@ function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividend
   );
 }
 
-const DIVIDEND_COLUMNS = (currency: string): DataColumn<DividendsResponse["byAsset"][number]>[] => [
-  { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} /> },
-  { key: "t12m", label: "Last 12m", align: "right", sortValue: (a) => a.trailing12MIncome, render: (a) => formatCurrency(a.trailing12MIncome, currency, 0) },
-  { key: "p12m", label: "Prior 12m", align: "right", sortValue: (a) => a.prior12MIncome, render: (a) => formatCurrency(a.prior12MIncome, currency, 0) },
-  { key: "yoy", label: "Change", align: "right", sortValue: (a) => a.growthYoyPct, render: (a) => <SignedPct pct={a.growthYoyPct} /> },
-  { key: "lifetime", label: "Lifetime", align: "right", sortValue: (a) => a.lifetimeIncome, render: (a) => formatCurrency(a.lifetimeIncome, currency, 0) },
-  { key: "yield", label: "Yield", align: "right", sortValue: (a) => a.yieldPct, render: (a) => plainPctOrDash(a.yieldPct) },
-  { key: "yoc", label: "On cost", align: "right", sortValue: (a) => a.yieldOnCostPct, render: (a) => plainPctOrDash(a.yieldOnCostPct) },
-];
 
-/**
- * DIVIDENDS EXPLORE — the dividends in Profit & Loss's detail, /insights/dividends: every figure
- * the Dividends module summarises, plus the ones it leaves out (the previous 12 months, the yield
- * of just the paying holdings), then every asset that has ever paid, sortable.
- */
-function DividendsExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
-  const detail = useDetail(() => portfolioService.getDividends(portfolioUuid), portfolioUuid, revision);
-  return <DetailBody detail={detail}>{(data) => <DividendsDetail data={data} />}</DetailBody>;
-}
-
-function DividendsDetail({ data }: { data: DividendsResponse }) {
-  const assets = useMemo(() => data.byAsset.filter((a) => a.lifetimeIncome > 0), [data]);
-  const columns = useMemo(() => DIVIDEND_COLUMNS(data.currency), [data.currency]);
+// Every dividend figure the Dividends module summarises, plus the ones it leaves out (the
+// previous 12 months, the yield of just the paying holdings), in Profit & Loss's detail.
+function DividendsFigures({ data }: { data: DividendsResponse }) {
   return (
-    <>
       <ExplorePanel eyebrow={data.currency} title="Dividends" desc="Cash paid out by your holdings.">
         <FigureList>
           <FigureRow label="Since inception" info="All the dividends you've received, since your first transaction." value={formatCurrency(data.totalLifetimeIncome, data.currency, 0)} emphasis />
@@ -3207,10 +3308,6 @@ function DividendsDetail({ data }: { data: DividendsResponse }) {
           <FigureRow label="Yield on cost" info="The last 12 months' dividends over what you paid for the holdings that pay them." value={plainPctOrDash(data.portfolioYieldOnCostPct)} />
         </FigureList>
       </ExplorePanel>
-      <ExplorePanel eyebrow={data.currency} title="Dividends by Asset" desc="Every asset that has paid, the largest payers over the last 12 months first.">
-        <DataTable columns={columns} rows={assets} rowKey={(a) => a.assetId} initialSort={{ key: "t12m", desc: true }} />
-      </ExplorePanel>
-    </>
   );
 }
 
@@ -3244,34 +3341,39 @@ function SignedPct({ pct }: { pct: number | null }) {
 }
 
 /**
- * FIGURE LIST — a module's secondary figures as compact rows (label left, value right)
- * rather than a strip of boxed stats, which crowd a half-width tile: each box's icon, title
- * and padding take more room than the number it holds. The explanation sits behind the info
- * icon next to the label, as on the stat cards.
+ * FIGURE LIST — a module's figures as a grid of small tiles rather than one row each across the
+ * whole module, which left the space between label and value empty and made a half-width module
+ * as tall as a list. The `emphasis` figure (the headline) spans the grid, larger, on a gold tint;
+ * the others take two columns, three or four as the module widens (it's its own container, so it
+ * follows the module's width, not the screen's). Each tile is lean — a label, its explanation
+ * behind the info icon, the value — so two still fit a half-width tile.
  */
 function FigureList({ children }: { children: React.ReactNode }) {
-  return <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">{children}</dl>;
+  return (
+    <div className="@container">
+      <dl className="grid grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4 gap-3 p-5 md:p-6">{children}</dl>
+    </div>
+  );
 }
 
-// `emphasis` for the headline figure of the list: same row, a bigger value. `tone` colours a
-// value that reads as good or bad news (a change, say).
+// `emphasis` for the headline figure of the list: the grid's whole width, a bigger value. `tone`
+// colours a value that reads as good or bad news (a change, say).
 function FigureRow({
   label, info, value, badge, emphasis = false, tone,
 }: { label: string; info: string; value: string; badge?: React.ReactNode; emphasis?: boolean; tone?: "gain" | "loss" }) {
+  const toneClass = tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900";
   return (
-    <div className="flex items-center justify-between gap-4 py-3.5">
-      <dt className="flex items-center gap-1.5 min-w-0 text-[13px] font-semibold text-slate-600">
+    <div className={`min-w-0 rounded-2xl ${emphasis ? "col-span-full bg-[#C49A3C]/8 px-5 py-4" : "bg-slate-50 px-4 py-3.5"}`}>
+      <dt className="flex items-center gap-1.5 min-w-0 text-[12px] font-semibold text-slate-500">
         <span className="truncate">{label}</span>
         <InfoTip text={info}>
-          <Info className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
+          <Info className="h-3.5 w-3.5 shrink-0 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
         </InfoTip>
       </dt>
-      <dd className="flex items-center gap-2.5 shrink-0">
+      <dd className="flex items-center gap-2 mt-1 min-w-0">
         {badge}
         <span
-          className={`font-black tabular-nums ${emphasis ? "text-2xl" : "text-base"} ${
-            tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900"
-          }`}
+          className={`font-black tabular-nums truncate ${emphasis ? "text-3xl" : "text-lg"} ${toneClass}`}
           style={emphasis ? { fontFamily: "'Playfair Display', Georgia, serif" } : undefined}
         >
           {value}
