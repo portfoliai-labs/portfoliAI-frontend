@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { usePortfolio } from "../../context/PortfolioContext";
+import { useUser } from "../../context/UserContext";
 import { PerformanceSection } from "./PerformanceSection";
 import { ComparisonView, MAX_COMPARED, initialCompareSelection, rememberCompareSelection } from "./ComparisonView";
 import { InsightsHub } from "./InsightsHub";
@@ -122,6 +123,7 @@ const viewFromHistory = (): PortfoliosView => {
  */
 export function InsightsSection({ onNavigate }: { onNavigate: (section: string) => void }) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
+  const { isDemo } = useUser();
   const [view, setView] = useState<PortfoliosView>(viewFromHistory);
   const [selection, setSelection] = useState<string[]>([]);
   // Bumped to start Insights over (back at the top of the page), when "All portfolios" is picked
@@ -192,7 +194,9 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   if (view.kind === "transactions") return <PortfolioTransactionsSection trail={investmentsTrail} />;
   if (view.kind === "reports") return <PortfolioReportsSection trail={investmentsTrail} />;
   if (view.kind === "alerts") return <PortfolioAlertsSection trail={investmentsTrail} />;
-  if (view.kind === "strategy") return <StrategyBuilder trail={investmentsTrail} onCreated={openPortfolio} />;
+  // Strategy is a demo account's preview for now: anyone else landing on it (an old history entry)
+  // gets the portfolios.
+  if (view.kind === "strategy") return isDemo ? <StrategyBuilder trail={investmentsTrail} onCreated={openPortfolio} /> : investmentsHub;
 
   if (view.kind === "compare") {
     return <ComparisonView selection={selection} onToggle={toggle} trail={investmentsTrail} onOpen={openPortfolio} />;
