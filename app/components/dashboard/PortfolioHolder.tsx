@@ -47,8 +47,9 @@ export interface HolderItem {
  * CARD HOLDER — cards gathered like in a card holder, on the Investments and Wallets hubs (beside
  * a FeaturedCard): the portfolios or wallets other than the largest, with at the front the card that
  * adds one, and what's made of them together (`tone: "virtual"`: the virtual portfolios, all wallets). Each is a card in its own colour, stacked with only its top edge (name and
- * value) showing above the next, all tucked into a dark sleeve with a band across it: the app's
- * gold, or the virtual portfolios' blue (BacktestMarks). Moving over a card (or focusing it with
+ * value) showing above the next, all tucked into a white sleeve (white like every asset card,
+ * apart from the tools' dark ones) with a band across it: the app's gold, or the virtual
+ * portfolios' blue (BacktestMarks). Moving over a card (or focusing it with
  * the keyboard) slides it up out of the sleeve, the cards behind it following, into the room kept
  * above the stack, and the card shows what a hub card would (a return and the
  * curve behind it). A click opens it; on a touch screen the first tap pulls the
@@ -94,17 +95,17 @@ export function PortfolioHolder({ items, label, tone = "real" }: { items: Holder
 
       {/* The sleeve, in front of every card: the band across it, as on the wallet it's modelled on. */}
       <div
-        className="absolute inset-x-0 bottom-0 rounded-3xl bg-linear-to-b from-[#2a2521] to-[#131210] shadow-[0_-6px_16px_rgba(0,0,0,0.25)] pointer-events-none"
+        className="absolute inset-x-0 bottom-0 rounded-3xl bg-white border border-slate-200 shadow-[0_-6px_16px_rgba(28,25,23,0.10)] pointer-events-none"
         style={{ height: SLEEVE, zIndex: n + 10 }}
       >
-        <div className="absolute inset-x-0 top-10 h-9 bg-[#0d0c0b] flex items-center justify-center">
+        <div className="absolute inset-x-0 top-10 h-9 bg-[#F7F5EF] border-y border-slate-200 flex items-center justify-center">
           <span className={`px-4 h-full flex items-center text-[11px] font-black uppercase tracking-[0.14em] ${tone === "virtual" ? "bg-sky-500 text-white" : "bg-[#C49A3C] text-[#131210]"}`}>
             {label}
           </span>
         </div>
         <div className="absolute inset-x-5 bottom-4 flex items-end justify-between gap-3">
-          <p className="text-[11px] font-semibold text-stone-500">Hover a card to pull it out</p>
-          {total && <p className="text-lg font-black text-white tabular-nums" style={serif}>{total}</p>}
+          <p className="text-[11px] font-semibold text-slate-400">Hover a card to pull it out</p>
+          {total && <p className="text-lg font-black text-slate-900 tabular-nums" style={serif}>{total}</p>}
         </div>
       </div>
     </div>
@@ -133,7 +134,7 @@ function HolderCard({
       onFocus={onHover}
       onClick={() => onOpen(touch)}
       className={`absolute inset-x-3 flex flex-col justify-start rounded-2xl text-left shadow-[0_-2px_8px_rgba(0,0,0,0.18)] outline-none focus-visible:ring-2 focus-visible:ring-white/70 motion-safe:transition-transform motion-safe:duration-300 ease-out ${
-        item.add ? "bg-[#2a2521] border-2 border-dashed border-[#C49A3C]/60 text-[#C49A3C]" : "text-white"
+        item.add ? "bg-[#FBFAF6] border-2 border-dashed border-[#C49A3C]/60 text-[#a07a26]" : "text-white"
       }`}
       style={{
         top: LIFT + index * STRIP,
@@ -161,7 +162,7 @@ function HolderCard({
       >
         <span className="min-w-0">
           {item.headline === null ? (
-            <span className={`block text-[13px] font-semibold ${item.add ? "text-stone-400" : "text-white/70"}`}>{item.empty}</span>
+            <span className={`block text-[13px] font-semibold ${item.add ? "text-slate-500" : "text-white/70"}`}>{item.empty}</span>
           ) : (
             <>
               <span className="block text-2xl font-black tabular-nums" style={serif}>{item.headline}</span>

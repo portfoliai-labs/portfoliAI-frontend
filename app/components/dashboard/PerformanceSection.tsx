@@ -64,7 +64,7 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * in as they arrive. Stale modules are followed through /insights/status (see useInsights).
  */
 export function PerformanceSection({
-  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail,
+  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail, action,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
   // A strategy's backtest (a virtual portfolio): the page opens under BacktestBanner, and before
@@ -75,6 +75,9 @@ export function PerformanceSection({
   // (see Breadcrumb). Without it (an advisor's view of a client, which has its own header) the
   // trail starts at "Insights".
   trail?: Crumb[];
+  // The page's own action at its top right, on Insights itself (not a month or a detail): the
+  // investor's "…" with Rename and Delete (PortfolioActions).
+  action?: React.ReactNode;
 }) {
   const insights = useInsights(portfolioUuid);
   const performance = insights.performance;
@@ -186,7 +189,7 @@ export function PerformanceSection({
       ) : explore ? (
         <Breadcrumb trail={[...above, insightsCrumb(explore.onClose)]} current={explore.title} />
       ) : trail ? (
-        <Breadcrumb trail={trail} current="Insights" />
+        <Breadcrumb trail={trail} current="Insights" right={action} />
       ) : null}
       {backtest && !selected && !explore && <BacktestBanner portfolioUuid={portfolioUuid} />}
 

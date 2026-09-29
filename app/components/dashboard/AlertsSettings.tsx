@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BellRing, Bell, Mail, Plus, Pencil, Trash2, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { alertService } from "../../services/alertService";
 import { portfolioService } from "../../services/portfolioService";
-import { useAlertRules } from "../../hooks/useAlertRules";
+import { usePortfoliosAlertRules, type PortfolioAlertRule } from "../../hooks/useAlertRules";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Toggle } from "./Toggle";
 import { TONE_STYLES } from "./AlertGauge";
+import { PortfolioGroupCard } from "./PortfolioGroupCard";
 import { useUser } from "../../context/UserContext";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
+import { PreviewBadge } from "../preview/PreviewKit";
+import { isSampleRule, sampleAlertRules } from "../../lib/mock/alerts";
 import {
-  alertState, describeAlert, describeParams, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL,
+  alertFigures, alertState, describeAlert, describeParams, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL, type AlertTone,
 } from "../../lib/alerts";
 import type {
-  AlertParams, AlertRuleResponse, AlertRuleUpdateRequest, AlertDirection, AlertWindow,
+  AlertParams, AlertRuleUpdateRequest, AlertDirection, AlertWindow,
 } from "../../models/Alert";
 
 interface AssetOption {
@@ -22,9 +25,28 @@ interface AssetOption {
   label: string;
 }
 
+/** A portfolio whose alerts are managed here; `color` marks its group (its colour elsewhere). */
+export type AlertPortfolio = { uuid: string; name: string; color?: string };
+
 const FIELD_LABEL = "block text-[10px] font-bold text-[#78716c] uppercase tracking-wider mb-1.5";
 const FIELD_INPUT =
   "w-full h-11 px-3.5 rounded-xl bg-white border border-[rgba(196,154,60,0.2)] text-[#1c1917] text-sm font-semibold outline-none focus:border-[#C49A3C] transition-colors";
+
+// The progress bar's fill, by the rule's state.
+const BAR_TONE: Record<AlertTone, string> = {
+  ok: "bg-emerald-500",
+  warn: "bg-amber-500",
+  danger: "bg-rose-500",
+  muted: "bg-slate-300",
+};
+
+// The card header's summary: how many rules are in each state, most pressing first.
+const TONE_SUMMARY: { tone: AlertTone; label: string }[] = [
+  { tone: "danger", label: "triggered" },
+  { tone: "warn", label: "approaching" },
+  { tone: "ok", label: "within range" },
+  { tone: "muted", label: "off or waiting" },
+];
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -34,39 +56,49 @@ const formatDate = (iso: string) =>
  * off, edit, delete) and create new ones. The Dashboard shows the same rules as dials; this is
  * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
  *
- * `portfolioUuid` is always required now (every alert-rule route is nested under one). Without
- * `clientName` it's the caller's own rules (Portfolios → Alerts, passed the portfolio picked
- * there). With `clientName` it's an advisor's rules on that client's portfolio (the
- * Clients section, passed that client's default portfolio uuid): the asset picker lists the
- * client's holdings, and the advisor is the one notified.
+ * Every alert-rule route is nested under a portfolio, so the rules are those of `portfolios`.
+ * Without `clientName` they're the investor's own (Manage / Investments / Alerts, passed every
+ * portfolio): with two or more, each portfolio gets a card of its own, with its rules and its own
+ * "New alert", whose form opens in that card. With `clientName` it's an advisor's
+ * rules on that client's portfolio (the Clients section, passed that client's default one): the
+ * asset picker lists the client's holdings, and the advisor is the one notified. A demo account
+ * (read only) also sees sample rules on two of its portfolios that have none (lib/mock/alerts),
+ * to show what the page looks like with some.
  */
-export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: string; clientName?: string }) {
-  const { rules, setRules, loading, error, reload } = useAlertRules(portfolioUuid);
+export function AlertsSettings({ portfolios, clientName }: { portfolios: AlertPortfolio[]; clientName?: string }) {
+  const uuids = portfolios.map((p) => p.uuid);
+  const { rules, setRules, loading, error, reload } = usePortfoliosAlertRules(uuids);
+  const grouped = portfolios.length > 1;
   // A demo account (see lib/demo) sees its rules but can't create, change or delete them.
   const { isDemo } = useUser();
-  // null = form closed; { rule: null } = creating; { rule } = editing that rule.
-  const [form, setForm] = useState<{ rule: AlertRuleResponse | null } | null>(null);
-  const [assetOptions, setAssetOptions] = useState<AssetOption[] | null>(null);
-  const [toDelete, setToDelete] = useState<AlertRuleResponse | null>(null);
+  // null = form closed; { rule: null } = creating on `portfolioUuid`; { rule } = editing that rule.
+  const [form, setForm] = useState<{ rule: PortfolioAlertRule | null; portfolioUuid: string } | null>(null);
+  // The asset picker's options per portfolio, from its current holdings, fetched the first time
+  // the form needs them.
+  const [assetOptions, setAssetOptions] = useState<Record<string, AssetOption[]>>({});
+  const [toDelete, setToDelete] = useState<PortfolioAlertRule | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // The asset picker's options come from the current holdings, fetched the first time the form opens.
+  const formPortfolio = form?.portfolioUuid ?? null;
   useEffect(() => {
-    if (form === null || assetOptions !== null) return;
+    if (!formPortfolio || assetOptions[formPortfolio]) return;
     let cancelled = false;
-    portfolioService.getInsightsComposition(portfolioUuid)
+    portfolioService.getInsightsComposition(formPortfolio)
       .then((res) => {
         if (cancelled) return;
-        setAssetOptions((res.holdings?.holdings ?? []).map((h) => ({
-          assetId: h.assetId,
-          label: h.ticker ? `${h.ticker} — ${h.name}` : h.name,
-        })));
+        setAssetOptions((prev) => ({
+          ...prev,
+          [formPortfolio]: (res.holdings?.holdings ?? []).map((h) => ({
+            assetId: h.assetId,
+            label: h.ticker ? `${h.ticker} — ${h.name}` : h.name,
+          })),
+        }));
       })
-      .catch(() => { if (!cancelled) setAssetOptions([]); });
+      .catch(() => { if (!cancelled) setAssetOptions((prev) => ({ ...prev, [formPortfolio]: [] })); });
     return () => { cancelled = true; };
-  }, [form, assetOptions, portfolioUuid]);
+  }, [formPortfolio, assetOptions]);
 
   useEffect(() => {
     if (!message) return;
@@ -74,14 +106,15 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
     return () => clearTimeout(id);
   }, [message]);
 
-  const replaceRule = (updated: AlertRuleResponse) =>
+  const replaceRule = (updated: PortfolioAlertRule) =>
     setRules((prev) => (prev ? prev.map((r) => (r.ruleId === updated.ruleId ? updated : r)) : prev));
 
-  const handleToggleEnabled = async (rule: AlertRuleResponse) => {
+  const handleToggleEnabled = async (rule: PortfolioAlertRule) => {
     setBusyId(rule.ruleId);
     setMessage(null);
     try {
-      replaceRule(await alertService.updateRule(portfolioUuid, rule.ruleId, { enabled: !rule.enabled }));
+      const updated = await alertService.updateRule(rule.portfolioUuid, rule.ruleId, { enabled: !rule.enabled });
+      replaceRule({ ...updated, portfolioUuid: rule.portfolioUuid });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Unable to update this alert." });
     } finally {
@@ -93,7 +126,7 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
     if (!toDelete) return;
     setDeleting(true);
     try {
-      await alertService.deleteRule(portfolioUuid, toDelete.ruleId);
+      await alertService.deleteRule(toDelete.portfolioUuid, toDelete.ruleId);
       setRules((prev) => (prev ? prev.filter((r) => r.ruleId !== toDelete.ruleId) : prev));
       setMessage({ type: "success", text: "Alert deleted." });
       setToDelete(null);
@@ -105,16 +138,208 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
     }
   };
 
-  const handleSaved = (saved: AlertRuleResponse, created: boolean) => {
+  const handleSaved = (saved: PortfolioAlertRule, created: boolean) => {
     if (created) setRules((prev) => [...(prev ?? []), saved]);
     else replaceRule(saved);
     setForm(null);
     setMessage({ type: "success", text: created ? "Alert created." : "Alert updated." });
   };
 
-  const count = rules?.length ?? 0;
-  const atLimit = count >= ALERT_RULE_LIMIT;
+  // The rules shown: a demo account's own, plus the samples.
+  const shown = useMemo(() => {
+    if (!isDemo || clientName || rules === null) return rules;
+    const bare = portfolios.filter((p) => !rules.some((r) => r.portfolioUuid === p.uuid)).map((p) => p.uuid);
+    return [...rules, ...sampleAlertRules(bare)];
+  }, [isDemo, clientName, rules, portfolios]);
+  const rulesOf = (uuid: string) => (shown ?? []).filter((r) => r.portfolioUuid === uuid);
+  const atLimit = (uuid: string) => rulesOf(uuid).length >= ALERT_RULE_LIMIT;
+  const count = shown?.length ?? 0;
+  const openNew = (portfolioUuid: string) => {
+    setMessage(null);
+    setForm({ rule: null, portfolioUuid });
+  };
+  const newDisabled = isDemo || form !== null || loading || rules === null;
 
+  // One rule per row, across the card: what it watches and how it notifies; where it stands (now
+  // against the limit, and how far along the way it is); then its switch, edit and delete.
+  const renderRule = (rule: PortfolioAlertRule) => {
+    const { title, subtitle } = describeAlert(rule, clientName);
+    const state = alertState(rule);
+    const figures = alertFigures(rule);
+    const busy = busyId === rule.ruleId;
+    return (
+      <li key={rule.ruleId} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] items-center gap-x-8 gap-y-4 py-5">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 text-[15px] font-black text-[#1c1917]">
+            {title}{isSampleRule(rule) && <PreviewBadge label="Sample" />}
+          </p>
+          <p className="text-[13px] text-[#78716c] mt-1">
+            {subtitle}
+            {rule.lastTriggeredAt && ` · Last triggered ${formatDate(rule.lastTriggeredAt)}`}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-bold text-[#78716c]">
+            {rule.notifyEmail && <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</span>}
+            {rule.notifyInApp && <span className="flex items-center gap-1.5"><Bell className="w-3.5 h-3.5" /> In-app</span>}
+            {!rule.notifyEmail && !rule.notifyInApp && <span>Dashboard only</span>}
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${TONE_STYLES[state.tone].chip}`}>{state.label}</span>
+            {figures && (
+              <span className="text-[13px] font-bold tabular-nums text-[#1c1917]">
+                {figures.current} <span className="text-[#a8a29e] font-semibold">of {figures.limit}</span>
+              </span>
+            )}
+          </div>
+          <div className="mt-2.5 h-2 rounded-full bg-[#F1EEE6] overflow-hidden">
+            {state.progressPct !== null && (
+              <div className={`h-full rounded-full ${BAR_TONE[state.tone]}`} style={{ width: `${Math.max(3, state.progressPct)}%` }} />
+            )}
+          </div>
+          <p className="text-[11px] font-semibold text-[#a8a29e] mt-1.5">
+            {state.progressPct !== null ? `${Math.round(state.progressPct)}% of the way to the limit` : state.kind === "off" ? "Not being checked" : "Nothing measured yet"}
+          </p>
+        </div>
+
+        {!isDemo ? (
+          <div className="flex items-center gap-1.5 md:justify-end">
+            <div className={busy ? "pointer-events-none opacity-60" : ""}>
+              <Toggle
+                checked={rule.enabled}
+                onChange={() => handleToggleEnabled(rule)}
+                label={rule.enabled ? `Turn off ${title}` : `Turn on ${title}`}
+              />
+            </div>
+            <button
+              onClick={() => { setMessage(null); setForm({ rule, portfolioUuid: rule.portfolioUuid }); }}
+              aria-label={`Edit ${title}`}
+              className="p-2 rounded-lg text-[#78716c] hover:text-[#1c1917] hover:bg-[#F7F5EF] transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setToDelete(rule)}
+              aria-label={`Delete ${title}`}
+              className="p-2 rounded-lg text-[#78716c] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ) : <div className="hidden md:block" />}
+      </li>
+    );
+  };
+
+  const messageBanner = message && (
+    <div
+      className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border text-sm font-bold ${
+        message.type === "success"
+          ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+          : "bg-rose-50 border-rose-200 text-rose-700"
+      }`}
+    >
+      {message.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+      {message.text}
+    </div>
+  );
+
+  const newButton = (p: AlertPortfolio) => (
+    <button
+      onClick={() => openNew(p.uuid)}
+      disabled={newDisabled || atLimit(p.uuid)}
+      title={isDemo ? DEMO_DISABLED_TITLE : atLimit(p.uuid) ? `The limit is ${ALERT_RULE_LIMIT} alerts per portfolio. Delete one to add another.` : undefined}
+      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1c1917] hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+    >
+      <Plus className="w-4 h-4" /> New alert
+    </button>
+  );
+
+  // The form, in the card of the portfolio it's for.
+  const formFor = (p: AlertPortfolio) => form && form.portfolioUuid === p.uuid && (
+    <AlertForm
+      key={form.rule?.ruleId ?? `new:${p.uuid}`}
+      rule={form.rule}
+      portfolio={p}
+      named={grouped}
+      clientName={clientName}
+      holdings={assetOptions[p.uuid] ?? null}
+      onSaved={handleSaved}
+      onCancel={() => setForm(null)}
+    />
+  );
+
+  const status = loading ? (
+    <div className="flex justify-center py-6">
+      <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
+    </div>
+  ) : error ? (
+    <div className="flex items-center gap-3 text-sm text-[#78716c]">
+      <p>{error}</p>
+      <button onClick={reload} className="font-bold text-[#C49A3C] underline underline-offset-2">Try again</button>
+    </div>
+  ) : null;
+
+  const confirmDelete = toDelete && (
+    <ConfirmDialog
+      title="Delete this alert?"
+      description={`"${describeAlert(toDelete).title}" will stop being checked and disappear from your dashboard. This can't be undone.`}
+      confirming={deleting}
+      onConfirm={handleDelete}
+      onClose={() => setToDelete(null)}
+    />
+  );
+
+  // Several portfolios: one card each — its colour, name and count, its "New alert", the form when
+  // it's open on it, then its rules.
+  if (grouped) {
+    return (
+      <div className="space-y-5">
+        {messageBanner}
+        {status && <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm">{status}</div>}
+        {!status && shown !== null && portfolios.map((p) => {
+          const own = rulesOf(p.uuid);
+          // How many rules are in each state, most pressing first, for the header's pills.
+          const byTone = TONE_SUMMARY
+            .map((t) => ({ ...t, count: own.filter((r) => alertState(r).tone === t.tone).length }))
+            .filter((t) => t.count > 0);
+          return (
+            <PortfolioGroupCard
+              key={p.uuid}
+              name={p.name}
+              color={p.color}
+              subtitle={<>
+                {own.length === 0 ? "No alerts yet" : `${own.length} of ${ALERT_RULE_LIMIT} alerts`}
+                <span className="text-[#a8a29e]"> · checked about every 5 minutes</span>
+              </>}
+              right={<>
+                {byTone.map((t) => (
+                  <span key={t.tone} className={`px-3 py-1 rounded-full text-xs font-bold tabular-nums ${TONE_STYLES[t.tone].chip}`}>
+                    {t.count} {t.label}
+                  </span>
+                ))}
+                {newButton(p)}
+              </>}
+            >
+              {form?.portfolioUuid === p.uuid && <div className="px-6 md:px-8 pb-5">{formFor(p)}</div>}
+              {own.length === 0 ? (
+                <p className="px-6 md:px-8 py-5 border-t border-[rgba(196,154,60,0.12)] text-sm text-[#a8a29e]">
+                  Nothing watched on this portfolio. Create an alert to be told when it moves by a set amount, or when a holding grows past a share you choose.
+                </p>
+              ) : (
+                <ul className="px-6 md:px-8 border-t border-[rgba(196,154,60,0.12)] divide-y divide-[rgba(196,154,60,0.1)]">{own.map(renderRule)}</ul>
+              )}
+            </PortfolioGroupCard>
+          );
+        })}
+        {confirmDelete}
+      </div>
+    );
+  }
+
+  // One portfolio (an advisor's client, or an investor with just one): a single card.
+  const only = portfolios[0];
   return (
     <div className="space-y-8">
       <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm space-y-6">
@@ -132,122 +357,31 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
               </p>
             </div>
           </div>
-          <button
-            onClick={() => { setMessage(null); setForm({ rule: null }); }}
-            disabled={isDemo || atLimit || form !== null || loading || rules === null}
-            title={isDemo ? DEMO_DISABLED_TITLE : undefined}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1c1917] hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-4 h-4" /> New alert
-          </button>
+          {only && newButton(only)}
         </div>
 
-        {message && (
-          <div
-            className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border text-sm font-bold ${
-              message.type === "success"
-                ? "bg-emerald-50 border-emerald-100 text-emerald-700"
-                : "bg-rose-50 border-rose-200 text-rose-700"
-            }`}
-          >
-            {message.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-            {message.text}
-          </div>
-        )}
+        {messageBanner}
 
-        {atLimit && (
+        {only && atLimit(only.uuid) && (
           <p className="text-xs text-[#78716c]">
             You&apos;ve reached the limit of {ALERT_RULE_LIMIT} alerts. Delete one to add another.
           </p>
         )}
 
-        {form && (
-          <AlertForm
-            key={form.rule?.ruleId ?? "new"}
-            rule={form.rule}
-            portfolioUuid={portfolioUuid}
-            clientName={clientName}
-            assetOptions={assetOptions}
-            onSaved={handleSaved}
-            onCancel={() => setForm(null)}
-          />
-        )}
+        {only && formFor(only)}
 
-        {loading ? (
-          <div className="flex justify-center py-6">
-            <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
-          </div>
-        ) : error ? (
-          <div className="flex items-center gap-3 text-sm text-[#78716c]">
-            <p>{error}</p>
-            <button onClick={reload} className="font-bold text-[#C49A3C] underline underline-offset-2">Try again</button>
-          </div>
-        ) : rules !== null && rules.length === 0 ? (
+        {status ?? (shown !== null && shown.length === 0 ? (
           <p className="text-sm text-[#78716c] py-2">
             {clientName
               ? `No alerts on ${clientName}'s portfolio yet. Create one to be told when it moves by a set amount, or when a single holding grows past a share you choose.`
               : "You have no alerts yet. Create one to be told when your portfolio moves by a set amount, or when a single holding grows past a share you choose."}
           </p>
         ) : (
-          <ul className="divide-y divide-[rgba(196,154,60,0.1)]">
-            {(rules ?? []).map((rule) => {
-              const { title, subtitle } = describeAlert(rule, clientName);
-              const state = alertState(rule);
-              const busy = busyId === rule.ruleId;
-              return (
-                <li key={rule.ruleId} className="flex flex-wrap items-center gap-x-4 gap-y-3 py-4">
-                  <div className="flex-1 min-w-48">
-                    <p className="text-sm font-bold text-[#1c1917]">{title}</p>
-                    <p className="text-xs text-[#78716c] mt-0.5">
-                      {subtitle}
-                      {rule.lastTriggeredAt && ` · Last triggered ${formatDate(rule.lastTriggeredAt)}`}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#78716c]">
-                      <span className={`px-2.5 py-0.5 rounded-full ${TONE_STYLES[state.tone].chip}`}>{state.label}</span>
-                      {rule.notifyEmail && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> Email</span>}
-                      {rule.notifyInApp && <span className="flex items-center gap-1"><Bell className="w-3 h-3" /> In-app</span>}
-                      {!rule.notifyEmail && !rule.notifyInApp && <span>Dashboard only</span>}
-                    </div>
-                  </div>
-                  {!isDemo && <div className="flex items-center gap-2">
-                    <div className={busy ? "pointer-events-none opacity-60" : ""}>
-                      <Toggle
-                        checked={rule.enabled}
-                        onChange={() => handleToggleEnabled(rule)}
-                        label={rule.enabled ? `Turn off ${title}` : `Turn on ${title}`}
-                      />
-                    </div>
-                    <button
-                      onClick={() => { setMessage(null); setForm({ rule }); }}
-                      aria-label={`Edit ${title}`}
-                      className="p-2 rounded-lg text-[#78716c] hover:text-[#1c1917] hover:bg-[#F7F5EF] transition-colors"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setToDelete(rule)}
-                      aria-label={`Delete ${title}`}
-                      className="p-2 rounded-lg text-[#78716c] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+          <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{(shown ?? []).map(renderRule)}</ul>
+        ))}
       </div>
 
-      {toDelete && (
-        <ConfirmDialog
-          title="Delete this alert?"
-          description={`"${describeAlert(toDelete).title}" will stop being checked and disappear from your dashboard. This can't be undone.`}
-          confirming={deleting}
-          onConfirm={handleDelete}
-          onClose={() => setToDelete(null)}
-        />
-      )}
+      {confirmDelete}
     </div>
   );
 }
@@ -257,21 +391,25 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
  * its threshold, direction, period, asset and channels, not what kind of alert it is). Params are
  * only sent on an edit if they actually changed, because changing them restarts the rule.
  * Backend errors (the 20-rule limit, a portfolio-change period the history doesn't cover yet)
- * are shown as the backend words them.
+ * are shown as the backend words them. It's always on one portfolio (`portfolio`); `named` words
+ * it by that portfolio's name, when the user has several.
  */
 function AlertForm({
-  rule, portfolioUuid, clientName, assetOptions, onSaved, onCancel,
+  rule, portfolio: target, named, clientName, holdings, onSaved, onCancel,
 }: {
-  rule: AlertRuleResponse | null;
-  portfolioUuid: string;
+  rule: PortfolioAlertRule | null;
+  portfolio: AlertPortfolio;
+  named: boolean;
   clientName?: string;
-  assetOptions: AssetOption[] | null;
-  onSaved: (saved: AlertRuleResponse, created: boolean) => void;
+  // The portfolio's holdings for the asset picker; null while they load.
+  holdings: AssetOption[] | null;
+  onSaved: (saved: PortfolioAlertRule, created: boolean) => void;
   onCancel: () => void;
 }) {
   const editing = rule !== null;
   const initial = rule?.params;
-  const portfolio = clientName ? `${clientName}'s portfolio` : "your portfolio";
+  const portfolioUuid = target.uuid;
+  const portfolio = clientName ? `${clientName}'s portfolio` : named ? target.name : "your portfolio";
 
   const [type, setType] = useState<AlertParams["type"]>(initial?.type ?? "portfolio_change");
   const [direction, setDirection] = useState<AlertDirection>(initial?.type === "portfolio_change" ? initial.direction : "down");
@@ -289,7 +427,7 @@ function AlertForm({
 
   // The picker lists current holdings; an edited rule may point at an asset no longer held, which
   // still needs an option so the select doesn't silently switch it to "any asset".
-  const options = [...(assetOptions ?? [])];
+  const options = [...(holdings ?? [])];
   if (assetId && !options.some((o) => o.assetId === assetId)) {
     options.push({ assetId, label: rule?.reading?.assetName ?? "Selected asset (no longer held)" });
   }
@@ -308,7 +446,7 @@ function AlertForm({
     setFormError(null);
     try {
       if (rule === null) {
-        onSaved(await alertService.createRule(portfolioUuid, { params, notifyEmail, notifyInApp }), true);
+        onSaved({ ...await alertService.createRule(portfolioUuid, { params, notifyEmail, notifyInApp }), portfolioUuid }, true);
         return;
       }
       const changes: AlertRuleUpdateRequest = {};
@@ -319,7 +457,7 @@ function AlertForm({
         onCancel();
         return;
       }
-      onSaved(await alertService.updateRule(portfolioUuid, rule.ruleId, changes), false);
+      onSaved({ ...await alertService.updateRule(portfolioUuid, rule.ruleId, changes), portfolioUuid }, false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Unable to save this alert.");
     } finally {
@@ -412,7 +550,7 @@ function AlertForm({
           </div>
           <p className="text-xs text-[#78716c]">
             Triggers when the asset&apos;s share of {portfolio} goes above this value.
-            {assetOptions === null && " Loading the holdings…"}
+            {holdings === null && " Loading the holdings…"}
           </p>
         </div>
       )}
@@ -440,7 +578,7 @@ function AlertForm({
 
       {params && (
         <p className="text-sm text-[#1c1917] bg-white border border-[rgba(196,154,60,0.2)] rounded-xl px-4 py-3 leading-relaxed">
-          {describeParams(params, assetLabel, clientName)}
+          {describeParams(params, assetLabel, clientName, named ? target.name : undefined)}
         </p>
       )}
 

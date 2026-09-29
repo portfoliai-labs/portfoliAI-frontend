@@ -28,6 +28,7 @@ import { UploadedFileState } from "./uploaderTypes";
 import { TransactionsSection, TransactionRow, DisplayTransaction, BulkOperation } from "./TransactionsSection";
 import { TransactionFilterBar, TransactionFilterState, EMPTY_TRANSACTION_FILTERS } from "./TransactionFilterBar";
 import { usePortfolio } from "../../context/PortfolioContext";
+import { isBacktest } from "../../models/Portfolio";
 import { useUser } from "../../context/UserContext";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 
@@ -138,6 +139,10 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid, readOnly = fal
   const aggregate = isFixed ? undefined : allPortfolios.find(p => p.isAggregate);
   // Pickers and portfolio labels only make sense with a choice to make.
   const pickable = ownPortfolios.length > 1 ? ownPortfolios : undefined;
+  // The list's portfolio filter also reaches the backtests, whose generated transactions show
+  // read only (new rows still go into a real portfolio, picked where they're added).
+  const backtests = useMemo(() => (isFixed ? [] : allPortfolios.filter(isBacktest)), [isFixed, allPortfolios]);
+  const filterable = useMemo(() => [...ownPortfolios, ...backtests], [ownPortfolios, backtests]);
   // Where new rows go unless the user picks otherwise: the portfolio open elsewhere in the
   // app, or the default one while that's the aggregate.
   const defaultTarget = fixedPortfolioUuid
@@ -193,6 +198,8 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid, readOnly = fal
   // Which list the saved section shows: the picked portfolio, else every portfolio (the
   // aggregate, or the only portfolio when there's no aggregate).
   const listUuid = fixedPortfolioUuid ?? (existingFilters.portfolio || aggregate?.uuid || ownPortfolios[0]?.uuid || "");
+  // A backtest's list (picked in the filter) is read only, like a fixed virtual portfolio's.
+  const listReadOnly = readOnly || backtests.some(p => p.uuid === listUuid);
 
   const hasActiveFilters = Object.values(existingFilters).some(Boolean);
 
@@ -367,7 +374,8 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid, readOnly = fal
       detectedBroker: broker, dateFormat: "auto", resolvedDateFormat, dateFormatAmbiguous,
       isValid, missingFields: missingFields.map(String),
       hasOrdersWithoutTime, validationErrors, confirmed: false,
-      portfolioUuid: defaultTarget,
+      // With a choice to make, the user picks where the file goes in the mapping modal.
+      portfolioUuid: pickable ? "" : defaultTarget,
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -961,13 +969,13 @@ export function FileUploader({ portfolioUuid: fixedPortfolioUuid, readOnly = fal
         emptyMessage={
           hasActiveFilters
             ? "No transactions match the current filters."
-            : readOnly
+            : listReadOnly
             ? "No transactions yet: the backtest is still generating them."
             : "No transactions yet. Add one manually or upload a file to get started."
         }
-        filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} portfolios={pickable} />}
-        onDeleteAll={isDemo || readOnly ? undefined : () => setConfirmDeleteAll(true)}
-        readOnly={isDemo || readOnly}
+        filterBar={<TransactionFilterBar filters={existingFilters} onChange={handleFiltersChange} portfolios={filterable} />}
+        onDeleteAll={isDemo || listReadOnly ? undefined : () => setConfirmDeleteAll(true)}
+        readOnly={isDemo || listReadOnly}
         deletingAll={deletingAllExisting}
       />
     </div>

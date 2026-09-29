@@ -385,7 +385,7 @@ function ClientPanel({
             <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
           </div>
         ) : portfolio ? (
-          <AlertsSettings portfolioUuid={portfolio.uuid} clientName={name} />
+          <AlertsSettings portfolios={[{ uuid: portfolio.uuid, name }]} clientName={name} />
         ) : (
           <p className="text-sm text-rose-500">{portfolioError ?? "Unable to load this client's portfolio."}</p>
         )}

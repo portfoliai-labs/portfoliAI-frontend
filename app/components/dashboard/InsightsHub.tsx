@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Columns3, History, MoreHorizontal, Pencil, Telescope, Trash2, Wand2 } from "lucide-react";
+import { ArrowUpRight, BellRing, Columns3, FileText, History, MoreHorizontal, Pencil, Receipt, Telescope, Trash2, Wand2 } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
 import { portfolioColorMap } from "../../lib/chartColors";
@@ -17,13 +17,14 @@ import { PreviewBadge } from "../preview/PreviewKit";
 import { VIRTUAL_COLOR } from "./BacktestMarks";
 import { FeaturedCard, PortfolioHolder, portfolioHolderItem, type HolderItem } from "./PortfolioHolder";
 import type { Portfolio } from "../../models/Portfolio";
+import type { InvestmentsPage } from "./InsightsSection";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
 // The virtual portfolios' cards in their holder: shades of VIRTUAL_COLOR, one per card.
 const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6", "#0369a1"];
 
 /**
- * INVESTMENTS HUB — Assets / Investments: every portfolio on one row, in three columns. First the
+ * INVESTMENTS HUB — Manage / Investments: every portfolio on one row, in three columns. First the
  * real portfolio with the most money invested, on a big card as tall as the row
  * (FeaturedPortfolioCard); then the other real ones (the default first) and, for a demo account,
  * the sample real estate (a preview), gathered in a card holder (PortfolioHolder), which pulls
@@ -32,21 +33,23 @@ const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6
  * together, there with two or more, and the strategies backtested with Strategy, see
  * models/Strategy) in a holder of their own, in their blue (BacktestMarks), or the way to
  * backtest one while there are none. The sleeves sit on one line, each stack rising from it. A
- * card opens its portfolio's page, where it's renamed or deleted. Under them, Compare, Strategy
- * and Discovery (searching for new assets; coming soon). A demo
+ * card opens its portfolio's Insights, where it's renamed or deleted. Under them, Transactions,
+ * Reports and Alerts (each picking a portfolio at its top), then Compare, Strategy and Discovery
+ * (searching for new assets; coming soon). A demo
  * account (see lib/demo) can't create anything. The figures for every card come from one call
  * (GET /v1/portfolios/comparison with no portfolio listed returns all of them), refetched when a
  * portfolio is added or removed.
  */
 export function InsightsHub({
-  trail, onOpenPortfolio, onCompare, onOpenRealEstate, onStrategy,
+  trail, onOpenPortfolio, onCompare, onOpenRealEstate, onStrategy, onOpenPage,
 }: {
-  // The pages above it ("Assets").
+  // The pages above it ("Manage").
   trail: Crumb[];
   onOpenPortfolio: (uuid: string) => void;
   onCompare: () => void;
   onOpenRealEstate: () => void;
   onStrategy: () => void;
+  onOpenPage: (page: InvestmentsPage) => void;
 }) {
   const { portfolios } = usePortfolio();
   const { isDemo } = useUser();
@@ -129,6 +132,24 @@ export function InsightsHub({
       {/* The ways on from here, in a row of their own under the portfolios: same columns as above. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
         <ActionCard
+          icon={<Receipt className="h-5 w-5" />}
+          title="Transactions"
+          text="Every portfolio's buys, sells and dividends: add, import or edit them, one portfolio or all at once."
+          onClick={() => onOpenPage("transactions")}
+        />
+        <ActionCard
+          icon={<FileText className="h-5 w-5" />}
+          title="Reports"
+          text="Full-history PDF reports for each portfolio, generated on demand."
+          onClick={() => onOpenPage("reports")}
+        />
+        <ActionCard
+          icon={<BellRing className="h-5 w-5" />}
+          title="Alerts"
+          text="Get notified when a portfolio or one of its holdings moves past your limits."
+          onClick={() => onOpenPage("alerts")}
+        />
+        <ActionCard
           icon={<Columns3 className="h-5 w-5" />}
           title="Compare"
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
@@ -202,7 +223,7 @@ function FeaturedPortfolioCard({ portfolio, color, entry, onOpen }: {
 }
 
 /**
- * PORTFOLIO CARD MENU — the "…" with Rename and Delete, at the top of a portfolio's page. Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
+ * PORTFOLIO CARD MENU — the "…" with Rename and Delete, at the top right of a portfolio's Insights (PortfolioActions). Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
  */
 export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boolean; onRename: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
@@ -265,7 +286,7 @@ export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete
 }
 
 /** ACTION CARD — a way out of a hub page: dark, so it reads apart from the portfolio cards. */
-// `children`: a line of live detail under the text (PortfolioHome's "3 rules, 1 triggered"…).
+// `children`: a line of live detail under the text (the real estate preview's "2 active"…).
 // `badge`: a pill beside the title (the previews' "Preview").
 export function ActionCard({
   icon, title, text, onClick, className = "", children, badge,

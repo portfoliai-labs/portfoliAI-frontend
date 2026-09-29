@@ -73,9 +73,11 @@ interface ImportWizardProps {
 
 export function ImportWizard({ file, onClose, onImported, portfolioUuid, portfolios, onFallbackToManual }: ImportWizardProps) {
   const [phase, setPhase] = useState<Phase>("parsing");
-  // Where the rows go. Fixed once the first commit runs: a recommit (manual instrument
-  // overrides) has to land in the same portfolio as the rows already imported.
-  const [targetUuid, setTargetUuid] = useState(portfolioUuid);
+  // Where the rows go: with a choice to make, none until the user picks one (the import waits
+  // for it). Fixed once the first commit runs: a recommit (manual instrument overrides) has to
+  // land in the same portfolio as the rows already imported.
+  const mustPick = (portfolios?.length ?? 0) > 1;
+  const [targetUuid, setTargetUuid] = useState(mustPick ? "" : portfolioUuid);
   const [tab, setTab] = useState<Tab>("columns");
   const [errorMessage, setErrorMessage] = useState("");
   const [parsedFile, setParsedFile] = useState<ParsedFile | null>(null);
@@ -499,10 +501,11 @@ export function ImportWizard({ file, onClose, onImported, portfolioUuid, portfol
                   Cancel
                 </button>
                 <button
-                  disabled={requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous || committing}
+                  disabled={requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous || !targetUuid || committing}
                   onClick={handleConfirm}
+                  title={!targetUuid ? "Choose the portfolio to import into first" : undefined}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white transition-colors shadow-md shadow-slate-200 ${
-                    requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous
+                    requiredFieldsMissing.length > 0 || !hasInstrumentMapping || dateFormatAmbiguous || !targetUuid
                       ? "bg-slate-200 text-slate-400 cursor-not-allowed"
                       : "bg-slate-900 hover:bg-blue-600"
                   }`}

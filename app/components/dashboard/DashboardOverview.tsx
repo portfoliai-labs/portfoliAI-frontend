@@ -15,7 +15,7 @@ import { formatCurrency } from "../../lib/format";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { AlertGaugeCard } from "./AlertGauge";
-import { openInvestmentsHub, openPortfoliosPage, openWalletPage, openWalletsHub } from "./InsightsSection";
+import { openInvestmentsHub, openInvestmentsPage, openPortfolioInsights, openWalletPage, openWalletsHub } from "./InsightsSection";
 import { DailyArticleModule } from "./NewsSection";
 import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { alertState, type AlertState, type AlertTone } from "../../lib/alerts";
@@ -36,11 +36,11 @@ type SnapshotState =
  * portfolio, plus, for a demo account, the wallets' balance — a preview on sample data, see
  * components/preview), with the portfolios and the wallets under it, as totals and one by one; then every
  * portfolio's alerts and the article of the day. Headline figures only: the rest lives under
- * Assets, which the summaries open. The overview endpoint never mixes history
+ * Manage, which the summaries open. The overview endpoint never mixes history
  * with fresh data (no isStale).
  */
 export default function DashboardOverview({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
-  const { portfolios, current, selectPortfolio } = usePortfolio();
+  const { portfolios, selectPortfolio } = usePortfolio();
   const { isDemo } = useUser();
   // Wallets are a preview on sample data that only demo accounts see.
   const wallets = useMemo(() => (isDemo ? walletsSummary() : null), [isDemo]);
@@ -74,20 +74,19 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
   // The real portfolios, each shown on its own under the total.
   const members = useMemo(() => portfolios.filter((p) => !p.isVirtual), [portfolios]);
 
-  // Alerts are managed on each portfolio's page under Portfolios; "Manage alerts" (and the
-  // empty state's button) open the selected portfolio's (see openPortfoliosPage).
+  // "Manage alerts" (and the empty state's button) open Investments' Alerts, on the selected
+  // portfolio (see openInvestmentsPage).
   const openAlertSettings = () => {
-    const target = current ?? headline;
-    if (onNavigate && target) openPortfoliosPage(onNavigate, target.uuid, "alerts");
+    if (onNavigate) openInvestmentsPage(onNavigate, "alerts");
   };
 
-  // A portfolio's page (and its Transactions) live under Portfolios, opened directly rather
-  // than through the Portfolios hub.
+  // A portfolio opens on its Insights under Manage, directly rather than through the hub; its
+  // Transactions on Investments' Transactions, on the portfolio just selected.
   const openPortfolio = (uuid: string, section: string) => {
     selectPortfolio(uuid);
     if (!onNavigate) return;
-    if (section === "performance") openPortfoliosPage(onNavigate, uuid, "home");
-    else if (section === "upload") openPortfoliosPage(onNavigate, uuid, "transactions");
+    if (section === "performance") openPortfolioInsights(onNavigate, uuid);
+    else if (section === "upload") openInvestmentsPage(onNavigate, "transactions");
     else onNavigate(section);
   };
 
@@ -128,7 +127,7 @@ export default function DashboardOverview({ onNavigate }: { onNavigate?: (sectio
           onOpenPortfolios={onNavigate ? () => openInvestmentsHub(onNavigate) : undefined}
           onOpenPortfolio={onNavigate ? (uuid) => openPortfolio(uuid, "performance") : undefined}
           onOpenWallets={onNavigate ? () => openWalletsHub(onNavigate) : undefined}
-          onOpenWallet={onNavigate ? (id) => openWalletPage(onNavigate, id, "home") : undefined}
+          onOpenWallet={onNavigate ? (id) => openWalletPage(onNavigate, id, "insights") : undefined}
         />
       )}
 
@@ -171,7 +170,7 @@ function ErrorBanner({ message }: { message: string }) {
  * what each is, and how much of the whole each group is. Under it, one column per group: its total,
  * a line about it (the portfolios' unrealized P&L, the wallets' money in and out this month), then a
  * row for each portfolio or wallet — its share of the net worth, its value and how it's doing — in
- * the same shade as its piece of the bar. A column's head opens its hub under Assets, a row that
+ * the same shade as its piece of the bar. A column's head opens its hub under Manage, a row that
  * portfolio's or wallet's page.
  *
  * The portfolios' total is the aggregate's (recomputed from every portfolio's transactions
@@ -355,7 +354,7 @@ function Delta({ amount, pct, currency }: { amount: number | null; pct: number |
 
 /**
  * GROUP COLUMN — one kind of asset under the net worth: its head (name, total, a line about it,
- * opening its hub under Assets), then its rows. `value` null: nothing to show yet, `pending` says why.
+ * opening its hub under Manage), then its rows. `value` null: nothing to show yet, `pending` says why.
  */
 function GroupColumn({
   title, color, badge, value, pending, summary, onOpen, children,

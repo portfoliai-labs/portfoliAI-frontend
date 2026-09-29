@@ -61,7 +61,7 @@ const FREQUENCY_OPTIONS: { value: StrategyFrequency; label: string }[] = [
 ];
 
 /**
- * STRATEGY — build a portfolio strategy and backtest it, opened from the Assets hub. The
+ * STRATEGY — build a portfolio strategy and backtest it, opened from the Manage hub. The
  * strategy is a set of rules: how much goes into each macro category, the initial purchase at the
  * start of the period, when to rebalance back to those weights (on a calendar, past a drift band,
  * or both), optional recurring contributions (PAC) or withdrawals, and the trading costs. "Run

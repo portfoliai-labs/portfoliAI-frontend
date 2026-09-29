@@ -20,7 +20,7 @@ import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboar
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
-import { InsightsSection, openPortfoliosPage } from "../../components/dashboard/InsightsSection";
+import { InsightsSection, openInvestmentsPage } from "../../components/dashboard/InsightsSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { ExploreCommunity } from "../../components/preview/ExploreCommunity";
 import { Loader2 } from "lucide-react";
@@ -32,7 +32,7 @@ import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHisto
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
 const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'explore', 'news', 'settings', 'notifications'];
-// Sections that became part of another: Wallets now sits under Assets ("performance"), next to
+// Sections that became part of another: Wallets now sits under Manage ("performance"), next to
 // the portfolios. A link or a history entry to the old one lands on the new.
 const MOVED_SECTIONS: Record<string, string> = { wallets: 'performance' };
 const resolveSection = (section: string | null | undefined) => (section ? MOVED_SECTIONS[section] ?? section : section);
@@ -97,12 +97,12 @@ function DashboardPageContent() {
 
   const isAdvisor = user?.role === 'ADVISOR';
 
-  // An investor's transactions live on each portfolio's page under Portfolios now, so a link to
-  // the old Transactions section (an "add transactions" empty state) opens the selected
-  // portfolio's instead.
+  // An investor's transactions live under Manage / Investments now, so a link to the old
+  // Transactions section (an "add transactions" empty state) opens them there, on the selected
+  // portfolio.
   const navigate = (section: string) => {
-    if (section === 'upload' && !isAdvisor && portfolio) {
-      openPortfoliosPage(openSection, portfolio.uuid, 'transactions');
+    if (section === 'upload' && !isAdvisor) {
+      openInvestmentsPage(openSection, 'transactions');
       return;
     }
     showSection(resolveSection(section) ?? section);

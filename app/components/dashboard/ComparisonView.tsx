@@ -84,7 +84,7 @@ export function ComparisonView({
 }: {
   selection: string[];
   onToggle: (uuid: string) => void;
-  // The pages above Compare ("Assets / Investments").
+  // The pages above Compare ("Manage / Investments").
   trail: Crumb[];
   // Opens one portfolio's own Insights, from its column header.
   onOpen: (uuid: string) => void;
