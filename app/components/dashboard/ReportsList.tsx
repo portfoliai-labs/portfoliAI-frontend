@@ -65,11 +65,35 @@ interface DocumentCardProps {
   setNewTagName: (name: string) => void;
 }
 
-export function ReportsList({
-  portfolioUuid,
-}: {
-  portfolioUuid: string;
-}) {
+export type ReportsViewMode = "list" | "grouped";
+
+/**
+ * Downloads a report's PDF: asks the backend for a short-lived signed URL, fetches the file and
+ * saves it under `fileName` (".pdf" added when missing). Throws when any step fails.
+ */
+export async function downloadReportFile(portfolioUuid: string, docId: string, fileName: string) {
+  const { url } = await reportService.downloadReport(portfolioUuid, docId);
+  if (!url) throw new Error("Invalid URL received from server");
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Could not fetch file data from storage");
+  const blobUrl = window.URL.createObjectURL(await response.blob());
+
+  // A temporary anchor triggers the download, then the DOM and the memory are cleaned up.
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * One portfolio's report archive, newest first (an advisor's view of a client's): search,
+ * "Newest first" / "By Tag", and each report's view, download and tags.
+ */
+export function ReportsList({ portfolioUuid }: { portfolioUuid: string }) {
   const [reports, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +101,7 @@ export function ReportsList({
   // UI & Filtering States
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
+  const [viewMode, setViewMode] = useState<ReportsViewMode>("list");
 
   // Tagging Logic States
   const [taggingDocId, setTaggingDocId] = useState<string | null>(null);
@@ -115,30 +139,7 @@ export function ReportsList({
 
   const handleDownload = async (docId: string, fileName: string) => {
     try {
-      // Step 1: Request the short-lived signed URL from the backend
-      const { url } = await reportService.downloadReport(portfolioUuid, docId);
-
-      if (!url) throw new Error("Invalid URL received from server");
-
-      // Step 2: Fetch the file data
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Could not fetch file data from storage");
-      
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      
-      // Step 3: Create a temporary anchor element to trigger download
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
-      link.download = cleanFileName;
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      // Cleanup DOM and Memory
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
+      await downloadReportFile(portfolioUuid, docId, fileName);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Download failed";
       alert(`Error: ${msg}`);
@@ -205,43 +206,6 @@ export function ReportsList({
     return groups;
   }, [filteredList]);
 
-  /**
-   * Groups filtered reports for the default "By Period" view — by the period each report
-   * actually covers, not by when it happened to be generated. Those two diverge as soon as
-   * someone regenerates something or backfills old history, so grouping by created_at (the
-   * previous behavior) would scatter a single year's reports across unrelated date buckets.
-   * FULL reports get their own bucket first (no single period to sort them into); PERIODIC
-   * ones are grouped by the year their period falls in, newest year first, newest period
-   * first within a year. Reports with no resolvable report_type/period (old records) fall
-   * back to a flat "Other reports" bucket, sorted by created_at like before.
-   */
-  const groupedByPeriod = useMemo(() => {
-    const full: Document[] = [];
-    const byYear = new Map<number, Document[]>();
-    const unknown: Document[] = [];
-
-    filteredList.forEach(report => {
-      if (report.report_type === "FULL") {
-        full.push(report);
-      } else if (report.report_type === "PERIODIC" && report.period_start) {
-        const year = new Date(report.period_start).getFullYear();
-        const arr = byYear.get(year);
-        if (arr) arr.push(report); else byYear.set(year, [report]);
-      } else {
-        unknown.push(report);
-      }
-    });
-
-    const groups: { key: string; label: string; docs: Document[] }[] = [];
-    if (full.length > 0) groups.push({ key: "full", label: "Full analyses", docs: full });
-    [...byYear.keys()].sort((a, b) => b - a).forEach(year => {
-      const docs = [...byYear.get(year)!].sort((a, b) => (b.period_start ?? "").localeCompare(a.period_start ?? ""));
-      groups.push({ key: `year-${year}`, label: String(year), docs });
-    });
-    if (unknown.length > 0) groups.push({ key: "unknown", label: "Other reports", docs: unknown });
-    return groups;
-  }, [filteredList]);
-
   if (loading) {
     return (
       <div className="flex justify-center items-center py-32">
@@ -286,7 +250,7 @@ export function ReportsList({
               viewMode === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-500 hover:text-slate-700"
             }`}
           >
-            <Calendar className="h-4 w-4" /> By Period
+            <Calendar className="h-4 w-4" /> Newest first
           </button>
           <button
             onClick={() => setViewMode("grouped")}
@@ -308,36 +272,23 @@ export function ReportsList({
             <p className="text-slate-500 mt-1">Upload files and generate a report to see it here.</p>
           </div>
         ) : viewMode === "list" ? (
-          groupedByPeriod.map(({ key, label, docs }) => (
-            <div key={key} className="space-y-4">
-              <div className="flex items-center gap-3 px-2">
-                <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
-                  <Calendar className="h-4 w-4" />
-                </div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">{label}</h3>
-                <div className="h-px flex-1 bg-slate-200" />
-                <span className="text-xs font-bold text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                  {docs.length} items
-                </span>
-              </div>
-              <div className="grid gap-4">
-                {docs.map(report => (
-                  <DocumentCard
-                    key={`${key}-${report.document_id}`}
-                    report={report}
-                    onDownload={handleDownload}
-                    onView={handleView}
-                    onRemoveTag={handleRemoveTag}
-                    onAddTag={handleAddTag}
-                    taggingDocId={taggingDocId}
-                    setTaggingDocId={setTaggingDocId}
-                    newTagName={newTagName}
-                    setNewTagName={setNewTagName}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
+          // One kind of report for now (full history), so one list, newest first.
+          <div className="grid gap-4">
+            {filteredList.map(report => (
+              <DocumentCard
+                key={report.document_id}
+                report={report}
+                onDownload={handleDownload}
+                onView={handleView}
+                onRemoveTag={handleRemoveTag}
+                onAddTag={handleAddTag}
+                taggingDocId={taggingDocId}
+                setTaggingDocId={setTaggingDocId}
+                newTagName={newTagName}
+                setNewTagName={setNewTagName}
+              />
+            ))}
+          </div>
         ) : (
           Object.entries(groupedDocuments).map(([tag, docs]) => (
             <div key={`group-${tag}`} className="space-y-4 bg-slate-50/50 p-4 md:p-6 rounded-[2.5rem] border border-slate-100">

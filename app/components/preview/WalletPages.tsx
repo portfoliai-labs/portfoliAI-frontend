@@ -1,40 +1,40 @@
-// components/preview/WalletsSection.tsx
+// components/preview/WalletPages.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
+import { useMemo, useState } from "react";
 import {
-  ComposedChart, Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine,
+  Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import {
-  ArrowUpRight, BellRing, CreditCard, Download, FileText, Landmark, Layers, Lightbulb, PiggyBank, Plus, Receipt, Search, Target, TrendingUp, Upload, Wallet as WalletIcon,
+  BellRing, FileText, Lightbulb, Plus, Receipt, Search, Target, Upload,
 } from "lucide-react";
 import { Breadcrumb, type Crumb } from "../dashboard/Breadcrumb";
+import { PortfolioGroupCard } from "../dashboard/PortfolioGroupCard";
+import { ReportFileTile } from "../dashboard/ReportFileTile";
+import { GenerateReportDialog } from "../dashboard/GenerateReportDialog";
+import { TONE_STYLES } from "../dashboard/AlertGauge";
+import { FeaturedCard, PortfolioHolder, type HolderItem } from "../dashboard/PortfolioHolder";
+import { VIRTUAL_COLOR } from "../dashboard/BacktestMarks";
 import { ActionCard } from "../dashboard/InsightsHub";
 import { DataTable, type DataColumn } from "../dashboard/ExploreView";
 import { Toggle } from "../dashboard/Toggle";
 import { formatCompact, formatCurrency } from "../../lib/format";
 import {
-  BUDGETS, CATEGORY_COLORS, INCOME_CATEGORIES, MONTHS, RECURRING, WALLETS, WALLET_ALERTS,
+  BUDGETS, CATEGORY_COLORS, INCOME_CATEGORIES, MONTHS, RECURRING, WALLETS, WALLET_ALERTS, WALLET_REPORTS,
   monthlySummary, spendingByCategory, topMerchants, transactionsOf,
-  type Category, type Wallet, type WalletTransaction,
+  type Category, type WalletAlert, type WalletTransaction,
 } from "../../lib/mock/wallets";
-import { AXIS_TICK, ComingSoonButton, Panel, Pills, PreviewBadge, PreviewBanner, Stat, TOOLTIP_STYLE, formatPct, serif } from "./PreviewKit";
+import { AXIS_TICK, ComingSoonButton, Panel, Pills, PreviewBadge, PreviewBanner, TOOLTIP_STYLE, formatPct, serif } from "./PreviewKit";
 
-type WalletPage = "home" | "transactions" | "insights" | "reports" | "budgets" | "alerts";
-type View = { kind: "hub" } | { kind: "wallet"; id: string; page: WalletPage };
+export type WalletPage = "insights" | "transactions" | "reports" | "budgets" | "alerts";
 
-const ALL = "all";
-// The dashboard's section id for this one (see the dashboard page).
-const SECTION = "wallets";
+/** The id of all wallets together (the Wallets hub's "All wallets"). */
+export const ALL_WALLETS = "all";
+const ALL = ALL_WALLETS;
 
-// The page the current history entry was on; the hub when it's another section's or none.
-const viewFromHistory = (): View => {
-  const entry = readDashboardEntry();
-  const view = entry?.section === SECTION ? (entry.view as View | undefined) : undefined;
-  if (!view || (view.kind === "wallet" && view.id !== ALL && !WALLETS.some((w) => w.id === view.id))) return { kind: "hub" };
-  return view;
-};
+/** Whether `id` is a wallet (or all of them): a history entry can outlive the sample data. */
+export const isWalletId = (id: string) => id === ALL || WALLETS.some((w) => w.id === id);
+
 const eur = (v: number, d = 0) => formatCurrency(v, "EUR", d);
 const scopeOf = (id: string) => (id === ALL ? null : id);
 const nameOf = (id: string) => (id === ALL ? "All wallets" : WALLETS.find((w) => w.id === id)!.name);
@@ -42,68 +42,44 @@ const CURRENT_MONTH = MONTHS.at(-1)!.key;
 // Day 28 of September's 30: how far into the month budgets should be.
 const MONTH_ELAPSED = 28 / 30;
 
-const PAGE_LABELS: Record<Exclude<WalletPage, "home">, string> = {
+const PAGE_LABELS: Record<WalletPage, string> = {
   transactions: "Transactions", insights: "Insights", reports: "Reports", budgets: "Budgets", alerts: "Alerts",
 };
 
 /**
- * WALLETS SECTION (preview) — everyday money, next to the investments: current accounts, cards,
- * savings and cash, with what comes in and goes out. Built like Portfolios: a hub of wallets,
- * each opening its own page (balance, the year's income, spending and balance), and from there
- * its Transactions, Insights, Budgets, Reports and Alerts, with the trail shown in the Sidebar
- * through Breadcrumb. All wallets together are the hub's Combined card, which opens straight on
- * their Insights, as Portfolios' Combined does. All figures come from lib/mock/wallets.
+ * WALLET PAGES (preview) — everyday money, next to the investments under Manage (see
+ * InsightsSection), from Manage / Wallets (WalletsHub): current accounts, cards, savings and cash,
+ * with what comes in and goes out. Built like Investments: a wallet's card opens straight on its
+ * Insights, and Transactions, Budgets, Reports and Alerts sit on the hub, each on every wallet at
+ * once — Transactions filtered by wallet in its list, Reports as files (each saying its wallet),
+ * Alerts a card per wallet. All figures come from lib/mock/wallets.
  */
-export function WalletsSection() {
-  const [view, setView] = useState<View>(viewFromHistory);
-  // Every page is a history entry, as under Investments (see lib/dashboardHistory): back and
-  // forward show the page the entry landed on.
-  useEffect(() => {
-    const onPopState = () => {
-      if (readDashboardEntry()?.section !== SECTION) return;
-      const next = viewFromHistory();
-      setView((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-  const go = (next: View) => {
-    pushDashboardEntry({ section: SECTION, view: next });
-    setView(next);
-    window.scrollTo({ top: 0 });
-  };
+export function WalletView({ id, page, trail }: {
+  // The wallet, for its Insights (the other pages are on every wallet).
+  id: string;
+  page: WalletPage;
+  // The pages above ("Manage / Wallets").
+  trail: Crumb[];
+}) {
+  const scope = scopeOf(id);
 
-  if (view.kind === "hub") {
-    return <WalletsHub onOpen={(id) => go({ kind: "wallet", id, page: id === ALL ? "insights" : "home" })} />;
+  if (page === "insights") {
+    return (
+      <div className="space-y-6 pb-12">
+        {/* Its row in the Sidebar leads back to the top of its Insights. */}
+        <Breadcrumb trail={[...trail, { label: nameOf(id), onClick: () => window.scrollTo({ top: 0 }) }]} current="Insights" />
+        <WalletInsights scope={scope} />
+      </div>
+    );
   }
 
-  const hubCrumb: Crumb = { label: "Wallets", onClick: () => go({ kind: "hub" }) };
-  // All wallets skip their own page: their row in the Sidebar leads back to their Insights, or to
-  // the top of it when already there.
-  const homeCrumb: Crumb = {
-    label: nameOf(view.id),
-    onClick: () => {
-      if (view.id !== ALL) go({ kind: "wallet", id: view.id, page: "home" });
-      else if (view.page !== "insights") go({ kind: "wallet", id: ALL, page: "insights" });
-      else window.scrollTo({ top: 0 });
-    },
-  };
-  const openPage = (page: WalletPage) => go({ kind: "wallet", id: view.id, page });
-  const scope = scopeOf(view.id);
-
-  if (view.page === "home") {
-    return <WalletHome id={view.id} trail={[hubCrumb]} onOpenPage={openPage} />;
-  }
-
-  const trail = [hubCrumb, homeCrumb];
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current={PAGE_LABELS[view.page]} right={pageAction(view.page)} />
-      {view.page === "transactions" && <WalletTransactions scope={scope} />}
-      {view.page === "insights" && <WalletInsights scope={scope} />}
-      {view.page === "budgets" && <WalletBudgets scope={scope} />}
-      {view.page === "reports" && <WalletReports scope={scope} name={nameOf(view.id)} />}
-      {view.page === "alerts" && <WalletAlerts />}
+      <Breadcrumb trail={trail} current={PAGE_LABELS[page]} right={pageAction(page)} />
+      {page === "transactions" && <WalletTransactions />}
+      {page === "budgets" && <WalletBudgets scope={null} />}
+      {page === "reports" && <WalletReports />}
+      {page === "alerts" && <WalletAlerts />}
     </div>
   );
 }
@@ -119,10 +95,6 @@ function pageAction(page: WalletPage) {
       );
     case "budgets":
       return <ComingSoonButton icon={<Plus className="h-3.5 w-3.5" />}>New budget</ComingSoonButton>;
-    case "reports":
-      return <ComingSoonButton icon={<FileText className="h-3.5 w-3.5" />}>Generate report</ComingSoonButton>;
-    case "alerts":
-      return <ComingSoonButton icon={<Plus className="h-3.5 w-3.5" />}>New alert</ComingSoonButton>;
     default:
       return undefined;
   }
@@ -130,181 +102,106 @@ function pageAction(page: WalletPage) {
 
 // ── Hub ────────────────────────────────────────────────────────────────────────────────────
 
-const KIND_ICON: Record<Wallet["kind"], React.ReactNode> = {
-  "Current account": <Landmark className="h-4 w-4" />,
-  "Credit card": <CreditCard className="h-4 w-4" />,
-  Savings: <PiggyBank className="h-4 w-4" />,
-  Cash: <WalletIcon className="h-4 w-4" />,
-};
+const signed = (v: number) => `${v >= 0 ? "+" : "−"}${eur(Math.abs(v))}`;
 
-function WalletsHub({ onOpen }: { onOpen: (id: string) => void }) {
+/**
+ * WALLETS HUB — Manage / Wallets, laid out like Investments: the wallet with the largest balance on
+ * a big card (FeaturedCard) as tall as the row; the other wallets in a card holder (PortfolioHolder)
+ * that pulls each one out on hover, with at its front the (not yet available) way to add one; and
+ * all wallets together in a holder of their own, in the virtual blue, like "All portfolios". Every
+ * card opens its wallet's Insights. Under them, Transactions, Budgets, Reports and Alerts, opening
+ * on all wallets.
+ */
+export function WalletsHub({ trail, onOpen }: { trail: Crumb[]; onOpen: (id: string, page: WalletPage) => void }) {
+  const wallets = useMemo(() => WALLETS.map((w) => {
+    const summary = monthlySummary(w.id);
+    const year = summary.reduce((acc, m) => ({ income: acc.income + m.income, expenses: acc.expenses + m.expenses }), { income: 0, expenses: 0 });
+    return { wallet: w, summary, month: summary.at(-1)!, year };
+  }), []);
+  const all = useMemo(() => monthlySummary(null), []);
+  const featured = wallets.reduce((best, w) => (w.month.balance > best.month.balance ? w : best));
+
+  const items: HolderItem[] = [
+    ...wallets.filter((w) => w !== featured).map(({ wallet, summary, month }) => ({
+      key: wallet.id,
+      name: wallet.name,
+      color: wallet.color,
+      value: eur(month.balance),
+      headline: signed(month.net),
+      caption: "this month",
+      points: summary.map((m) => ({ value: m.balance })),
+      empty: "",
+      onOpen: () => onOpen(wallet.id, "insights"),
+    })),
+    {
+      key: "add-wallet",
+      name: "Add a wallet",
+      color: "",
+      add: true,
+      value: null,
+      headline: null,
+      points: [],
+      empty: "Connect a bank, or add an account, card or cash by hand — coming soon.",
+      cta: "Soon",
+      onOpen: () => {},
+    },
+  ];
+  const combined: HolderItem[] = [{
+    key: ALL,
+    name: "All wallets",
+    color: VIRTUAL_COLOR,
+    badge: <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-white/15 text-[9px] font-black uppercase tracking-wider">Combined</span>,
+    value: eur(all.at(-1)!.balance),
+    headline: signed(all.at(-1)!.net),
+    caption: "this month",
+    points: all.map((m) => ({ value: m.balance })),
+    empty: "",
+    onOpen: () => onOpen(ALL, "insights"),
+  }];
+
   return (
     <div className="space-y-6 pb-12">
+      <Breadcrumb trail={trail} current="Wallets" />
       <PreviewBanner feature="Wallets">
         Wallets will hold your everyday money — accounts, cards, savings and cash — with income, spending, budgets and
         alerts, next to your investments. The wallets and transactions below are sample data; nothing is connected or saved.
       </PreviewBanner>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {WALLETS.map((w) => (
-          <WalletCard key={w.id} id={w.id} title={w.name} subtitle={`${w.kind} · ${w.institution}`} icon={KIND_ICON[w.kind]} color={w.color} onOpen={() => onOpen(w.id)} />
-        ))}
-        <button
-          type="button"
-          disabled
-          title="Coming soon"
-          className="min-h-44 h-full w-full rounded-3xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 cursor-not-allowed"
-        >
-          <Plus className="h-6 w-6" />
-          <span className="text-[13px] font-bold">Connect a bank or add a wallet</span>
-          <PreviewBadge label="Soon" />
-        </button>
-      </div>
-      {/* Its own row, like the Portfolios hub's: all wallets together are a view, not a wallet. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        <ActionCard
-          icon={<Layers className="h-5 w-5" />}
-          title="Combined"
-          text="All your wallets as one: balance, income and spending together."
-          onClick={() => onOpen(ALL)}
+      {/* The same row as Investments': the largest as tall as the row, the holders' sleeves on one line. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 items-end">
+        <FeaturedCard
+          eyebrow="Largest wallet"
+          name={featured.wallet.name}
+          badge={<PreviewBadge label="Sample" />}
+          color={featured.wallet.color}
+          value={eur(featured.month.balance)}
+          line={
+            <>
+              <span className={featured.month.net >= 0 ? "text-emerald-600" : "text-rose-600"}>{signed(featured.month.net)}</span>
+              <span className="text-slate-400 font-semibold"> this month · {featured.wallet.kind}</span>
+            </>
+          }
+          figures={[
+            { label: "In, 12 months", value: eur(featured.year.income), tone: "gain" },
+            { label: "Out, 12 months", value: eur(featured.year.expenses), tone: "loss" },
+          ]}
+          points={featured.summary.map((m) => ({ value: m.balance }))}
+          empty=""
+          onOpen={() => onOpen(featured.wallet.id, "insights")}
         />
+        <PortfolioHolder items={items} label={`${items.length - 1} more`} />
+        <PortfolioHolder items={combined} label="Combined" tone="virtual" />
+      </div>
+
+      {/* The ways on from here, under the wallets: the same grid and cards as Investments'. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        <ActionCard icon={<Receipt className="h-5 w-5" />} title="Transactions" text="Every payment and deposit, searchable and filterable by category." onClick={() => onOpen(ALL, "transactions")} />
+        <ActionCard icon={<Target className="h-5 w-5" />} title="Budgets" text="A monthly limit per category, and how this month is tracking." onClick={() => onOpen(ALL, "budgets")} />
+        <ActionCard icon={<FileText className="h-5 w-5" />} title="Reports" text="Monthly statements and a yearly summary, as PDF." onClick={() => onOpen(ALL, "reports")} />
+        <ActionCard icon={<BellRing className="h-5 w-5" />} title="Alerts" text="Low balance, budgets running out, large or unexpected payments." onClick={() => onOpen(ALL, "alerts")} />
       </div>
     </div>
   );
 }
-
-function WalletCard({ id, title, subtitle, icon, color, onOpen }: { id: string; title: string; subtitle: string; icon: React.ReactNode; color: string; onOpen: () => void }) {
-  const summary = useMemo(() => monthlySummary(scopeOf(id)), [id]);
-  const balance = summary.at(-1)!.balance;
-  const month = summary.at(-1)!;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group min-h-44 h-full text-left bg-white rounded-3xl border border-slate-200 shadow-sm p-5 md:p-6 flex flex-col gap-4 hover:border-[#C49A3C]/50 hover:shadow-md transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-    >
-      <div className="flex items-center justify-between gap-3 w-full">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}1a`, color }}>{icon}</span>
-          <div className="min-w-0">
-            <p className="text-lg font-black text-slate-900 truncate leading-tight" style={serif}>{title}</p>
-            <p className="text-[11px] font-semibold text-slate-400 truncate">{subtitle}</p>
-          </div>
-        </div>
-        <span className="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 group-hover:bg-[#C49A3C] group-hover:text-white transition-colors shrink-0">
-          <ArrowUpRight className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="flex-1 flex items-end justify-between gap-4 w-full">
-        <div className="min-w-0">
-          <p className={`text-2xl font-black tabular-nums truncate ${balance < 0 ? "text-rose-600" : "text-slate-900"}`} style={serif}>{eur(balance)}</p>
-          <p className="text-[12px] font-bold tabular-nums mt-1">
-            <span className="text-emerald-600">+{eur(month.income)}</span>
-            <span className="text-slate-300"> · </span>
-            <span className="text-rose-600">−{eur(month.expenses)}</span>
-            <span className="text-slate-400 font-semibold"> this month</span>
-          </p>
-        </div>
-        <div className="w-24 h-12 shrink-0">
-          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 96, height: 48 }}>
-            <LineChart data={summary} margin={{ top: 4, right: 2, left: 2, bottom: 4 }}>
-              <YAxis hide domain={["dataMin", "dataMax"]} />
-              <Line type="monotone" dataKey="balance" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-// ── Wallet home ────────────────────────────────────────────────────────────────────────────
-
-function WalletHome({ id, trail, onOpenPage }: { id: string; trail: Crumb[]; onOpenPage: (page: WalletPage) => void }) {
-  const scope = scopeOf(id);
-  const summary = useMemo(() => monthlySummary(scope), [scope]);
-  const month = summary.at(-1)!;
-  const year = summary.reduce((acc, m) => ({ income: acc.income + m.income, expenses: acc.expenses + m.expenses }), { income: 0, expenses: 0 });
-  const savingsRate = year.income > 0 ? ((year.income - year.expenses) / year.income) * 100 : 0;
-  const txCount = transactionsOf(scope).length;
-  const budgetsOver = budgetStatus(scope).filter((b) => b.spent > b.limit).length;
-  const alertsTriggered = WALLET_ALERTS.filter((a) => a.enabled && a.triggered).length;
-
-  return (
-    <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current={nameOf(id)} />
-      <PreviewBanner feature="Wallets" />
-
-      <section className="bg-white rounded-4xl border border-slate-200 shadow-sm">
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-          <div className="p-6 md:p-7 flex flex-col justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C]">Balance today</p>
-                <PreviewBadge label="Sample" />
-              </div>
-              <p className="text-3xl md:text-4xl font-black text-slate-900 tabular-nums" style={serif}>{eur(month.balance)}</p>
-              <p className="text-[13px] font-bold tabular-nums mt-2">
-                <span className={month.net >= 0 ? "text-emerald-600" : "text-rose-600"}>{month.net >= 0 ? "+" : ""}{eur(month.net)}</span>
-                <span className="text-slate-400 font-semibold"> this month</span>
-              </p>
-            </div>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-              <Stat label="In, 12 months" value={eur(year.income)} tone="gain" />
-              <Stat label="Out, 12 months" value={eur(year.expenses)} tone="loss" />
-              <Stat label="Savings rate" value={`${savingsRate.toFixed(0)}%`} note="Of what came in, kept" />
-              <Stat label="Avg spend / month" value={eur(year.expenses / 12)} />
-            </dl>
-          </div>
-          <div className="h-72 lg:h-auto lg:min-h-72 border-t lg:border-t-0 lg:border-l border-slate-100 p-4">
-            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 560, height: 280 }}>
-              <ComposedChart data={summary} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={12} />
-                <YAxis yAxisId="flow" tickFormatter={formatCompact} tick={AXIS_TICK} axisLine={false} tickLine={false} width={40} />
-                <YAxis yAxisId="bal" orientation="right" tickFormatter={formatCompact} tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f8fafc" }} formatter={(v, name) => [eur(Number(v)), FLOW_LABELS[name as keyof typeof FLOW_LABELS] ?? name]} />
-                <Legend formatter={(v) => FLOW_LABELS[v as keyof typeof FLOW_LABELS] ?? v} wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="flow" dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-                <Bar yAxisId="flow" dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-                <Line yAxisId="bal" type="monotone" dataKey="balance" stroke="#C49A3C" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ActionCard
-          className="md:col-span-2 min-h-0"
-          icon={<TrendingUp className="h-5 w-5" />}
-          title="Insights"
-          text="Where the money goes: spending by category, top merchants, recurring payments and how much you save."
-          onClick={() => onOpenPage("insights")}
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {["Categories", "Merchants", "Recurring", "Savings rate"].map((label) => (
-              <span key={label} className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-bold text-stone-300">{label}</span>
-            ))}
-          </div>
-        </ActionCard>
-        <ActionCard icon={<Receipt className="h-5 w-5" />} title="Transactions" text="Every payment and deposit, searchable and filterable by category." onClick={() => onOpenPage("transactions")}>
-          <p className="text-xs font-bold text-[#C49A3C]">{txCount.toLocaleString("en-US")} transactions</p>
-        </ActionCard>
-        <ActionCard icon={<Target className="h-5 w-5" />} title="Budgets" text="A monthly limit per category, and how this month is tracking." onClick={() => onOpenPage("budgets")}>
-          <p className="text-xs font-bold text-[#C49A3C]">{BUDGETS.length} budgets{budgetsOver > 0 ? ` · ${budgetsOver} over` : ""}</p>
-        </ActionCard>
-        <ActionCard icon={<FileText className="h-5 w-5" />} title="Reports" text="Monthly statements and a yearly summary, as PDF." onClick={() => onOpenPage("reports")}>
-          <p className="text-xs font-bold text-[#C49A3C]">{MONTHS.length} monthly statements</p>
-        </ActionCard>
-        <ActionCard icon={<BellRing className="h-5 w-5" />} title="Alerts" text="Low balance, budgets running out, large or unexpected payments." onClick={() => onOpenPage("alerts")}>
-          <p className="text-xs font-bold text-[#C49A3C]">{WALLET_ALERTS.filter((a) => a.enabled).length} active · {alertsTriggered} triggered</p>
-        </ActionCard>
-      </div>
-    </div>
-  );
-}
-
-const FLOW_LABELS = { income: "In", expenses: "Out", balance: "Balance" };
 
 // ── Transactions ───────────────────────────────────────────────────────────────────────────
 
@@ -317,7 +214,10 @@ function CategoryChip({ category }: { category: Category }) {
   );
 }
 
-function WalletTransactions({ scope }: { scope: string | null }) {
+// Every wallet's transactions, filtered by wallet in the list itself.
+function WalletTransactions() {
+  const [wallet, setWallet] = useState<string>(ALL);
+  const scope = scopeOf(wallet);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | "in" | "out">("all");
   const [category, setCategory] = useState<"all" | Category>("all");
@@ -363,6 +263,15 @@ function WalletTransactions({ scope }: { scope: string | null }) {
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+            aria-label="Wallet"
+            className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 outline-none"
+          >
+            <option value={ALL}>Every wallet</option>
+            {WALLETS.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
           <Pills<"all" | "in" | "out"> options={[{ value: "all", label: "All" }, { value: "in", label: "Money in" }, { value: "out", label: "Money out" }]} value={type} onChange={setType} />
           <select
             value={category}
@@ -640,77 +549,193 @@ function BudgetBar({ spent, limit, big }: { spent: number; limit: number; big?: 
 
 // ── Reports ────────────────────────────────────────────────────────────────────────────────
 
-function WalletReports({ scope, name }: { scope: string | null; name: string }) {
-  const summary = useMemo(() => monthlySummary(scope), [scope]);
-  const reports = [
-    ...[...summary].reverse().map((m) => ({
-      id: m.month,
-      title: `${new Date(`${m.month}-01`).toLocaleDateString("en-US", { month: "long", year: "numeric" })} statement`,
-      detail: `In ${eur(m.income)} · out ${eur(m.expenses)} · closing ${eur(m.balance)}`,
-      partial: m.month === CURRENT_MONTH,
-    })),
-    { id: "y2025", title: "2025 yearly summary", detail: "Income, spending by category, savings rate and net worth change", partial: false },
-  ];
+const WALLET_REPORT_KINDS = {
+  monthly: { cover: "periodic" as const, label: "Monthly statement", description: "One wallet's month: what came in, what went out, and the closing balance." },
+  yearly: { cover: "full" as const, label: "Yearly summary", description: "One wallet's year: income, spending by category, savings rate." },
+};
+
+/**
+ * Every wallet's reports as files, as on Investments (ReportFileTile): each with its kind's cover,
+ * its wallet and its tags (changed on this page only), one search by file, wallet, kind or tag,
+ * and "Generate report" opening the same dialog (GenerateReportDialog), which can't send yet.
+ */
+function WalletReports() {
+  const [files, setFiles] = useState(WALLET_REPORTS);
+  const [query, setQuery] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const walletOf = (id: string) => WALLETS.find((w) => w.id === id)!;
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return files
+      .filter((f) => !q || [f.name, walletOf(f.walletId).name, WALLET_REPORT_KINDS[f.kind].label, ...f.tags].join(" ").toLowerCase().includes(q))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [files, query]);
+  const setTags = (id: string, change: (tags: string[]) => string[]) =>
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, tags: change(f.tags) } : f)));
+
   return (
     <>
-      <PreviewBanner feature="Wallet reports" />
-      <Panel title={`${name} — reports`} subtitle="Generated at the start of each month for the one before.">
-        <ul className="divide-y divide-slate-100">
-          {reports.map((r) => (
-            <li key={r.id} className="px-6 md:px-7 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="w-10 h-10 rounded-xl bg-[#C49A3C]/10 text-[#C49A3C] flex items-center justify-center shrink-0"><FileText className="h-4 w-4" /></span>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-black text-slate-900 truncate">
-                    {r.title}
-                    {r.partial && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-slate-100 text-[9px] font-black uppercase tracking-wider text-slate-500 align-middle">In progress</span>}
-                  </p>
-                  <p className="text-[11px] font-semibold text-slate-400 truncate">{r.detail}</p>
-                </div>
-              </div>
-              <button type="button" disabled title="Coming soon" className="p-2.5 rounded-xl border border-slate-200 text-slate-300 cursor-not-allowed shrink-0">
-                <Download className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <PreviewBanner feature="Wallet reports">Sample statements. Tags change on this page only and aren&apos;t saved; opening, downloading and generating are on the way.</PreviewBanner>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-[#C49A3C] transition-colors" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by file, wallet or tag…"
+            aria-label="Search reports"
+            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-medium outline-none focus:ring-4 focus:ring-[#C49A3C]/10 focus:border-[#C49A3C]/50 transition-all shadow-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setGenerating(true)}
+          className="h-12 flex items-center justify-center gap-2 px-5 rounded-xl bg-[#1c1917] text-white text-sm font-bold hover:bg-[#C49A3C] transition-colors shrink-0"
+        >
+          <FileText className="h-4 w-4" />
+          Generate report
+        </button>
+      </div>
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">
+        {shown.length} {shown.length === 1 ? "file" : "files"}{query.trim() && ` matching "${query.trim()}"`}
+      </p>
+      {shown.length === 0 ? (
+        <p className="text-sm font-semibold text-slate-500 px-1">Nothing matches your search.</p>
+      ) : (
+        <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-3 gap-5">
+          {shown.map((f) => {
+            const wallet = walletOf(f.walletId);
+            return (
+              <ReportFileTile
+                key={f.id}
+                name={f.name}
+                cover={WALLET_REPORT_KINDS[f.kind].cover}
+                kindLabel={WALLET_REPORT_KINDS[f.kind].label}
+                ownerName={wallet.name}
+                color={wallet.color}
+                createdAt={f.createdAt}
+                tags={f.tags}
+                readOnly={false}
+                onAddTag={(tag) => setTags(f.id, (tags) => [...tags, tag])}
+                onRemoveTag={(tag) => setTags(f.id, (tags) => tags.filter((t) => t !== tag))}
+              />
+            );
+          })}
+        </div>
+      )}
+      {generating && (
+        <GenerateReportDialog
+          kinds={(Object.keys(WALLET_REPORT_KINDS) as (keyof typeof WALLET_REPORT_KINDS)[]).map((id) => ({ id, available: true, ...WALLET_REPORT_KINDS[id] }))}
+          targets={WALLETS.map((w) => ({ id: w.id, name: w.name, color: w.color }))}
+          targetLabel="Wallet"
+          readOnly
+          readOnlyTitle="Coming soon: wallets are a preview"
+          onGenerate={() => setGenerating(false)}
+          onClose={() => setGenerating(false)}
+        />
+      )}
     </>
   );
 }
 
 // ── Alerts ─────────────────────────────────────────────────────────────────────────────────
 
+const ALERT_BAR: Record<"danger" | "warn" | "ok" | "muted", string> = {
+  danger: "bg-rose-500", warn: "bg-amber-500", ok: "bg-emerald-500", muted: "bg-slate-300",
+};
+
+// A sample rule's state, worded as the investments' are (see lib/alerts).
+function walletAlertState(a: WalletAlert): { label: string; tone: keyof typeof ALERT_BAR } {
+  if (!a.enabled) return { label: "Off", tone: "muted" };
+  if (a.triggered) return { label: "Triggered", tone: "danger" };
+  if (a.progressPct === undefined) return { label: "Watching", tone: "ok" };
+  return a.progressPct >= 60 ? { label: "Approaching", tone: "warn" } : { label: "Within range", tone: "ok" };
+}
+
+/**
+ * The sample rules, as on Investments' Alerts: a card per wallet (PortfolioGroupCard) with its
+ * count, its rules by state and its (not yet available) "New alert", then one row per rule across
+ * the card — what it watches; where it stands (now against the limit, how far along the way);
+ * its switch, which works on this page only.
+ */
 function WalletAlerts() {
   const [alerts, setAlerts] = useState(WALLET_ALERTS);
   return (
     <>
       <PreviewBanner feature="Wallet alerts">Sample rules. Switching them on or off works on this page only and isn&apos;t saved.</PreviewBanner>
-      <Panel title="Alert rules" subtitle="Notifications will arrive by email and in the bell at the top.">
-        <ul className="divide-y divide-slate-100">
-          {alerts.map((a) => (
-            <li key={a.id} className="px-6 md:px-7 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${a.enabled && a.triggered ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-400"}`}>
-                  <BellRing className="h-4 w-4" />
+      {WALLETS.map((w) => {
+        const own = alerts.filter((a) => a.walletId === w.id);
+        const counts = (["danger", "warn", "ok", "muted"] as const)
+          .map((tone) => ({ tone, count: own.filter((a) => walletAlertState(a).tone === tone).length }))
+          .filter((t) => t.count > 0);
+        return (
+          <PortfolioGroupCard
+            key={w.id}
+            name={w.name}
+            eyebrow="Wallet"
+            color={w.color}
+            subtitle={<>{own.length === 0 ? "No alerts yet" : `${own.length} ${own.length === 1 ? "alert" : "alerts"}`}<span className="text-[#a8a29e]"> · {w.kind}</span></>}
+            right={<>
+              {counts.map((t) => (
+                <span key={t.tone} className={`px-3 py-1 rounded-full text-xs font-bold tabular-nums ${TONE_STYLES[t.tone].chip}`}>
+                  {t.count} {TONE_WORD[t.tone]}
                 </span>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-black text-slate-900">
-                    {a.title}
-                    {a.enabled && a.triggered && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-rose-50 text-[9px] font-black uppercase tracking-wider text-rose-600 align-middle">Triggered</span>}
-                  </p>
-                  <p className="text-[11px] font-semibold text-slate-400">{a.detail}</p>
-                </div>
-              </div>
-              <Toggle
-                checked={a.enabled}
-                label={a.title}
-                onChange={(v) => setAlerts((list) => list.map((x) => (x.id === a.id ? { ...x, enabled: v } : x)))}
-              />
-            </li>
-          ))}
-        </ul>
-      </Panel>
+              ))}
+              <ComingSoonButton icon={<Plus className="h-4 w-4" />}>New alert</ComingSoonButton>
+            </>}
+          >
+            {own.length === 0 ? (
+              <p className="px-6 md:px-8 py-5 border-t border-[rgba(196,154,60,0.12)] text-sm text-[#a8a29e]">
+                Nothing watched on this wallet. Alerts will tell you about a low balance, a large payment or a budget running out.
+              </p>
+            ) : (
+              <ul className="px-6 md:px-8 border-t border-[rgba(196,154,60,0.12)] divide-y divide-[rgba(196,154,60,0.1)]">
+                {own.map((a) => {
+                  const state = walletAlertState(a);
+                  const progress = a.enabled ? a.progressPct : undefined;
+                  return (
+                    <li key={a.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] items-center gap-x-8 gap-y-4 py-5">
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 text-[15px] font-black text-[#1c1917]">{a.title}<PreviewBadge label="Sample" /></p>
+                        <p className="text-[13px] text-[#78716c] mt-1">{a.detail}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${TONE_STYLES[state.tone].chip}`}>{state.label}</span>
+                          {a.enabled && a.now && (
+                            <span className="text-[13px] font-bold tabular-nums text-[#1c1917]">
+                              {a.now} <span className="text-[#a8a29e] font-semibold">of {a.limit}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2.5 h-2 rounded-full bg-[#F1EEE6] overflow-hidden">
+                          {progress !== undefined && <div className={`h-full rounded-full ${ALERT_BAR[state.tone]}`} style={{ width: `${Math.max(3, progress)}%` }} />}
+                        </div>
+                        <p className="text-[11px] font-semibold text-[#a8a29e] mt-1.5">
+                          {progress !== undefined ? `${progress}% of the way to the limit` : a.enabled ? "Fires on the event itself" : "Not being checked"}
+                        </p>
+                      </div>
+                      <div className="md:justify-self-end">
+                        <Toggle
+                          checked={a.enabled}
+                          label={a.title}
+                          onChange={(v) => setAlerts((list) => list.map((x) => (x.id === a.id ? { ...x, enabled: v } : x)))}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </PortfolioGroupCard>
+        );
+      })}
     </>
   );
 }
+
+const TONE_WORD: Record<keyof typeof ALERT_BAR, string> = {
+  danger: "triggered", warn: "approaching", ok: "within range", muted: "off",
+};

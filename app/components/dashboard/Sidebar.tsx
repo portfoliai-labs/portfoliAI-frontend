@@ -1,7 +1,6 @@
 "use client";
 
-import { useSectionTrail } from "./SectionTrail";
-import { LayoutDashboard, Briefcase, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Wallet } from "lucide-react";
+import { LayoutDashboard, SlidersHorizontal, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
 import { UserRole, SubscriptionTier } from "../../models/User";
@@ -20,15 +19,16 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; previe
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
-  // The previews of what's coming (Wallets…) are for demo accounts only (see lib/demo).
+  // The previews of what's coming (Explore…) are for demo accounts only (see lib/demo).
   const { isDemo } = useUser();
 
-  // Investor: "which page" only. Which portfolio is picked on the pages themselves: Portfolios
-  // opens on a hub of them, each with its own Insights, Transactions, Reports and Alerts.
+  // Investor: "which page" only. Which portfolio or wallet is picked on the pages themselves:
+  // Manage opens on a hub of them, each card on its Insights, and their Transactions, Reports and
+  // Alerts on the hub, picking one at the top.
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'performance', label: 'Investments', icon: Briefcase },
-    ...(isDemo ? [{ id: 'wallets', label: 'Wallets', icon: Wallet, preview: true }] : []),
+    { id: 'performance', label: 'Manage', icon: SlidersHorizontal },
+    ...(isDemo ? [{ id: 'explore', label: 'Explore', icon: Compass, preview: true }] : []),
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -48,40 +48,6 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     if (onClose) onClose();
   };
 
-  // The page open inside the active section, if it's not the section's first (see SectionTrail).
-  const { trail } = useSectionTrail();
-
-  const goToCrumb = (index: number) => {
-    trail?.go(index);
-    if (onClose) onClose();
-  };
-
-  /**
-   * The trail under its section's entry: just the page one level below the section (labels[0] is
-   * the section itself, the entry above) — the portfolio open, Compare… — never the pages under
-   * it (the browser's back button leads up through those). Highlighted, and leading back to that
-   * page when the user is further down.
-   */
-  const renderTrail = () => {
-    if (!trail) return null;
-    const isCurrent = trail.labels.length <= 1;
-    const label = isCurrent ? trail.current : trail.labels[1];
-    return (
-      <div className="flex flex-col gap-0.5 mt-1 mb-1">
-        <button
-          type="button"
-          onClick={isCurrent ? undefined : () => goToCrumb(1)}
-          aria-current={isCurrent ? "page" : undefined}
-          className={`ml-5 flex items-center gap-2.5 rounded-lg pl-3 pr-3 py-2 text-left border-l-2 border-[#C49A3C] text-white bg-white/5 transition-colors ${
-            isCurrent ? "cursor-default" : "hover:bg-white/10"
-          }`}
-        >
-          <span className="text-[13px] font-semibold truncate">{label}</span>
-        </button>
-      </div>
-    );
-  };
-
   const renderItem = (item: NavItem) => {
     const isActive = activeSection === item.id;
     return (
@@ -99,9 +65,8 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
             <span className="text-sm">{item.label}</span>
             {item.preview && <PreviewBadge dark />}
           </div>
-          {isActive && <ChevronRight className={`h-4 w-4 opacity-50 transition-transform ${trail ? "rotate-90" : ""}`} />}
+          {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
         </button>
-        {isActive && renderTrail()}
       </div>
     );
   };

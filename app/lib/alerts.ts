@@ -93,10 +93,11 @@ export function alertFigures(rule: AlertRuleResponse): { current: string; limit:
 
 /**
  * One sentence saying what a set of params means, for the form's preview. `clientName` words it
- * for an advisor's rule on that client's portfolio.
+ * for an advisor's rule on that client's portfolio; `portfolioName` names the investor's own
+ * portfolio when they have several.
  */
-export function describeParams(params: AlertParams, assetLabel?: string, clientName?: string): string {
-  const portfolio = clientName ? `${clientName}'s portfolio` : "my portfolio";
+export function describeParams(params: AlertParams, assetLabel?: string, clientName?: string, portfolioName?: string): string {
+  const portfolio = clientName ? `${clientName}'s portfolio` : portfolioName ?? "my portfolio";
   if (params.type === "portfolio_change") {
     const verb = params.direction === "down" ? "falls" : "rises";
     return `Notify me when the result of ${portfolio} ${verb} by ${formatAlertPct(params.thresholdPct)} or more over ${WINDOW_LABEL[params.window]}.`;

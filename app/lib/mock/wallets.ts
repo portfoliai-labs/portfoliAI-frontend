@@ -1,6 +1,6 @@
 // lib/mock/wallets.ts
 //
-// SAMPLE DATA for the Wallets preview (components/preview/WalletsSection): three made-up
+// SAMPLE DATA for the Wallets preview (components/preview/WalletPages, under Manage): three made-up
 // accounts with a year of everyday money in and out (salary, rent, groceries, bills…), the
 // budgets set on them, their alerts and monthly statements. Generated from fixed seeds so the
 // pages look the same on every visit.
@@ -172,20 +172,62 @@ export const BUDGETS: Budget[] = [
 
 export interface WalletAlert {
   id: string;
+  // The wallet it watches.
+  walletId: string;
   title: string;
   detail: string;
   enabled: boolean;
   triggered: boolean;
+  // Where it stands, when it measures something: now against the limit, and how far along the
+  // way it is (0–100).
+  now?: string;
+  limit?: string;
+  progressPct?: number;
 }
 
 export const WALLET_ALERTS: WalletAlert[] = [
-  { id: "a1", title: "Low balance", detail: "Everyday account drops under €500", enabled: true, triggered: false },
-  { id: "a2", title: "Budget at 90%", detail: "Any category reaches 90% of its monthly budget", enabled: true, triggered: true },
-  { id: "a3", title: "Large expense", detail: "A single payment over €250", enabled: true, triggered: true },
-  { id: "a4", title: "Salary received", detail: "When the monthly salary lands", enabled: false, triggered: false },
-  { id: "a5", title: "New subscription", detail: "A recurring charge from a merchant not seen before", enabled: true, triggered: false },
-  { id: "a6", title: "Card statement due", detail: "Three days before the credit card is settled", enabled: false, triggered: false },
+  { id: "a1", walletId: "everyday", title: "Low balance", detail: "Balance drops under €500", enabled: true, triggered: false, now: "€1,840", limit: "€500", progressPct: 27 },
+  { id: "a2", walletId: "everyday", title: "Budget at 90%", detail: "Any category reaches 90% of its monthly budget", enabled: true, triggered: true, now: "Restaurants 96%", limit: "90%", progressPct: 100 },
+  { id: "a4", walletId: "everyday", title: "Salary received", detail: "When the monthly salary lands", enabled: false, triggered: false },
+  { id: "a3", walletId: "card", title: "Large expense", detail: "A single payment over €250", enabled: true, triggered: true, now: "€312", limit: "€250", progressPct: 100 },
+  { id: "a5", walletId: "card", title: "New subscription", detail: "A recurring charge from a merchant not seen before", enabled: true, triggered: false },
+  { id: "a6", walletId: "card", title: "Card statement due", detail: "Three days before the card is settled", enabled: true, triggered: false, now: "5 days left", limit: "3 days", progressPct: 72 },
 ];
+
+/** A report in the Wallets preview's archive: a month's statement or a year's summary. */
+export interface WalletReport {
+  id: string;
+  walletId: string;
+  kind: "monthly" | "yearly";
+  name: string;
+  createdAt: string;
+  tags: string[];
+}
+
+// Each wallet's last three monthly statements (made on the 1st of the month after) and its 2025
+// summary.
+export const WALLET_REPORTS: WalletReport[] = WALLETS.flatMap((w) => [
+  ...MONTHS.slice(-4, -1).reverse().map((m, i) => {
+    const [y, mo] = m.key.split("-").map(Number);
+    const month = new Date(y, mo - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    return {
+      id: `${w.id}-${m.key}`,
+      walletId: w.id,
+      kind: "monthly" as const,
+      name: `${w.name} — ${month} statement`,
+      createdAt: new Date(y, mo, 1, 7).toISOString(),
+      tags: i === 0 && w.id === "everyday" ? ["Taxes"] : [],
+    };
+  }),
+  {
+    id: `${w.id}-2025`,
+    walletId: w.id,
+    kind: "yearly" as const,
+    name: `${w.name} — 2025 summary`,
+    createdAt: new Date(2026, 0, 2, 7).toISOString(),
+    tags: w.id === "savings" ? ["Year end", "Taxes"] : ["Year end"],
+  },
+]);
 
 export const RECURRING = [
   { name: "Rent — Via Tortona 5", amount: 950, every: "Monthly, 1st" },

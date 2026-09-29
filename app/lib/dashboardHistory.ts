@@ -2,7 +2,7 @@
 //
 // DASHBOARD HISTORY — lets the browser's back and forward buttons move through the dashboard,
 // which is one URL whose pages are all component state: the section open (dashboard page), the
-// page inside a section that has pages of its own (InsightsSection, WalletsSection) and, on a
+// page inside a section that has pages of its own (InsightsSection) and, on a
 // portfolio's Insights, the detail view or month open over it (PerformanceSection). Each history
 // entry carries where the dashboard was, under its own key next to Next.js's (Next copies its
 // keys into every pushState / replaceState, so a popstate never reloads the page); each of those
@@ -18,7 +18,7 @@ export type DashboardOverlay = "explore" | "month";
 export interface DashboardEntry {
   section: string;
   // The page inside the section, for a section that has pages of its own (InsightsSection's
-  // PortfoliosView, WalletsSection's View).
+  // PortfoliosView).
   view?: unknown;
   overlay?: DashboardOverlay;
 }

@@ -14,7 +14,8 @@ interface FileMappingModalProps {
   onDateFormatChange: (dateFormat: string) => void;
   onConfirm: () => void;
   onClose: () => void;
-  // With two or more portfolios, asks which one the file's rows go into.
+  // With two or more portfolios, asks which one the file's rows go into: a must before they
+  // reach the preview (the file starts with none).
   portfolios?: Portfolio[];
   onPortfolioChange?: (portfolioUuid: string) => void;
 }
@@ -25,6 +26,7 @@ export function FileMappingModal({
   // Shown once auto-detection isn't confident, and kept visible after the user picks a format
   // explicitly (dateFormat stops being "auto") so they can still change their mind.
   const showDateFormatPicker = file.dateFormatAmbiguous || file.dateFormat !== "auto";
+  const needsPortfolio = !!portfolios && portfolios.length > 1 && !file.portfolioUuid;
   return createPortal(
     <div
       className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
@@ -157,7 +159,9 @@ export function FileMappingModal({
           </button>
           <button
             onClick={onConfirm}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200"
+            disabled={needsPortfolio}
+            title={needsPortfolio ? "Choose the portfolio to add these transactions to first" : undefined}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-md shadow-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed"
           >
             <Check className="h-4 w-4" />
             Done — show in preview

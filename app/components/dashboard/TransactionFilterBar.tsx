@@ -68,7 +68,8 @@ function DateFilterInput({
 interface TransactionFilterBarProps {
   filters: TransactionFilterState;
   onChange: (filters: TransactionFilterState) => void;
-  // The user's own portfolios; the portfolio filter only shows with two or more.
+  // The portfolios the list can show; the portfolio filter only shows with two or more. The
+  // backtests among them (virtual) are listed apart.
   portfolios?: Portfolio[];
 }
 
@@ -96,7 +97,12 @@ export function TransactionFilterBar({ filters, onChange, portfolios = [] }: Tra
               className="h-9 pl-3 pr-8 w-full rounded-lg bg-white border border-slate-200 text-slate-900 text-xs font-semibold outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-300 transition-all appearance-none"
             >
               <option value="">All portfolios</option>
-              {portfolios.map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+              {portfolios.filter((p) => !p.isVirtual).map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+              {portfolios.some((p) => p.isVirtual) && (
+                <optgroup label="Backtests (read only)">
+                  {portfolios.filter((p) => p.isVirtual).map((p) => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+                </optgroup>
+              )}
             </select>
             <ChevronDown className="h-3.5 w-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>

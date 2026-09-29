@@ -31,7 +31,7 @@ const PAGE_LABELS: Record<Exclude<RealEstatePage, "home">, string> = {
 
 /**
  * REAL ESTATE PORTFOLIO (preview) — a sample portfolio of properties, opened from its card on
- * the Portfolios hub and built like a portfolio's own page (PortfolioHome): its figures and
+ * the Portfolios hub and built as a portfolio's own page once was: its figures and
  * value curve, then the way into its Insights, Transactions, Reports and Alerts. Insights holds
  * the property analyses: a table of the properties, then for the one picked the market of its
  * neighbourhood (price trend against the city, rents in the nearby zones) and how it would do as
