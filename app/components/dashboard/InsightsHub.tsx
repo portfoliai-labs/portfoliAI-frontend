@@ -18,15 +18,15 @@ import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
-const AGGREGATE_COLOR = "#C49A3C";
-
 const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 
 /**
- * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio
- * ("All portfolios" first), each with its value, its return since inception and the curve
- * behind it, opening that portfolio's page (renamed or deleted from its "…" menu), a card
- * to create one, then the way into Compare. For a demo account (see lib/demo), which can't
+ * INSIGHTS HUB — where Insights opens, and where portfolios are managed: a card per portfolio,
+ * each with its value, its return since inception and the curve behind it, opening that
+ * portfolio's page (renamed or deleted from its "…" menu), a card to create one, then the ways
+ * of looking at them together: Combined (the aggregate "All portfolios", which isn't a portfolio
+ * of its own — no transactions, no rename or delete — so it sits with the views rather than
+ * with the portfolios; there with two portfolios or more) and Compare. For a demo account (see lib/demo), which can't
  * create, rename or delete anything, alongside them sit the previews of what's coming (see
  * components/preview): a sample real estate portfolio, Explore and Strategy, each marked as such. The figures for every card come
  * from one call (GET /v1/portfolios/comparison with no portfolio listed returns all of them),
@@ -75,15 +75,16 @@ export function InsightsHub({
   // Still loading until the answer for the current list of portfolios is in.
   const loaded = entries.key === uuidsKey;
   const canCompare = portfolios.filter((p) => !p.isAggregate).length >= 2;
+  const aggregate = portfolios.find((p) => p.isAggregate);
 
   return (
     <div className="space-y-6 pb-12">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {portfolios.map((p) => (
+        {portfolios.filter((p) => !p.isAggregate).map((p) => (
           <PortfolioCard
             key={p.uuid}
             portfolio={p}
-            color={p.isAggregate ? AGGREGATE_COLOR : colorOf(p.uuid)}
+            color={colorOf(p.uuid)}
             // The previous figures stay up while a new list of portfolios loads.
             entry={entries.byUuid?.get(p.uuid) ?? (loaded ? null : undefined)}
             onOpen={() => onOpenPortfolio(p.uuid)}
@@ -107,6 +108,14 @@ export function InsightsHub({
 
       {/* Its own row, never beside a portfolio: same columns as above, so it keeps a tile's size. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        {aggregate && (
+          <ActionCard
+            icon={<Layers className="h-5 w-5" />}
+            title="Combined"
+            text="All your portfolios as one: value, returns and risk, from every transaction together."
+            onClick={() => onOpenPortfolio(aggregate.uuid)}
+          />
+        )}
         <ActionCard
           icon={<Columns3 className="h-5 w-5" />}
           title="Compare"
@@ -148,10 +157,9 @@ export function InsightsHub({
  * while loading, null when the backend has nothing for it (no figures computed yet, or the
  * request failed): the card still opens the portfolio, whose own page explains what's missing.
  *
- * A standard portfolio also has a "…" menu in its corner: Rename turns the name into a field
- * right on the card, Delete asks first (InsightsHub's ConfirmDialog). The default portfolio
- * can't be deleted (the backend answers 409), and "All portfolios", which is built
- * automatically, can be neither renamed nor deleted, so it has no menu.
+ * It also has a "…" menu in its corner: Rename turns the name into a field right on the card,
+ * Delete asks first (InsightsHub's ConfirmDialog). The default portfolio can't be deleted (the
+ * backend answers 409). "All portfolios" never gets a card: it's the Combined action card.
  */
 function PortfolioCard({
   portfolio, color, entry, onOpen, onDelete, readOnly = false,
@@ -216,11 +224,7 @@ function PortfolioCard({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {portfolio.isAggregate ? (
-            <Layers className="h-4 w-4 shrink-0" style={{ color }} />
-          ) : (
-            <span className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
-          )}
+          <span className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
           {renaming ? (
             <input
               autoFocus
@@ -262,7 +266,7 @@ function PortfolioCard({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 shrink-0">
-            {!portfolio.isAggregate && !readOnly && <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={startRename} onDelete={onDelete} />}
+            {!readOnly && <PortfolioCardMenu canDelete={!portfolio.isDefault} onRename={startRename} onDelete={onDelete} />}
             <span className="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 group-hover:bg-[#C49A3C] group-hover:text-white transition-colors">
               <ArrowUpRight className="h-4 w-4" />
             </span>

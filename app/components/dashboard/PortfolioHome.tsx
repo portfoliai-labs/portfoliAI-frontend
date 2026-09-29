@@ -90,7 +90,7 @@ export function PortfolioHome({
           onClick={() => onOpenPage("insights")}
         >
           <div className="flex flex-wrap gap-1.5">
-            {["Composition", "Income & Costs", "Performance", "Risk"].map((label) => (
+            {["Holdings", "Profit & Loss", "Costs", "Performance", "Risk", "Risk Model"].map((label) => (
               <span key={label} className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-bold text-stone-300">{label}</span>
             ))}
           </div>
