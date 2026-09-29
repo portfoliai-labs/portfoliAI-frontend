@@ -392,26 +392,9 @@ interface InsightsHeatmapModule {
   entries: MonthlyMarketEffectEntry[];
 }
 
-interface InsightsReturnsModule extends ModuleState {
-  lifespanDays: number;
-  totalReturnPct: number | null;
-  annualizedReturnPct: number | null;
-  horizons: HorizonEntry[];
-}
-
-// Both cumulative curves are in percent, base 0, and share the same dates.
-interface InsightsBenchmarkModule extends ModuleState {
-  yearsCovered: number | null;
-  portfolioTotalReturnPct: number | null;
-  benchmarkTotalReturnPct: number | null;
-  outperformed: boolean | null;
-  portfolioCumulativeReturnPct: TimeSeries | null;
-  benchmarkCumulativeReturnPct: TimeSeries | null;
-}
-
 // value, thisMonth and heatmap come from the stored daily and month-end values: no status of
 // their own, and historyIsStale is their isStale. All three are null without any stored value,
-// i.e. no history at all.
+// i.e. no history at all. The returns and the benchmark are their own detail endpoints.
 interface InsightsPerformanceResponse {
   currency: string;
   isAggregate: boolean;
@@ -419,8 +402,6 @@ interface InsightsPerformanceResponse {
   value: InsightsValueModule | null;
   thisMonth: InsightsThisMonthModule | null;
   heatmap: InsightsHeatmapModule | null;
-  returns: InsightsReturnsModule | null;
-  benchmark: InsightsBenchmarkModule | null;
 }
 
 // ========== GET /insights/risk ==========
@@ -491,11 +472,6 @@ interface AssetClassTotal {
   totalInvested: number;
 }
 
-interface BrokerFeesTotal {
-  broker: string;
-  totalFees: number;
-}
-
 // A position within one currency, from the recorded transactions (not market prices), one row
 // per asset and broker. quantity is a string: arbitrary decimal precision (crypto).
 interface CurrencyHolding {
@@ -510,22 +486,6 @@ interface CurrencyHolding {
   broker: string | null;
 }
 
-// Every closed round-trip of one asset in one currency, summed across its sells, from the buy
-// and sell prices recorded. winRate is a fraction, 0 to 1.
-interface AssetRealizedTrade {
-  assetId: string;
-  ticker: string | null;
-  name: string;
-  assetClass: string;
-  currency: string;
-  quantitySold: string;
-  totalCost: number;
-  totalProceeds: number;
-  realizedPl: number;
-  sellCount: number;
-  winRate: number;
-}
-
 // One currency present in the portfolio, every figure in that currency (never converted, so
 // never summed across currencies). Dividends are excluded from its realized P&L.
 interface CurrencyDetail {
@@ -535,12 +495,11 @@ interface CurrencyDetail {
   holdingsCount: number;
   purchasesByBroker: BrokerTotal[];
   purchasesByAssetClass: AssetClassTotal[];
-  feesByBroker: BrokerFeesTotal[];
   totalRealizedPl: number;
   sellCount: number;
+  // The share of its sales made at a gain, a fraction from 0 to 1.
   winRate: number;
   holdings: CurrencyHolding[];
-  realizedTradesByAsset: AssetRealizedTrade[];
 }
 
 // GET /insights/holdings/currencies — computed from the transactions on each call (the one
@@ -830,11 +789,10 @@ export type {
   ValuePoint, MonthlyMarketEffectEntry,
   InsightsHoldingsModule, InsightsExposureModule, InsightsPortfoliosModule, InsightsComovementModule, InsightsCompositionResponse,
   InsightsDividendsModule, InsightsTradingCostsModule, InsightsRealizedPnlModule, InsightsIncomeCostsResponse,
-  InsightsValueModule, InsightsThisMonthModule, InsightsHeatmapModule, InsightsReturnsModule, InsightsBenchmarkModule,
-  InsightsPerformanceResponse,
+  InsightsValueModule, InsightsThisMonthModule, InsightsHeatmapModule, InsightsPerformanceResponse,
   InsightsVolatilityModule, InsightsFrontierModule, InsightsRiskResponse,
   FacetState, InsightsStatusModules, InsightsStatusResponse,
-  BrokerTotal, AssetClassTotal, BrokerFeesTotal, CurrencyHolding, AssetRealizedTrade, CurrencyDetail, HoldingsByCurrencyResponse,
+  BrokerTotal, AssetClassTotal, CurrencyHolding, CurrencyDetail, HoldingsByCurrencyResponse,
   PositionResponse, DividendsResponse, TradingCostsResponse, RealizedPnlResponse, ReturnsResponse, PeriodDashboard,
   BenchmarkResponse, VolatilityDetailResponse, RiskModelResponse,
   ComparisonValue, ComparisonPerformance, ComparisonVolatility, ComparisonAllocationEntry,

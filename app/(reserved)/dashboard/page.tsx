@@ -87,7 +87,7 @@ function DashboardPageContent() {
     // Opened again from where it already is: back to its first page, as a new entry unless
     // it's already there.
     const entry = readDashboardEntry();
-    if (entry?.investments || entry?.overlay) pushDashboardEntry({ section });
+    if (entry?.view || entry?.overlay) pushDashboardEntry({ section });
     setSectionVisit((n) => n + 1);
   };
 

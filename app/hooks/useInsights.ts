@@ -77,9 +77,9 @@ function staleKeys(sections: Sections, key: SectionKey): StaleKey[] {
     }
     case "performance": {
       const d = sections.performance.data;
+      // Only the stored values here; the returns and the benchmark are detail endpoints, which
+      // show their own isStale.
       if (d?.historyIsStale) stale.push("history");
-      add("returns", d?.returns);
-      add("benchmark", d?.benchmark);
       break;
     }
     case "risk": {

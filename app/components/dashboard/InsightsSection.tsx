@@ -37,13 +37,13 @@ export function openPortfoliosPage(onNavigate: (section: string) => void, portfo
   const before = window.history.state;
   onNavigate(SECTION);
   const view: PortfoliosView = { kind: "portfolio", uuid: portfolioUuid, page };
-  pushDashboardEntry({ section: SECTION, investments: view }, window.history.state !== before);
+  pushDashboardEntry({ section: SECTION, view }, window.history.state !== before);
 }
 
 // The view the current history entry was on; the hub when it's another section's or none.
 const viewFromHistory = (): PortfoliosView => {
   const entry = readDashboardEntry();
-  return entry?.section === SECTION && entry.investments ? (entry.investments as PortfoliosView) : { kind: "hub" };
+  return entry?.section === SECTION && entry.view ? (entry.view as PortfoliosView) : { kind: "hub" };
 };
 
 /**
@@ -64,6 +64,9 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   const { portfolios, current, selectPortfolio } = usePortfolio();
   const [view, setView] = useState<PortfoliosView>(viewFromHistory);
   const [selection, setSelection] = useState<string[]>([]);
+  // Bumped to start Insights over (back at the top of the page), when "All portfolios" is picked
+  // in the Sidebar while already on its Insights (see below).
+  const [insightsVisit, setInsightsVisit] = useState(0);
 
   // Back and forward: show the page the entry landed on, if it's one of this section's (another
   // section's entry is the dashboard page's to handle).
@@ -78,14 +81,18 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   }, []);
 
   const go = (next: PortfoliosView) => {
-    pushDashboardEntry({ section: SECTION, investments: next });
+    pushDashboardEntry({ section: SECTION, view: next });
     setView(next);
     window.scrollTo({ top: 0 });
   };
   const toHub = () => go({ kind: "hub" });
+  // "All portfolios" (the hub's Combined) opens straight on its Insights: for now it has no page
+  // of its own in between (no transactions of its own, and its alerts and reports are its
+  // portfolios').
   const openPortfolio = (uuid: string) => {
     selectPortfolio(uuid);
-    go({ kind: "portfolio", uuid, page: "home" });
+    const isAggregate = portfolios.find((p) => p.uuid === uuid)?.isAggregate ?? false;
+    go({ kind: "portfolio", uuid, page: isAggregate ? "insights" : "home" });
   };
 
   const toggle = (uuid: string) => {
@@ -126,7 +133,20 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
     if (!portfolio) return hub;
 
     const hubCrumb: Crumb = { label: "Investments", onClick: toHub };
-    const homeCrumb: Crumb = { label: portfolio.name, onClick: () => go({ kind: "portfolio", uuid: portfolio.uuid, page: "home" }) };
+    // The portfolio's own page; for "All portfolios", which skips it, its Insights: from a detail
+    // view or a month, back through their history entries (a month sits over a detail), which
+    // closes them; from Insights itself, back to the top of it.
+    const backToInsights = () => {
+      const overlay = readDashboardEntry()?.overlay;
+      if (overlay) window.history.go(overlay === "month" ? -2 : -1);
+      else {
+        setInsightsVisit((n) => n + 1);
+        window.scrollTo({ top: 0 });
+      }
+    };
+    const homeCrumb: Crumb = portfolio.isAggregate
+      ? { label: portfolio.name, onClick: backToInsights }
+      : { label: portfolio.name, onClick: () => go({ kind: "portfolio", uuid: portfolio.uuid, page: "home" }) };
     const pageTrail = [hubCrumb, homeCrumb];
     const openPage = (page: PortfolioPage) => go({ kind: "portfolio", uuid: portfolio.uuid, page });
 
@@ -135,7 +155,7 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
         return (
           // Keyed so switching portfolios drops the month-drilldown cache, which is per year.
           <PerformanceSection
-            key={portfolio.uuid}
+            key={`${portfolio.uuid}:${insightsVisit}`}
             portfolioUuid={portfolio.uuid}
             isAggregate={portfolio.isAggregate}
             trail={pageTrail}
