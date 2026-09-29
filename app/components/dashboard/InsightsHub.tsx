@@ -8,7 +8,7 @@ import { portfoliosService } from "../../services/portfoliosService";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
-import { NewPortfolioDialog } from "./PortfolioBar";
+import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { realEstateHolderItem } from "../preview/RealEstateCard";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { useUser } from "../../context/UserContext";

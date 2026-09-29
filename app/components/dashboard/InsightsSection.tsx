@@ -4,8 +4,7 @@
 import { useEffect, useState } from "react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { PerformanceSection } from "./PerformanceSection";
-import { ComparisonView, initialCompareSelection, rememberCompareSelection } from "./ComparisonView";
-import { MAX_COMPARED } from "./PortfolioBar";
+import { ComparisonView, MAX_COMPARED, initialCompareSelection, rememberCompareSelection } from "./ComparisonView";
 import { InsightsHub } from "./InsightsHub";
 import { ManageHub } from "./ManageHub";
 import { PortfolioActions } from "./PortfolioActions";
