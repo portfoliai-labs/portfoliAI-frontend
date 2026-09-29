@@ -116,7 +116,7 @@ export function InsightsHub({
         <PortfolioHolder items={realItems} label={portfolioCount > 0 ? `${portfolioCount} more` : "Portfolios"} />
         {virtualItems.length > 0 ? (
           <PortfolioHolder items={virtualItems} label={`${virtualItems.length} virtual`} tone="virtual" />
-        ) : (
+        ) : isDemo ? (
           <button
             type="button"
             onClick={onStrategy}
@@ -126,6 +126,13 @@ export function InsightsHub({
             <span className="text-[13px] font-bold">No virtual portfolios yet</span>
             <span className="text-[11px] font-semibold text-sky-700/70">Backtest a strategy and it shows up here.</span>
           </button>
+        ) : (
+          // Strategy is a demo account's preview for now, so there's no way in from here yet.
+          <div className="min-h-44 w-full rounded-3xl border-2 border-dashed border-sky-200 bg-sky-50/30 flex flex-col items-center justify-center gap-2 px-6 text-center text-sky-700/70">
+            <History className="h-6 w-6" />
+            <span className="text-[13px] font-bold">No virtual portfolios yet</span>
+            <span className="text-[11px] font-semibold">Strategy backtests are coming soon.</span>
+          </div>
         )}
       </div>
 
@@ -155,12 +162,16 @@ export function InsightsHub({
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
         />
-        <ActionCard
-          icon={<Wand2 className="h-5 w-5" />}
-          title="Strategy"
-          text="Set target weights, rebalancing, PAC and costs, then backtest them on historical prices into a virtual portfolio."
-          onClick={onStrategy}
-        />
+        {/* A demo account's preview until it's been tested against the backend. */}
+        {isDemo && (
+          <ActionCard
+            icon={<Wand2 className="h-5 w-5" />}
+            title="Strategy"
+            badge={<PreviewBadge dark />}
+            text="Set target weights, rebalancing, PAC and costs, then backtest them on historical prices into a virtual portfolio."
+            onClick={onStrategy}
+          />
+        )}
         {/* Not built yet: there's no asset search to back it (only GET /v1/assets/{ticker}). */}
         <ActionCard
           icon={<Telescope className="h-5 w-5" />}
