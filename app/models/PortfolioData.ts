@@ -1,28 +1,31 @@
 // models/PortfolioData.ts
 //
-// Types for the ten precomputed-analytics endpoints under GET /v1/portfolio/* (holdings,
-// exposure/sector, exposure/region, performance, volatility, categories, dividends,
-// trading-costs, benchmark, risk-model). Mirrors the backend's generated
+// Types for the Insights page's endpoints under GET /v1/portfolios/{p}/insights/* (four section
+// overviews, a status to poll, and one detail per explore view), /positions/{asset_id},
+// /v1/portfolios/comparison and /v1/assets/{ticker}. Mirrors the backend's generated
 // doc/frontend/portfolio-data-api.d.ts — regenerate from there if the routes change.
 //
 // Conventions shared by all of them:
-// - Every response is HTTP 200 and can be `null` (nothing computed for this user yet), so the
-//   service returns `T | null`.
+// - A section is never null; each module in it is null until its document is first computed.
+//   A detail endpoint's body can be null for the same reason (its service method returns
+//   `T | null`).
 // - Every key is always present; a value that doesn't apply is `null` (never NaN, never a
 //   missing key), so those fields are typed `T | null`, not optional.
 // - `*Pct` is already a percentage (5.0 = 5%), `*Bps` is in basis points, and beta / sharpe /
 //   informationRatio / riskAdjustedReturn are plain ratios. Series are parallel arrays.
-// - `isStale: true` means the user edited transactions after the numbers were computed: keep
-//   showing them, with an "updating" hint. holdings / exposure carry neither status nor isStale.
+// - Every module carries its own `status`, `isStale` and `computedAt`: null → "being prepared",
+//   status → its empty state, isStale → "updating" (the user edited transactions and the
+//   rebuild hasn't landed). The tick modules (holdings, exposure, realized P&L), dividends and
+//   trading costs are always "ok"; the tick ones are never stale.
 
-import type { Portfolio } from "./Portfolio";
+import type { Portfolio, DailyValueChange } from "./Portfolio";
 
-// "unavailable" only ever appears on /risk-model.
+// "unavailable" only ever appears on the risk model.
 type AnalyticsStatus = "ok" | "insufficient_history" | "unavailable";
 
 type WeightGapDirection = "overweight" | "underweight" | "in_line";
 
-// Why /risk-model is "unavailable" (set only with that status, null otherwise):
+// Why the risk model is "unavailable" (set only with that status, null otherwise):
 // - too_few_assets: fewer than two held assets share at least 30 days of history;
 // - no_positive_returns: every asset's trailing mean return is at or below the risk-free
 //   rate (0), so no max-Sharpe allocation exists;
@@ -36,17 +39,26 @@ interface TimeSeries {
   values: number[];
 }
 
+// What every module of a section carries about its own document.
+interface ModuleState {
+  status: AnalyticsStatus;
+  computedAt: string;
+  isStale: boolean;
+}
+
 // ---------- holdings ----------
 
-// assetClass is Yahoo Finance's quoteType, uppercase and not normalised (EQUITY, ETF,
+// A position held now, in the reference currency except `currency`, the one it trades in.
+// assetClass is the metadata provider's quoteType, uppercase and not normalised (EQUITY, ETF,
 // MUTUALFUND, CRYPTOCURRENCY, UNKNOWN — but not a closed set), so anything that styles it
-// needs a fallback.
+// needs a fallback. The per-currency detail uses the same labels.
 interface PortfolioHoldingResponse {
   assetId: string;
   ticker: string | null;
   isin: string | null;
   name: string;
   assetClass: string;
+  currency: string;
   quantity: number;
   currentPrice: number;
   marketValue: number;
@@ -57,16 +69,10 @@ interface PortfolioHoldingResponse {
   roiPct: number;
 }
 
-interface HoldingsResponse {
-  currency: string;
-  computedAt: string;
-  holdings: PortfolioHoldingResponse[];
-}
-
 // ---------- exposure ----------
 
-// label is a GICS sector (sector endpoint) or North America / Europe / Pacific / Emerging
-// Markets (region endpoint), plus "Unknown" for assets with no known breakdown so entries
+// label is a GICS sector (sector exposure) or North America / Europe / Pacific / Emerging
+// Markets (region exposure), plus "Unknown" for assets with no known breakdown so entries
 // always add up to the full held weight. A name the provider spells differently passes
 // through unchanged.
 interface ExposureEntryResponse {
@@ -74,26 +80,13 @@ interface ExposureEntryResponse {
   weightPct: number;
 }
 
-interface ExposureResponse {
-  computedAt: string;
-  entries: ExposureEntryResponse[];
-}
-
-// ---------- performance ----------
+// ---------- returns ----------
 
 // `period` is "1 Month", "6 Months", "1 Year", "3 Years" or "Inception"; a horizon longer than
 // the portfolio's history isn't returned at all. windowDays counts the calendar days it covers.
 interface HorizonEntry {
   period: string;
   windowDays: number;
-  totalReturnPct: number | null;
-  volatilityPct: number | null;
-  maxDrawdownPct: number | null;
-  riskAdjustedReturn: number | null;
-}
-
-interface MonthlyReturnEntry {
-  month: string;
   totalReturnPct: number | null;
   volatilityPct: number | null;
   maxDrawdownPct: number | null;
@@ -110,23 +103,6 @@ interface MonthReturn {
   returnPct: number;
 }
 
-interface PerformanceResponse {
-  status: AnalyticsStatus;
-  lifespanDays: number;
-  totalReturnPct: number | null;
-  annualizedReturnPct: number | null;
-  maxDrawdownPct: number | null;
-  horizons: HorizonEntry[];
-  monthly: MonthlyReturnEntry[];
-  annual: AnnualReturnEntry[];
-  bestMonth: MonthReturn | null;
-  worstMonth: MonthReturn | null;
-  cumulativeReturnPct: TimeSeries | null;
-  drawdownPct: TimeSeries | null;
-  computedAt: string;
-  isStale: boolean;
-}
-
 // ---------- volatility ----------
 
 interface RiskEventEntry {
@@ -135,41 +111,6 @@ interface RiskEventEntry {
   annualizedVolatilityPct: number | null;
   cumulativeReturnPct: number | null;
   assetNames: string[];
-}
-
-interface VolatilityResponse {
-  status: AnalyticsStatus;
-  annualizedVolatilityPct: number | null;
-  rollingWindowDays: number | null;
-  rollingVolatilityPct: TimeSeries | null;
-  riskEvents: RiskEventEntry[];
-  computedAt: string;
-  isStale: boolean;
-}
-
-// ---------- categories ----------
-
-// volatilityContributionPct is the class's contribution to the portfolio's volatility, not
-// the volatility of holding it alone — the classes don't add up to the portfolio total.
-interface CategoryEntry {
-  assetClass: string;
-  assetCount: number;
-  marketValue: number;
-  weightPct: number;
-  costBasis: number;
-  unrealizedPnl: number;
-  roiPct: number | null;
-  totalReturnPct: number | null;
-  maxDrawdownPct: number | null;
-  volatilityContributionPct: number | null;
-  volatilityContributionRatio: number | null;
-}
-
-interface CategoriesResponse {
-  currency: string;
-  categories: CategoryEntry[];
-  computedAt: string;
-  isStale: boolean;
 }
 
 // ---------- dividends ----------
@@ -188,23 +129,6 @@ interface DividendAssetEntry {
   growthYoyPct: number | null;
 }
 
-// Two yields: wholePortfolioYieldPct is "what does the portfolio yield" (income over the
-// whole portfolio); portfolioYieldPct only counts the holdings that pay.
-interface DividendsResponse {
-  currency: string;
-  totalLifetimeIncome: number;
-  totalTrailing12MIncome: number;
-  totalPrior12MIncome: number;
-  portfolioYieldPct: number | null;
-  wholePortfolioYieldPct: number | null;
-  payersShareOfPortfolioPct: number | null;
-  portfolioYieldOnCostPct: number | null;
-  portfolioGrowthYoyPct: number | null;
-  byAsset: DividendAssetEntry[];
-  computedAt: string;
-  isStale: boolean;
-}
-
 // ---------- trading costs ----------
 
 interface PlatformCostEntry {
@@ -219,6 +143,7 @@ interface PlatformCostEntry {
   shareOfTotalPct: number | null;
 }
 
+// One asset on one broker: an asset traded on two brokers has two rows.
 interface AssetCostEntry {
   assetId: string;
   ticker: string | null;
@@ -232,26 +157,19 @@ interface AssetCostEntry {
   costBps: number | null;
 }
 
-// cumulativeCosts values are money in `currency`, not percent. annualizedCostDragPct is
-// under 0.10 = negligible, over 0.50 = material (the PDF report's own thresholds).
-interface TradingCostsResponse {
-  currency: string;
-  explicitFees: number;
-  implicitCosts: number;
-  totalCosts: number;
-  totalVolume: number;
-  totalTransactions: number;
-  costRatioBps: number | null;
-  costRatioPct: number | null;
-  avgCostPerTrade: number | null;
-  implicitCostWeightPct: number | null;
-  costToEquityPct: number | null;
-  annualizedCostDragPct: number | null;
-  byPlatform: PlatformCostEntry[];
-  byAsset: AssetCostEntry[];
-  cumulativeCosts: TimeSeries | null;
-  computedAt: string;
-  isStale: boolean;
+// ---------- realized P&L ----------
+
+// One asset ever sold (or that paid dividends), in the reference currency, each sale converted
+// at its own date — the PDF report's figures. realizedPnl = realizedTradingPnl + dividendIncome.
+interface RealizedPnlEntryResponse {
+  assetId: string;
+  ticker: string | null;
+  name: string;
+  assetClass: string;
+  realizedTradingPnl: number;
+  dividendIncome: number;
+  realizedPnl: number;
+  isHeld: boolean;
 }
 
 // ---------- benchmark ----------
@@ -262,36 +180,6 @@ interface BenchmarkComponentEntry {
   ticker: string | null;
   name: string;
   weightPct: number | null;
-}
-
-// Both cumulative curves are in percent, base 0, and share the same dates.
-interface BenchmarkResponse {
-  status: AnalyticsStatus;
-  components: BenchmarkComponentEntry[];
-  tradingDays: number | null;
-  yearsCovered: number | null;
-  portfolioTotalReturnPct: number | null;
-  benchmarkTotalReturnPct: number | null;
-  portfolioAnnualizedReturnPct: number | null;
-  benchmarkAnnualizedReturnPct: number | null;
-  excessReturnPct: number | null;
-  portfolioVolatilityPct: number | null;
-  benchmarkVolatilityPct: number | null;
-  portfolioMaxDrawdownPct: number | null;
-  benchmarkMaxDrawdownPct: number | null;
-  beta: number | null;
-  alphaPct: number | null;
-  trackingErrorPct: number | null;
-  informationRatio: number | null;
-  sharpeRatioDiff: number | null;
-  recoveryRatio: number | null;
-  winRatePct: number | null;
-  timeOutperformingPct: number | null;
-  outperformed: boolean | null;
-  portfolioCumulativeReturnPct: TimeSeries | null;
-  benchmarkCumulativeReturnPct: TimeSeries | null;
-  computedAt: string;
-  isStale: boolean;
 }
 
 // ---------- risk model ----------
@@ -311,10 +199,13 @@ interface PortfolioWeightEntry {
 
 // expectedReturnPct is a trailing historical mean, not a forecast — anything showing it says
 // "based on past returns" and avoids recommendation wording.
-interface RiskPortfolioEntry {
+interface RiskPointResponse {
   expectedReturnPct: number | null;
   volatilityPct: number | null;
   sharpeRatio: number | null;
+}
+
+interface RiskPortfolioEntry extends RiskPointResponse {
   weights: PortfolioWeightEntry[];
 }
 
@@ -338,33 +229,12 @@ interface CorrelationMatrix {
   matrix: (number | null)[][];
 }
 
-// `correlation` needs only returns, not the optimiser, so it is also present with status
-// "unavailable" for no_positive_returns / solver_failed (null for too_few_assets). Documents
-// stored before unavailableReason existed carry null there until they are recomputed, so a
-// null reason on an unavailable model still needs a generic fallback.
-interface RiskModelResponse {
-  status: AnalyticsStatus;
-  unavailableReason: RiskModelUnavailableReason | null;
-  riskFreeRatePct: number | null;
-  appliedViewsCount: number;
-  assets: RiskAssetEntry[];
-  current: RiskPortfolioEntry | null;
-  maxSharpe: RiskPortfolioEntry | null;
-  minVolatility: RiskPortfolioEntry | null;
-  frontier: FrontierPointEntry[];
-  weightGaps: WeightGapEntry[];
-  correlation: CorrelationMatrix | null;
-  computedAt: string;
-  isStale: boolean;
-}
-
 // ---------- aggregate composition ----------
 
-// GET /v1/portfolios/{p}/composition — only for the aggregate (null for a standard portfolio):
-// how the user's portfolios make it up. members is largest market value first. pnlSharePct can
-// exceed 100 or go negative (one portfolio lost while another gained), null when the combined
-// profit is 0. riskContributionPct adds up to 100 across members: above weightPct means the
-// portfolio adds more risk than its size, below 0 that it offsets the others. Under
+// How the user's portfolios make up the aggregate. members is largest market value first.
+// pnlSharePct can exceed 100 or go negative (one portfolio lost while another gained), null when
+// the combined profit is 0. riskContributionPct adds up to 100 across members: above weightPct
+// means the portfolio adds more risk than its size, below 0 that it offsets the others. Under
 // "insufficient_history" (fewer than 60 shared trading days) correlation and every
 // riskContributionPct are null; the rest is always there.
 interface CompositionMemberEntry {
@@ -401,21 +271,440 @@ interface OverlappingAssetEntry {
   holdings: AssetHoldingEntry[];
 }
 
-interface CompositionResponse {
-  status: AnalyticsStatus;
-  currency: string;
+// ---------- the month-by-month values ----------
+
+interface ValuePoint {
+  snapshotAt: string;
+  totalMarketValue: number;
+}
+
+// One month's cell of the returns heatmap. Only months with computable data are included; a
+// (year, month) pair simply absent means "nothing to show", not zero. timeWeightedReturnPct is
+// the "return" (the same figure as the returns document), null under a year of history.
+interface MonthlyMarketEffectEntry {
+  year: number;
+  month: number;
+  marketEffectPct: number;
+  timeWeightedReturnPct: number | null;
+}
+
+// ========== GET /insights/composition ==========
+
+interface InsightsHoldingsModule extends ModuleState {
+  // Largest market value first; closed positions aren't listed.
+  holdings: PortfolioHoldingResponse[];
+}
+
+interface InsightsExposureModule extends ModuleState {
+  // Largest first; entries below 0.01% are dropped.
+  entries: ExposureEntryResponse[];
+}
+
+interface InsightsPortfoliosModule extends ModuleState {
   members: CompositionMemberEntry[];
+}
+
+// Same document as InsightsPortfoliosModule, so the same status and isStale.
+interface InsightsComovementModule extends ModuleState {
   correlation: PortfolioCorrelationMatrix | null;
   overlappingAssets: OverlappingAssetEntry[];
+}
+
+// `portfolios` and `comovement` exist only on the aggregate (null on a standard portfolio).
+interface InsightsCompositionResponse {
+  currency: string;
+  isAggregate: boolean;
+  holdings: InsightsHoldingsModule | null;
+  sectorExposure: InsightsExposureModule | null;
+  regionExposure: InsightsExposureModule | null;
+  portfolios: InsightsPortfoliosModule | null;
+  comovement: InsightsComovementModule | null;
+}
+
+// ========== GET /insights/income-costs ==========
+
+// Two yields: wholePortfolioYieldPct is "what does the portfolio yield" (income over the whole
+// portfolio); the detail's portfolioYieldPct only counts the holdings that pay.
+interface InsightsDividendsModule extends ModuleState {
+  totalLifetimeIncome: number;
+  totalTrailing12MIncome: number;
+  wholePortfolioYieldPct: number | null;
+  portfolioYieldOnCostPct: number | null;
+  portfolioGrowthYoyPct: number | null;
+  // The 5 largest payers over the last 12 months, only those that paid.
+  topPayers: DividendAssetEntry[];
+}
+
+// annualizedCostDragPct is under 0.10 = negligible, over 0.50 = material (the PDF report's own
+// thresholds).
+interface InsightsTradingCostsModule extends ModuleState {
+  totalCosts: number;
+  totalTransactions: number;
+  avgCostPerTrade: number | null;
+  costRatioPct: number | null;
+  annualizedCostDragPct: number | null;
+  // The 5 costliest platforms.
+  topPlatforms: PlatformCostEntry[];
+}
+
+interface InsightsRealizedPnlModule extends ModuleState {
+  totalRealizedPnl: number;
+  totalRealizedTradingPnl: number;
+  totalDividendIncome: number;
+  // The 5 largest trading P&Ls by absolute value; assets that only paid dividends aren't here.
+  topAssets: RealizedPnlEntryResponse[];
+}
+
+interface InsightsIncomeCostsResponse {
+  currency: string;
+  isAggregate: boolean;
+  dividends: InsightsDividendsModule | null;
+  tradingCosts: InsightsTradingCostsModule | null;
+  realizedPnl: InsightsRealizedPnlModule | null;
+}
+
+// ========== GET /insights/performance ==========
+
+// One point per closed month (valued at its real end), then today's.
+interface InsightsValueModule {
+  inceptionDate: string;
+  currentValue: number;
+  chart: ValuePoint[];
+}
+
+// The month so far. monthStartValue is the value at the end of last month (0 for a portfolio
+// created this month: no percentage to show), previousDayValue 0 when the portfolio started
+// today. `chart` has a day-over-day delta per day, not guaranteed in order.
+interface InsightsThisMonthModule {
+  currentValue: number;
+  previousDayValue: number;
+  dayMarketEffect: number;
+  dayMarketEffectPct: number;
+  monthStartValue: number;
+  deltaMtdValue: number;
+  mtdNetCapitalContributed: number;
+  mtdMarketEffect: number;
+  mtdMarketEffectPct: number;
+  chart: DailyValueChange[];
+}
+
+interface InsightsHeatmapModule {
+  entries: MonthlyMarketEffectEntry[];
+}
+
+interface InsightsReturnsModule extends ModuleState {
+  lifespanDays: number;
+  totalReturnPct: number | null;
+  annualizedReturnPct: number | null;
+  horizons: HorizonEntry[];
+}
+
+// Both cumulative curves are in percent, base 0, and share the same dates.
+interface InsightsBenchmarkModule extends ModuleState {
+  yearsCovered: number | null;
+  portfolioTotalReturnPct: number | null;
+  benchmarkTotalReturnPct: number | null;
+  outperformed: boolean | null;
+  portfolioCumulativeReturnPct: TimeSeries | null;
+  benchmarkCumulativeReturnPct: TimeSeries | null;
+}
+
+// value, thisMonth and heatmap come from the stored daily and month-end values: no status of
+// their own, and historyIsStale is their isStale. All three are null without any stored value,
+// i.e. no history at all.
+interface InsightsPerformanceResponse {
+  currency: string;
+  isAggregate: boolean;
+  historyIsStale: boolean;
+  value: InsightsValueModule | null;
+  thisMonth: InsightsThisMonthModule | null;
+  heatmap: InsightsHeatmapModule | null;
+  returns: InsightsReturnsModule | null;
+  benchmark: InsightsBenchmarkModule | null;
+}
+
+// ========== GET /insights/risk ==========
+
+interface InsightsVolatilityModule extends ModuleState {
+  annualizedVolatilityPct: number | null;
+  rollingWindowDays: number | null;
+  rollingVolatilityPct: TimeSeries | null;
+}
+
+// The frontier and the three mixes on it, without their weights (those are in the detail).
+interface InsightsFrontierModule extends ModuleState {
+  unavailableReason: RiskModelUnavailableReason | null;
+  frontier: FrontierPointEntry[];
+  current: RiskPointResponse | null;
+  maxSharpe: RiskPointResponse | null;
+  minVolatility: RiskPointResponse | null;
+}
+
+interface InsightsRiskResponse {
+  currency: string;
+  isAggregate: boolean;
+  volatility: InsightsVolatilityModule | null;
+  frontier: InsightsFrontierModule | null;
+}
+
+// ========== GET /insights/status ==========
+
+interface FacetState {
   computedAt: string;
   isStale: boolean;
+}
+
+// Keyed like the modules; `composition` covers the aggregate's portfolios and comovement,
+// `returns` also the drawdown in the volatility detail, `riskModel` the frontier.
+interface InsightsStatusModules {
+  holdings: FacetState | null;
+  sectorExposure: FacetState | null;
+  regionExposure: FacetState | null;
+  composition: FacetState | null;
+  dividends: FacetState | null;
+  tradingCosts: FacetState | null;
+  realizedPnl: FacetState | null;
+  returns: FacetState | null;
+  benchmark: FacetState | null;
+  volatility: FacetState | null;
+  riskModel: FacetState | null;
+}
+
+// Poll this (not the sections) every 15s while anything is stale, for up to 5 minutes; when a
+// module turns fresh, refetch its section and its open detail.
+interface InsightsStatusResponse {
+  version: number;
+  historyIsStale: boolean;
+  anyStale: boolean;
+  modules: InsightsStatusModules;
+}
+
+// ========== detail endpoints ==========
+
+interface BrokerTotal {
+  broker: string;
+  totalInvested: number;
+}
+
+interface AssetClassTotal {
+  assetClass: string;
+  totalInvested: number;
+}
+
+interface BrokerFeesTotal {
+  broker: string;
+  totalFees: number;
+}
+
+// A position within one currency, from the recorded transactions (not market prices), one row
+// per asset and broker. quantity is a string: arbitrary decimal precision (crypto).
+interface CurrencyHolding {
+  ticker: string | null;
+  isin: string | null;
+  name: string;
+  assetClass: string;
+  quantity: string;
+  investedValue: number;
+  currency: string;
+  fees: number;
+  broker: string | null;
+}
+
+// Every closed round-trip of one asset in one currency, summed across its sells, from the buy
+// and sell prices recorded. winRate is a fraction, 0 to 1.
+interface AssetRealizedTrade {
+  assetId: string;
+  ticker: string | null;
+  name: string;
+  assetClass: string;
+  currency: string;
+  quantitySold: string;
+  totalCost: number;
+  totalProceeds: number;
+  realizedPl: number;
+  sellCount: number;
+  winRate: number;
+}
+
+// One currency present in the portfolio, every figure in that currency (never converted, so
+// never summed across currencies). Dividends are excluded from its realized P&L.
+interface CurrencyDetail {
+  currency: string;
+  totalInvested: number;
+  totalFeesPaid: number;
+  holdingsCount: number;
+  purchasesByBroker: BrokerTotal[];
+  purchasesByAssetClass: AssetClassTotal[];
+  feesByBroker: BrokerFeesTotal[];
+  totalRealizedPl: number;
+  sellCount: number;
+  winRate: number;
+  holdings: CurrencyHolding[];
+  realizedTradesByAsset: AssetRealizedTrade[];
+}
+
+// GET /insights/holdings/currencies — computed from the transactions on each call (the one
+// costly endpoint of the page), never null and never stale.
+interface HoldingsByCurrencyResponse {
+  currencies: CurrencyDetail[];
+}
+
+// GET /positions/{asset_id} — the user's own position in one asset, in `currency` (the
+// reference one). Each part is null when it doesn't apply (not held, never sold, never paid);
+// `costs` has one row per broker the asset was traded on.
+interface PositionResponse {
+  currency: string;
+  holding: PortfolioHoldingResponse | null;
+  realized: RealizedPnlEntryResponse | null;
+  dividends: DividendAssetEntry | null;
+  costs: AssetCostEntry[];
+  isStale: boolean;
+}
+
+// GET /insights/dividends
+interface DividendsResponse extends ModuleState {
+  currency: string;
+  totalLifetimeIncome: number;
+  totalTrailing12MIncome: number;
+  totalPrior12MIncome: number;
+  portfolioYieldPct: number | null;
+  wholePortfolioYieldPct: number | null;
+  payersShareOfPortfolioPct: number | null;
+  portfolioYieldOnCostPct: number | null;
+  portfolioGrowthYoyPct: number | null;
+  byAsset: DividendAssetEntry[];
+}
+
+// GET /insights/trading-costs — cumulativeCosts values are money in `currency`, not percent.
+interface TradingCostsResponse extends ModuleState {
+  currency: string;
+  explicitFees: number;
+  implicitCosts: number;
+  totalCosts: number;
+  totalVolume: number;
+  totalTransactions: number;
+  costRatioBps: number | null;
+  costRatioPct: number | null;
+  avgCostPerTrade: number | null;
+  implicitCostWeightPct: number | null;
+  costToEquityPct: number | null;
+  annualizedCostDragPct: number | null;
+  byPlatform: PlatformCostEntry[];
+  byAsset: AssetCostEntry[];
+  cumulativeCosts: TimeSeries | null;
+}
+
+// GET /insights/realized-pnl — every asset, trading P&L largest first by absolute value, the
+// ones that only paid dividends last.
+interface RealizedPnlResponse extends ModuleState {
+  currency: string;
+  totalRealizedPnl: number;
+  totalRealizedTradingPnl: number;
+  totalDividendIncome: number;
+  byAsset: RealizedPnlEntryResponse[];
+}
+
+// GET /insights/returns
+interface ReturnsResponse extends ModuleState {
+  lifespanDays: number;
+  totalReturnPct: number | null;
+  annualizedReturnPct: number | null;
+  maxDrawdownPct: number | null;
+  horizons: HorizonEntry[];
+  annual: AnnualReturnEntry[];
+  bestMonth: MonthReturn | null;
+  worstMonth: MonthReturn | null;
+  cumulativeReturnPct: TimeSeries | null;
+}
+
+// GET /insights/monthly/{YYYY-MM} — one month, from the value at the end of the previous one to
+// its own end (today for the month in progress, `inProgress: true`). marketEffect isolates price
+// movement from netCapitalContributed; flows are converted at each trade's own date. For the
+// portfolio's very first month t0Value is 0 and both percentages come back as exactly 0 (no
+// baseline — see hasPeriodBaseline in PerformanceSection.tsx). volatilityPct and maxDrawdownPct
+// are null on the month in progress. isStale: see InsightsPerformanceResponse.historyIsStale.
+interface PeriodDashboard {
+  periodStart: string;
+  periodEnd: string;
+  t0Value: number;
+  t1Value: number;
+  deltaValue: number;
+  deltaValuePct: number;
+  marketEffect: number;
+  marketEffectPct: number;
+  netCapitalContributed: number;
+  tradingCostsInPeriod: number;
+  dividendsInPeriod: number;
+  volatilityPct: number | null;
+  maxDrawdownPct: number | null;
+  timeWeightedReturnPct: number | null;
+  inProgress: boolean;
+  currency: string;
+  reportDocumentId: string | null;
+  isStale: boolean;
+}
+
+// GET /insights/benchmark
+interface BenchmarkResponse extends ModuleState {
+  components: BenchmarkComponentEntry[];
+  tradingDays: number | null;
+  yearsCovered: number | null;
+  portfolioTotalReturnPct: number | null;
+  benchmarkTotalReturnPct: number | null;
+  portfolioAnnualizedReturnPct: number | null;
+  benchmarkAnnualizedReturnPct: number | null;
+  excessReturnPct: number | null;
+  portfolioVolatilityPct: number | null;
+  benchmarkVolatilityPct: number | null;
+  portfolioMaxDrawdownPct: number | null;
+  benchmarkMaxDrawdownPct: number | null;
+  beta: number | null;
+  alphaPct: number | null;
+  trackingErrorPct: number | null;
+  informationRatio: number | null;
+  sharpeRatioDiff: number | null;
+  recoveryRatio: number | null;
+  winRatePct: number | null;
+  timeOutperformingPct: number | null;
+  outperformed: boolean | null;
+  portfolioCumulativeReturnPct: TimeSeries | null;
+  benchmarkCumulativeReturnPct: TimeSeries | null;
+}
+
+// GET /insights/volatility — with the drawdown (how far below its previous high the portfolio
+// stood each day: 0 at a new high, always ≤0). isStale when either the volatility or the returns
+// document is.
+interface VolatilityDetailResponse extends ModuleState {
+  annualizedVolatilityPct: number | null;
+  rollingWindowDays: number | null;
+  rollingVolatilityPct: TimeSeries | null;
+  riskEvents: RiskEventEntry[];
+  drawdownPct: TimeSeries | null;
+  maxDrawdownPct: number | null;
+}
+
+// GET /insights/risk-model — `correlation` needs only returns, not the optimiser, so it is also
+// present with status "unavailable" for no_positive_returns / solver_failed (null for
+// too_few_assets). An unavailable model can still carry a null reason (a document stored before
+// the field existed), so it needs a generic fallback.
+interface RiskModelResponse extends ModuleState {
+  unavailableReason: RiskModelUnavailableReason | null;
+  riskFreeRatePct: number | null;
+  appliedViewsCount: number;
+  assets: RiskAssetEntry[];
+  current: RiskPortfolioEntry | null;
+  maxSharpe: RiskPortfolioEntry | null;
+  minVolatility: RiskPortfolioEntry | null;
+  frontier: FrontierPointEntry[];
+  weightGaps: WeightGapEntry[];
+  correlation: CorrelationMatrix | null;
 }
 
 // ---------- portfolio comparison ----------
 
 // GET /v1/portfolios/comparison — one entry per compared portfolio, each section a slice of the
-// matching single-portfolio document above, all in the user's reference currency. A section is
-// null until that portfolio has been computed. The aggregate is recomputed from the combined
+// matching single-portfolio document, all in the user's reference currency. A section is null
+// until that portfolio has been computed. The aggregate is recomputed from the combined
 // transactions, so its column isn't the sum of the others. Compare returns through `horizons`,
 // matched by `period` (same window for every portfolio); cumulativeReturnPct starts on each
 // portfolio's own first day.
@@ -530,19 +819,25 @@ interface AssetDetailResponse {
 }
 
 export type {
-  AnalyticsStatus, RiskModelUnavailableReason, WeightGapDirection, TimeSeries,
-  PortfolioHoldingResponse, HoldingsResponse,
-  ExposureEntryResponse, ExposureResponse,
-  HorizonEntry, MonthlyReturnEntry, AnnualReturnEntry, MonthReturn, PerformanceResponse,
-  RiskEventEntry, VolatilityResponse,
-  CategoryEntry, CategoriesResponse,
-  DividendAssetEntry, DividendsResponse,
-  PlatformCostEntry, AssetCostEntry, TradingCostsResponse,
-  BenchmarkComponentEntry, BenchmarkResponse,
-  RiskAssetEntry, PortfolioWeightEntry, RiskPortfolioEntry, FrontierPointEntry, WeightGapEntry,
-  CorrelationMatrix, RiskModelResponse,
+  AnalyticsStatus, RiskModelUnavailableReason, WeightGapDirection, TimeSeries, ModuleState,
+  PortfolioHoldingResponse, ExposureEntryResponse,
+  HorizonEntry, AnnualReturnEntry, MonthReturn, RiskEventEntry,
+  DividendAssetEntry, PlatformCostEntry, AssetCostEntry, RealizedPnlEntryResponse,
+  BenchmarkComponentEntry,
+  RiskAssetEntry, PortfolioWeightEntry, RiskPointResponse, RiskPortfolioEntry, FrontierPointEntry, WeightGapEntry,
+  CorrelationMatrix,
+  CompositionMemberEntry, PortfolioCorrelationMatrix, AssetHoldingEntry, OverlappingAssetEntry,
+  ValuePoint, MonthlyMarketEffectEntry,
+  InsightsHoldingsModule, InsightsExposureModule, InsightsPortfoliosModule, InsightsComovementModule, InsightsCompositionResponse,
+  InsightsDividendsModule, InsightsTradingCostsModule, InsightsRealizedPnlModule, InsightsIncomeCostsResponse,
+  InsightsValueModule, InsightsThisMonthModule, InsightsHeatmapModule, InsightsReturnsModule, InsightsBenchmarkModule,
+  InsightsPerformanceResponse,
+  InsightsVolatilityModule, InsightsFrontierModule, InsightsRiskResponse,
+  FacetState, InsightsStatusModules, InsightsStatusResponse,
+  BrokerTotal, AssetClassTotal, BrokerFeesTotal, CurrencyHolding, AssetRealizedTrade, CurrencyDetail, HoldingsByCurrencyResponse,
+  PositionResponse, DividendsResponse, TradingCostsResponse, RealizedPnlResponse, ReturnsResponse, PeriodDashboard,
+  BenchmarkResponse, VolatilityDetailResponse, RiskModelResponse,
   ComparisonValue, ComparisonPerformance, ComparisonVolatility, ComparisonAllocationEntry,
   ComparisonDividends, ComparisonTradingCosts, ComparisonBenchmark, PortfolioComparisonEntry,
-  CompositionMemberEntry, PortfolioCorrelationMatrix, AssetHoldingEntry, OverlappingAssetEntry, CompositionResponse,
   AssetChartRange, ChartFrequency, AssetWeightEntryResponse, AssetDetailResponse,
 };

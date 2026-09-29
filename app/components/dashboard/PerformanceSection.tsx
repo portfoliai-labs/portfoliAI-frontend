@@ -5,8 +5,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
-  Loader2, AlertCircle, FileText, ExternalLink, LayoutGrid, Gauge,
-  Search, ChevronDown, ChevronLeft, ChevronRight, Coins, Info, ArrowUpRight,
+  Loader2, AlertCircle, FileText, ExternalLink,
+  Search, ChevronDown, ChevronLeft, ChevronRight, Info, ArrowUpRight,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -17,18 +17,19 @@ import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format"
 import { toChartPoints } from "../../lib/series";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { usePortfolio } from "../../context/PortfolioContext";
+import { useDetail, useInsights, type Insights, type SectionState } from "../../hooks/useInsights";
+import { pushDashboardEntry, readDashboardEntry, type DashboardOverlay } from "../../lib/dashboardHistory";
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
-  PeriodDashboard, FullHistoryDashboard, PortfolioSnapshot, PortfolioSummary, TodayDashboard,
-  AssetRealizedTrade, MonthlyMarketEffectEntry, Holding, CurrencyBreakdown,
-} from "../../models/Portfolio";
-import type {
-  ExposureEntryResponse, RiskModelResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
-  BenchmarkResponse, BenchmarkComponentEntry, VolatilityResponse, TimeSeries, CompositionResponse,
-  PerformanceResponse, HorizonEntry, DividendsResponse, TradingCostsResponse, AssetDetailResponse, AssetChartRange,
-  HoldingsResponse,
+  ExposureEntryResponse, RiskModelResponse, RiskPointResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
+  BenchmarkResponse, BenchmarkComponentEntry, TimeSeries, HorizonEntry, DividendsResponse, TradingCostsResponse,
+  AssetDetailResponse, AssetChartRange, PeriodDashboard, MonthlyMarketEffectEntry, ValuePoint, PortfolioHoldingResponse,
+  CurrencyDetail, RealizedPnlEntryResponse, RealizedPnlResponse, ReturnsResponse, VolatilityDetailResponse,
+  PositionResponse, InsightsHoldingsModule, InsightsExposureModule, InsightsPortfoliosModule, InsightsComovementModule,
+  InsightsDividendsModule, InsightsTradingCostsModule, InsightsRealizedPnlModule, InsightsThisMonthModule,
+  InsightsValueModule, InsightsVolatilityModule, InsightsFrontierModule, InsightsPerformanceResponse,
 } from "../../models/PortfolioData";
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -45,12 +46,6 @@ const BENCHMARK_COLOR = "#64748b";
 // lighter slate-400 they used to have washed out against the white card.
 const AXIS_TICK_COLOR = "#64748b";
 
-// How often to refetch a document that came back `isStale: true` (a transaction edit triggered
-// a rebuild that hasn't landed yet), and how long to keep trying before giving up and showing
-// the possibly-mixed data anyway with a hint instead of polling forever. See useAnalytics.
-const STALE_POLL_INTERVAL_MS = 15_000;
-const STALE_TIMEOUT_MS = 5 * 60_000;
-
 // Shared recharts tooltip box. The text colour is set explicitly: recharts leaves the date
 // label uncoloured, so it inherits the page's text colour — near-white in dark mode (see
 // globals.css) — on the tooltip's white background, making it unreadable.
@@ -59,85 +54,41 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 /**
- * INSIGHTS SECTION — one portfolio's lifetime figures, on one scrolling page split into
- * sections (see HISTORY_SECTIONS below), each answering one question: Composition (what it
- * holds), Income & Costs (what it earned and cost — dividends, trading costs, realized P&L),
- * Performance (how is it doing — value, this month, returns, the monthly heatmap drilled into
- * via /monthly?year=, the benchmark) and Risk (how much it swings).
- * The short-term view (this month) lives on the Dashboard instead. /history returns null rather than a
- * zeroed-out object when there isn't enough history yet, and (via useAnalytics) polls while
- * `isStale` — see HistoryPage's `historyUpdating` for how that's shown.
+ * INSIGHTS SECTION — one portfolio's lifetime figures: a page with one module per question
+ * (HistoryPage: Holdings, Profit & Loss, Costs, Performance, Risk), each opening a detail view
+ * with everything else about it, and a month opening from Performance's one level further down.
+ * The data comes in four calls (see useInsights), and each detail view fetches its own documents
+ * when it opens. The page waits for the
+ * Performance section, whose `value` says whether there's any history at all; the others fill
+ * in as they arrive. Stale modules are followed through /insights/status (see useInsights).
  */
 export function PerformanceSection({
   portfolioUuid, isAggregate = false, onNavigate, trail,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
   // The pages above this one in the investor's Portfolios ("Portfolios / Main portfolio"), where
-  // this page is "Insights" and a month or a detail one level deeper. Without it (an advisor's
-  // view of a client, which has its own header) the page has no breadcrumb of its own, and a
-  // month or a detail leads back to "Insights".
+  // this page is "Insights" and a month or a detail one level deeper, published to the Sidebar
+  // (see Breadcrumb). Without it (an advisor's view of a client, which has its own header) the
+  // trail starts at "Insights".
   trail?: Crumb[];
 }) {
-  const { data: history, loading, failed, updating } = useAnalytics<FullHistoryDashboard>(portfolioService.getFullHistoryDashboard, portfolioUuid);
+  const insights = useInsights(portfolioUuid);
+  const performance = insights.performance;
 
-  // Month-drilldown state lives here rather than in HistoryPage below, even though only
-  // HistoryPage's content depends on it: while a month is open, its breadcrumb takes the
-  // header's place, and that's rendered here.
+  // The month opened from the heatmap. Its detail lives here rather than in HistoryPage below,
+  // even though only HistoryPage's content depends on it: while a month is open, its trail
+  // (with the month's report link) takes the header's place, and that's rendered here. Fetched
+  // again when the Performance section is (its figures come from the same stored values).
   const [selected, setSelected] = useState<{ year: number; month: number } | null>(null);
-  const [monthCache, setMonthCache] = useState<Record<number, PeriodDashboard[]>>({});
-  const [monthLoading, setMonthLoading] = useState(false);
-  const [monthError, setMonthError] = useState<string | null>(null);
-
-  const handleSelectMonth = async (year: number, month: number) => {
-    setSelected({ year, month });
-    if (monthCache[year]) return;
-    setMonthLoading(true);
-    setMonthError(null);
-    try {
-      const periods = await portfolioService.getMonthlyDashboard(portfolioUuid, year);
-      setMonthCache(prev => ({ ...prev, [year]: periods }));
-    } catch (err) {
-      setMonthError(err instanceof Error ? err.message : "Failed to load that month's detail");
-    } finally {
-      setMonthLoading(false);
-    }
-  };
-
-  // Same isStale contract as useAnalytics, applied to the currently-open month's cached
-  // /monthly?year= response (same value on every entry of that response, so the first one
-  // speaks for all): poll every STALE_POLL_INTERVAL_MS while stale, stop after
-  // STALE_TIMEOUT_MS. Keyed off the derived `selectedYearStale` boolean rather than
-  // `monthCache` itself so a poll's own setMonthCache call doesn't reset the deadline.
-  const selectedYear = selected?.year;
-  const selectedYearStale = selectedYear !== undefined ? (monthCache[selectedYear]?.[0]?.isStale ?? false) : false;
-  const [monthStaleTimedOut, setMonthStaleTimedOut] = useState(false);
-
-  useEffect(() => {
-    if (!selectedYearStale || selectedYear === undefined) {
-      setMonthStaleTimedOut(false);
-      return;
-    }
-    let cancelled = false;
-    const deadline = Date.now() + STALE_TIMEOUT_MS;
-    const timer = setInterval(async () => {
-      if (Date.now() >= deadline) {
-        clearInterval(timer);
-        if (!cancelled) setMonthStaleTimedOut(true);
-        return;
-      }
-      try {
-        const fresh = await portfolioService.getMonthlyDashboard(portfolioUuid, selectedYear);
-        if (!cancelled) setMonthCache(prev => ({ ...prev, [selectedYear]: fresh }));
-      } catch {
-        // Transient error while polling — the next tick tries again.
-      }
-    }, STALE_POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [selectedYearStale, selectedYear, portfolioUuid]);
+  const month = useDetail(
+    selected ? () => portfolioService.getMonth(portfolioUuid, selected.year, selected.month) : null,
+    selected ? `${selected.year}-${selected.month}` : "",
+    performance.revision,
+  );
 
   // A module's detail view (see ExploreView): the module draws it into `exploreSlot` and
-  // reports it here, so the page can hide everything else and show its breadcrumb instead of
-  // the header. The scroll position is kept for the way back, like the page itself.
+  // reports it here, so the page can hide everything else and publish its trail instead of the
+  // header's. The scroll position is kept for the way back, like the page itself.
   const [explore, setExplore] = useState<ExploreHeader | null>(null);
   const [exploreSlot, setExploreSlot] = useState<HTMLDivElement | null>(null);
   const scrollBeforeExplore = useRef(0);
@@ -162,20 +113,71 @@ export function PerformanceSection({
     return () => cancelAnimationFrame(frame);
   }, [exploring]);
 
-  const selectedPeriod = selected
-    ? monthCache[selected.year]?.find((p) => new Date(p.periodStart).getUTCMonth() + 1 === selected.month)
-    : undefined;
+  // A month opens from Performance's detail, one level further down, over it: the detail stays
+  // mounted underneath (hidden), and the scroll position is kept for the way back to it.
+  const scrollBeforeMonth = useRef(0);
+  const openMonth = (year: number, m: number) => {
+    scrollBeforeMonth.current = window.scrollY;
+    setSelected({ year, month: m });
+    window.scrollTo({ top: 0 });
+  };
+  const monthOpen = selected !== null;
+  const firstMonthRun = useRef(true);
+  useEffect(() => {
+    if (firstMonthRun.current) {
+      firstMonthRun.current = false;
+      return;
+    }
+    if (monthOpen) return;
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: scrollBeforeMonth.current }));
+    return () => cancelAnimationFrame(frame);
+  }, [monthOpen]);
+
+  // The browser's back button closes a month, then a detail view: opening either adds a history
+  // entry (see lib/dashboardHistory), and landing on an entry below it closes it. Closed from the
+  // page (Esc, the Sidebar), it goes back past its entry, so the next back goes further up.
+  const overlay: DashboardOverlay | null = selected ? "month" : explore ? "explore" : null;
+  const exploreRef = useRef(explore);
+  useEffect(() => {
+    exploreRef.current = explore;
+  }, [explore]);
+  const firstOverlayRun = useRef(true);
+  useEffect(() => {
+    const entry = readDashboardEntry();
+    if (firstOverlayRun.current) {
+      firstOverlayRun.current = false;
+      // An entry for a detail that can't be shown again (reached with forward, or a reload).
+      if (!overlay && entry?.overlay) pushDashboardEntry({ ...entry, overlay: undefined }, true);
+      return;
+    }
+    const depth = OVERLAY_DEPTH[overlay ?? "none"];
+    const entryDepth = OVERLAY_DEPTH[entry?.overlay ?? "none"];
+    if (entry && depth > entryDepth) pushDashboardEntry({ ...entry, overlay: overlay ?? undefined });
+    else if (depth < entryDepth) window.history.back();
+  }, [overlay]);
+  useEffect(() => {
+    const onPopState = () => {
+      const landed = readDashboardEntry()?.overlay;
+      if (landed !== "month") setSelected(null);
+      if (landed !== "explore") exploreRef.current?.onClose();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const above = trail ?? [];
   const insightsCrumb = (back: () => void): Crumb => ({ label: "Insights", onClick: back });
+  const monthTitle = selected
+    ? new Date(Date.UTC(selected.year, selected.month - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+    : "";
 
   return (
     <div className="space-y-6 pb-12">
       {selected ? (
         <Breadcrumb
-          trail={[...above, insightsCrumb(() => setSelected(null))]}
-          current={new Date(Date.UTC(selected.year, selected.month - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
-          right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={selectedPeriod?.reportDocumentId ?? null} />}
+          trail={[...above, insightsCrumb(() => setSelected(null)), ...(explore ? [{ label: explore.title, onClick: () => setSelected(null) }] : [])]}
+          current={monthTitle}
+          right={<ViewReportLink portfolioUuid={portfolioUuid} documentId={month.data?.reportDocumentId ?? null} />}
         />
       ) : explore ? (
         <Breadcrumb trail={[...above, insightsCrumb(explore.onClose)]} current={explore.title} />
@@ -183,24 +185,34 @@ export function PerformanceSection({
         <Breadcrumb trail={trail} current="Insights" />
       ) : null}
 
-      {failed && (
+      {performance.failed ? (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
           <AlertCircle className="h-5 w-5 shrink-0" />
           <p className="text-sm font-bold">Failed to load portfolio data</p>
         </div>
-      )}
-
-      {loading ? (
+      ) : performance.data === null ? (
         <div className="flex h-96 items-center justify-center">
           <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
         </div>
-      ) : history === null ? (
+      ) : performance.data.value === null ? (
         <NoDataEmptyState
           title="No performance data yet"
           message="Add or upload your transactions and this is where you'll track how your portfolio moves over time."
           onNavigate={onNavigate}
         />
       ) : (
+        <>
+        {selected && (
+          <MonthPage
+            month={month}
+            historyUpdating={performance.data.historyIsStale && !insights.timedOut}
+            thisMonth={slotOf(performance, insights.timedOut, (d) => d.thisMonth, (_, d) => d.historyIsStale)}
+            currency={performance.data.currency}
+          />
+        )}
+        {/* Under an open month, the page and its detail stay mounted but hidden, the same way
+            the page stays under a detail (see below). */}
+        <div className={selected ? "invisible h-0 overflow-hidden" : "space-y-6"} aria-hidden={selected ? true : undefined} inert={selected ? true : undefined}>
         <ExploreHostContext.Provider value={exploreHost}>
           {/* Never display:none: the detail's charts are drawn here on its very first render,
               before `explore` is set, and a chart measured in a hidden box comes out 0×0. */}
@@ -212,20 +224,17 @@ export function PerformanceSection({
           <div className={exploring ? "invisible h-0 overflow-hidden" : undefined} aria-hidden={exploring || undefined} inert={exploring || undefined}>
             <HistoryPage
               key={portfolioUuid}
-              data={history}
-              historyUpdating={updating}
+              insights={insights}
+              performance={performance.data}
+              value={performance.data.value}
               portfolioUuid={portfolioUuid}
-              selected={selected}
-              monthCache={monthCache}
-              monthLoading={monthLoading}
-              monthError={monthError}
-              onSelectMonth={handleSelectMonth}
-              selectedYearStale={selectedYearStale}
-              monthStaleTimedOut={monthStaleTimedOut}
+              onSelectMonth={openMonth}
               isAggregate={isAggregate}
             />
           </div>
         </ExploreHostContext.Provider>
+        </div>
+        </>
       )}
     </div>
   );
@@ -249,7 +258,7 @@ const TILE_SPAN = {
 } as const;
 
 /**
- * TILE — one cell of a section's mosaic (see HistorySection): a 12-column grid on wide
+ * TILE — one cell of the page's mosaic (see HistoryPage): a 12-column grid on wide
  * screens, so a big chart can sit beside a narrow card and two related modules side by side,
  * instead of every module stacked at full width. Below lg everything is full width. A
  * container, so what's inside lays itself out by the tile's width (@md:, @3xl:…) rather than
@@ -412,7 +421,7 @@ function StatContent({ title, value, icon, color, info }: StatProps) {
  * Module (see below). The stat cards in the page's other Module already carry the deltas
  * and breakdowns, so this stays a plain, uncluttered trend line.
  */
-function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; currency: string }) {
+function SnapshotChart({ chart, currency }: { chart: ValuePoint[]; currency: string }) {
   // A single point has nothing to draw a line/area between — recharts still plots its dot,
   // which reads as a broken/empty chart rather than "not enough history yet".
   if (chart.length < 2) {
@@ -474,11 +483,11 @@ function SnapshotChart({ chart, currency }: { chart: PortfolioSnapshot[]; curren
  * different kind of information — a trend over time vs. point-in-time figures.
  */
 function ChartCard({
-  chart, currency, title, desc, right,
-}: { chart: PortfolioSnapshot[]; currency: string; title: string; desc: string; right?: React.ReactNode }) {
+  chart, currency, title, desc, right, onExplore,
+}: { chart: ValuePoint[]; currency: string; title: string; desc: string; right?: React.ReactNode; onExplore?: () => void }) {
   return (
     <Module>
-      <ModuleHead eyebrow={currency} title={title} desc={desc} right={right} />
+      <ModuleHead eyebrow={currency} title={title} desc={desc} right={right} onExplore={onExplore} />
       <SnapshotChart chart={chart} currency={currency} />
     </Module>
   );
@@ -603,133 +612,8 @@ function AmountWithDelta({ amount, pct, hasBaseline = true }: { amount: string; 
   );
 }
 
-const isHistoryEmpty = (data: FullHistoryDashboard) =>
-  data.currentValue === 0 && data.totalInvestedCapital === 0 && data.totalRealizedPnl === 0 &&
-  data.totalUnrealizedPnl === 0 && data.totalDividendIncome === 0 && data.lifetimeTradingCosts === 0 &&
-  data.chart.length === 0;
-
-type HistorySectionId = "performance" | "income" | "composition" | "risk";
-
-const HISTORY_SECTIONS: { id: HistorySectionId; label: string; icon: typeof Coins }[] = [
-  { id: "composition", label: "Composition", icon: LayoutGrid },
-  { id: "income", label: "Income & Costs", icon: Coins },
-  { id: "performance", label: "Performance", icon: TrendingUp },
-  { id: "risk", label: "Risk", icon: Gauge },
-];
-
-const sectionAnchor = (id: HistorySectionId) => `insights-${id}`;
-
-/**
- * HISTORY SECTION — one of the page's sections: a mosaic of Tiles, with no heading of its own
- * (SectionNav names it). `scroll-mt` keeps its top clear of the dashboard's sticky header when
- * SectionNav scrolls to it.
- */
-function HistorySection({ id, children }: { id: HistorySectionId; children: React.ReactNode }) {
-  return (
-    <section id={sectionAnchor(id)} className="scroll-mt-28 grid grid-cols-2 lg:grid-cols-12 gap-6">
-      {children}
-    </section>
-  );
-}
-
-/**
- * SECTION NAV — a timeline down the side of the page, pinned while the page scrolls and as
- * tall as the viewport allows. The line stands for the whole page: it fills in gold as the
- * reader moves down, reaching the bottom at the end of the page, and each section's dot sits
- * where the fill will be as that section's top crosses the reading line — so a long section
- * gets a long stretch of line, and a dot lights up exactly as its section comes into view. The
- * dots are the sections' icons, with the name shown on hover; a click scrolls to the section. Listens with capture on window so it follows whatever ends up
- * scrolling the page, the window or a container (scroll events don't bubble, but they can be
- * captured), and re-measures when a section changes height (Composition loads on its own).
- * Wide screens only; narrower ones just scroll.
- */
-function SectionNav() {
-  const [dots, setDots] = useState<number[]>(() => HISTORY_SECTIONS.map((_, i) => i / (HISTORY_SECTIONS.length - 1)));
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const els = HISTORY_SECTIONS.map(({ id }) => document.getElementById(sectionAnchor(id)));
-    if (els.some((el) => !el)) return;
-    const sections = els as HTMLElement[];
-
-    const update = () => {
-      const rects = sections.map((el) => el.getBoundingClientRect());
-      const first = rects[0].top;
-      const total = rects[rects.length - 1].bottom - first;
-      // The reading line: a third of the way down the viewport. Scrolling runs from the first
-      // section's top on that line to the last one's bottom at the viewport's bottom, the
-      // same span the fill covers.
-      const line = window.innerHeight / 3;
-      const span = Math.max(total - window.innerHeight + line, 1);
-      const clamp = (v: number) => Math.min(Math.max(v, 0), 1);
-      setDots(rects.map((r) => clamp((r.top - first) / span)));
-      setProgress(clamp((line - first) / span));
-    };
-
-    update();
-    const resize = new ResizeObserver(update);
-    sections.forEach((el) => resize.observe(el));
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      resize.disconnect();
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, []);
-
-  // The section in view: the last one whose dot the fill has reached.
-  const active = dots.reduce((acc, pos, i) => (progress >= pos - 0.001 ? i : acc), 0);
-
-  return (
-    <nav aria-label="Insights sections" className="hidden lg:block sticky top-28 self-start h-[calc(100vh-10rem)]">
-      {/* Inset so the first and last icons, centred on their points, stay inside the nav. */}
-      <div className="absolute inset-x-0 inset-y-4">
-        <span aria-hidden className="absolute left-1/2 -translate-x-1/2 inset-y-0 w-px bg-slate-200">
-          <span
-            className="absolute inset-x-0 top-0 bg-[#C49A3C] transition-[height] duration-150 ease-out"
-            style={{ height: `${progress * 100}%` }}
-          />
-        </span>
-        <ol>
-          {HISTORY_SECTIONS.map(({ id, label, icon: Icon }, i) => {
-            const reached = i <= active;
-            const isActive = i === active;
-            return (
-              <li
-                key={id}
-                className="group absolute left-1/2 -translate-x-1/2 -translate-y-1/2 transition-[top] duration-150 ease-out"
-                style={{ top: `${dots[i] * 100}%` }}
-              >
-                <button
-                  onClick={() => document.getElementById(sectionAnchor(id))?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                  aria-label={label}
-                  aria-current={isActive ? "true" : undefined}
-                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40 ${
-                    isActive
-                      ? "bg-[#C49A3C] border-[#C49A3C] text-white shadow-sm ring-4 ring-[#C49A3C]/15"
-                      : reached
-                        ? "bg-white border-[#C49A3C] text-[#C49A3C]"
-                        : "bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </button>
-                {/* The section's name, to the left of its icon while hovered or focused. */}
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute right-full top-1/2 -translate-y-1/2 mr-2.5 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                >
-                  {label}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </nav>
-  );
-}
+const isHistoryEmpty = (value: InsightsValueModule) =>
+  value.currentValue === 0 && value.chart.length === 0;
 
 function AllocPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
@@ -851,34 +735,24 @@ function ExposureBreakdown({ entries }: { entries: ExposureEntryResponse[] }) {
 }
 
 /**
- * SECTOR & REGION MODULE — look-through exposure of the held positions as of the last
- * snapshot tick (into funds, at today's fund composition — not at any past date). Both
- * endpoints answer null until the first snapshot tick has run for this user, and carry
- * neither status nor isStale.
+ * EXPOSURE PANELS — part of the Holdings detail: the look-through exposure of the held positions
+ * by sector and by region, as of the last snapshot tick (into funds, at today's fund composition
+ * — not at any past date). Two modules of the Composition section, each null until the first
+ * tick has run for this user; never stale.
  */
-function SectorRegionModule({
-  sector, region,
-}: { sector: ExposureEntryResponse[] | null; region: ExposureEntryResponse[] | null }) {
-  return (
-    <Module>
-      <ModuleHead
-        eyebrow="Composition"
-        title="Sector & Region"
-        desc="Exposure of your current holdings, weighted by market value."
-      />
-      {sector === null && region === null ? (
-        <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-          <AllocPanel title="By sector" subtitle="Where your holdings' companies operate">
-            <ExposureBreakdown entries={sector ?? []} />
-          </AllocPanel>
-          <AllocPanel title="By region" subtitle="Geographic exposure">
-            <ExposureBreakdown entries={region ?? []} />
-          </AllocPanel>
-        </div>
+function ExposurePanels({ sector, region }: { sector: InsightsExposureModule | null; region: InsightsExposureModule | null }) {
+  const panel = (title: string, subtitle: string, module: InsightsExposureModule | null) => (
+    <ExplorePanel eyebrow="Holdings" title={title} desc={subtitle}>
+      {module === null ? <ModuleMessage>{PREPARING_TICK}</ModuleMessage> : (
+        <div className="p-6 md:p-7"><ExposureBreakdown entries={module.entries} /></div>
       )}
-    </Module>
+    </ExplorePanel>
+  );
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {panel("By Sector", "Where your holdings' companies operate, weighted by market value.", sector)}
+      {panel("By Region", "Geographic exposure, weighted by market value.", region)}
+    </div>
   );
 }
 
@@ -896,9 +770,9 @@ function correlationCellStyle(value: number): React.CSSProperties {
 
 /**
  * CORRELATION MATRIX MODULE — how the held assets' returns moved together over the history
- * they share (from /risk-model, shown in RiskModelTab). Drawn whenever the document carries a
- * matrix of at least two assets, whatever its status; without one, a message stands in for the
- * table. Individual cells can be null and render as a dash.
+ * they share (from /insights/risk-model, see RiskModelTab). Drawn whenever the document carries
+ * a matrix of at least two assets, whatever its status; without one, a message stands in for
+ * the table. Individual cells can be null and render as a dash.
  */
 function CorrelationMatrixModule({ riskModel }: { riskModel: RiskModelResponse }) {
   const correlation = riskModel.correlation;
@@ -973,7 +847,7 @@ const RISK_UNAVAILABLE_GENERIC =
   "The risk model can't be built for your portfolio right now. That happens when fewer than two holdings share at least 30 days of price history, when every holding's average past return is zero or negative, or when no allocation could be worked out from the data.";
 
 /** The one explanation shown in place of the model's modules when it isn't "ok". */
-function riskModelUnavailableMessage(model: RiskModelResponse): string {
+function riskModelUnavailableMessage(model: { status: RiskModelResponse["status"]; unavailableReason: RiskModelUnavailableReason | null }): string {
   if (model.status === "insufficient_history") {
     return "The risk model needs at least a year of history. It will appear once your portfolio has one.";
   }
@@ -981,91 +855,102 @@ function riskModelUnavailableMessage(model: RiskModelResponse): string {
 }
 
 /**
- * RISK MODEL TAB — /risk-model as one page, since it is one model: either it was built for the
- * whole portfolio or none of it was. Loads itself when the tab is opened. The state handling:
- * null → "being prepared"; status other than "ok" → a single explanation (the document then has
- * no per-asset estimates, allocations, frontier or gaps), worded by unavailableReason, though a
- * correlation matrix is still drawn if the backend sent one (it does for no_positive_returns and
- * solver_failed, since correlations need only returns); isStale → hide everything below behind
- * StaleUpdatingState (see useAnalytics's `updating`) rather than draw stale numbers.
- * Everything on the page is built from past returns, so it says so up front and avoids
- * recommendation wording.
+ * RISK DETAIL — everything behind the volatility: the rolling volatility, the turbulent periods
+ * and the drawdowns (/insights/volatility, which also follows the returns document) and, on the
+ * aggregate, how the portfolios move together. The risk model has its own (RiskModelModule).
  */
-function RiskModelTab({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<RiskModelResponse>(portfolioService.getRiskModel, portfolioUuid);
-  const [exploring, setExploring] = useState(false);
-
-  if (loading || failed || data === null || updating) {
-    return (
-      <Tile>
-        <Module>
-          <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
-          <AnalyticsPlaceholder
-            loading={loading}
-            failed={failed}
-            hasData={data !== null}
-            updating={updating}
-            preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-          />
-        </Module>
-      </Tile>
-    );
-  }
-
-  const built = data.status === "ok";
-  // FrontierModule draws nothing without two plottable points; the modules its detail holds
-  // then stay on the page instead, or they'd have no way in.
-  const hasFrontier = data.frontier.filter((f) => f.volatilityPct !== null && f.expectedReturnPct !== null).length >= 2;
-  const mix = <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />;
-  const gaps = <WeightGapsModule gaps={data.weightGaps} />;
-  const assets = <RiskAssetsModule assets={data.assets} />;
-  const frontier = (onExplore?: () => void) => (
-    <FrontierModule
-      frontier={data.frontier}
-      current={data.current}
-      maxSharpe={data.maxSharpe}
-      minVolatility={data.minVolatility}
-      onExplore={onExplore}
-    />
-  );
-
-  // Tiles of the Risk section's mosaic, not a block of its own.
+function RiskDetail({
+  portfolioUuid, revision, returnsRevision, aggregate,
+}: { portfolioUuid: string; revision: number; returnsRevision: number; aggregate: AggregateSlots | null }) {
   return (
     <>
-      {data.isStale && <Tile><UpdatingNote /></Tile>}
-      {built && hasFrontier ? (
+      <VolatilityExplore portfolioUuid={portfolioUuid} revision={revision + returnsRevision} />
+      {aggregate && <PortfolioCorrelationModule slot={aggregate.comovement} members={aggregate.portfolios.module?.members ?? []} />}
+    </>
+  );
+}
+
+/**
+ * RISK MODEL MODULE — the risk model on the page: the efficient frontier, from the Risk section
+ * (the frontier and the three mixes on it, without their weights). Its detail
+ * (RiskModelExplore, /insights/risk-model) holds the rest. When the frontier can't be drawn (fewer
+ * than two plottable points) or the model wasn't built, a message stands in for it, and the
+ * detail still opens on what there is (a model that isn't built can still carry correlations).
+ */
+function RiskModelModule({ slot, portfolioUuid }: { slot: ModuleSlot<InsightsFrontierModule>; portfolioUuid: string }) {
+  const [exploring, setExploring] = useState(false);
+  const data = slot.module;
+  const built = data?.status === "ok";
+  const hasFrontier = data !== null && data.frontier.filter((f) => f.volatilityPct !== null && f.expectedReturnPct !== null).length >= 2;
+  const explore = ready(slot) ? () => setExploring(true) : undefined;
+  const head = <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." onExplore={explore} />;
+
+  return (
+    <>
+      {ready(slot) && built && hasFrontier ? (
         <>
-          {/* The frontier alone on the page; the mixes it compares, the weight gaps and the
-              assets behind it are its detail. */}
-          <Tile>{frontier(() => setExploring(true))}</Tile>
-          {exploring && (
-            <ExploreView title="Efficient Frontier" onClose={() => setExploring(false)}>
-              {frontier()}
-              {mix}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className="@container min-w-0">{gaps}</div>
-                <div className="@container min-w-0">{assets}</div>
-              </div>
-            </ExploreView>
-          )}
-        </>
-      ) : built ? (
-        <>
-          <Tile>{mix}</Tile>
-          <Tile span="half">{gaps}</Tile>
-          <Tile span="half">{assets}</Tile>
+          {slot.lagging && <div className="mb-6"><UpdatingNote /></div>}
+          <FrontierModule frontier={slot.module.frontier} current={slot.module.current} maxSharpe={slot.module.maxSharpe} minVolatility={slot.module.minVolatility} onExplore={explore} />
         </>
       ) : (
-        <Tile>
-          <Module>
-            <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." />
-            <ModuleMessage>{riskModelUnavailableMessage(data)}</ModuleMessage>
-          </Module>
-        </Tile>
+        <Module>
+          {head}
+          {SlotPlaceholder({ slot }) ?? (
+            <ModuleMessage>
+              {built
+                ? "The efficient frontier can't be drawn for these holdings. Open it for the mixes and how your holdings move together."
+                : riskModelUnavailableMessage(slot.module!)}
+            </ModuleMessage>
+          )}
+        </Module>
       )}
-
-      {(built || data.correlation !== null) && <Tile><CorrelationMatrixModule riskModel={data} /></Tile>}
+      {ready(slot) && exploring && (
+        <ExploreView title="Risk Model" onClose={() => setExploring(false)}>
+          <RiskModelExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
+        </ExploreView>
+      )}
     </>
+  );
+}
+
+/**
+ * RISK MODEL EXPLORE — the risk model's detail: either it was built for the whole
+ * portfolio or none of it was. Built: the efficient frontier (when it has two plottable points),
+ * the three mixes side by side with their weights, how far each holding sits from the max-Sharpe
+ * mix and the per-asset inputs; not built: a single explanation, worded by unavailableReason.
+ * The correlation matrix follows whenever the backend sent one (it does for no_positive_returns
+ * and solver_failed too, since correlations need only returns). Everything here is built from
+ * past returns, so it says so and avoids recommendation wording.
+ */
+function RiskModelExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getRiskModel(portfolioUuid), portfolioUuid, revision);
+  return (
+    <DetailBody detail={detail}>
+      {(data) => {
+        const built = data.status === "ok";
+        return (
+          <>
+            {built ? (
+              <>
+                <FrontierModule frontier={data.frontier} current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />
+                <MixComparisonModule current={data.current} maxSharpe={data.maxSharpe} minVolatility={data.minVolatility} />
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <div className="@container min-w-0">
+                    <WeightGapsModule gaps={data.weightGaps} />
+                  </div>
+                  <div className="@container min-w-0">
+                    <RiskAssetsModule assets={data.assets} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <Module><ModuleMessage>{riskModelUnavailableMessage(data)}</ModuleMessage></Module>
+            )}
+            {(built || data.correlation !== null) && <CorrelationMatrixModule riskModel={data} />}
+          </>
+        );
+      }}
+    </DetailBody>
   );
 }
 
@@ -1196,9 +1081,9 @@ function FrontierModule({
   frontier, current, maxSharpe, minVolatility, onExplore,
 }: {
   frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[];
-  current: RiskPortfolioEntry | null;
-  maxSharpe: RiskPortfolioEntry | null;
-  minVolatility: RiskPortfolioEntry | null;
+  current: RiskPointResponse | null;
+  maxSharpe: RiskPointResponse | null;
+  minVolatility: RiskPointResponse | null;
   onExplore?: () => void;
 }) {
   const curve = useMemo(
@@ -1211,7 +1096,7 @@ function FrontierModule({
     { label: "Your allocation", color: MIX_COLORS.current, entry: current },
     { label: "Max Sharpe", color: MIX_COLORS.maxSharpe, entry: maxSharpe },
     { label: "Min volatility", color: MIX_COLORS.minVolatility, entry: minVolatility },
-  ].filter((d): d is typeof d & { entry: RiskPortfolioEntry & { volatilityPct: number; expectedReturnPct: number } } =>
+  ].filter((d): d is typeof d & { entry: RiskPointResponse & { volatilityPct: number; expectedReturnPct: number } } =>
     d.entry?.volatilityPct != null && d.entry?.expectedReturnPct != null);
 
   if (curve.length < 2) return null;
@@ -1401,21 +1286,33 @@ interface CarouselSlide {
 
 /**
  * HOLDINGS EXPLORE — the Holdings module's detail view: a carousel with every currency together
- * first, then one slide per currency present in the portfolio. Swipe or scroll sideways, or
- * pick a currency from the pills; the pills and arrows follow what's on screen.
+ * first, drawn at once from the holdings the page already has, then one slide per currency,
+ * from /insights/holdings/currencies (computed from the transactions on each call, so fetched
+ * only here, and again when the section is). Swipe or scroll sideways, or pick a currency from
+ * the pills; the pills and arrows follow what's on screen.
  */
-function HoldingsExplore({ byCurrency, holdings, positions }: { byCurrency: CurrencyBreakdown[]; holdings: Holding[]; positions: HoldingsResponse | null }) {
+function HoldingsExplore({
+  holdings, currency, portfolioUuid, revision,
+}: { holdings: PortfolioHoldingResponse[]; currency: string; portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getHoldingsByCurrency(portfolioUuid), portfolioUuid, revision);
   const slides: CarouselSlide[] = [
-    { key: "all", label: "All currencies", content: <AllCurrenciesSlide positions={positions} holdings={holdings} /> },
-    ...[...byCurrency]
+    { key: "all", label: "All currencies", content: <AllCurrenciesSlide holdings={holdings} currency={currency} /> },
+    ...[...(detail.data?.currencies ?? [])]
       .sort((a, b) => a.currency.localeCompare(b.currency))
-      .map((b) => ({
-        key: b.currency,
-        label: b.currency,
-        content: <CurrencySlide breakdown={b} holdings={holdings.filter((h) => h.currency === b.currency)} />,
-      })),
+      .map((c) => ({ key: c.currency, label: c.currency, content: <CurrencySlide detail={c} /> })),
   ];
-  return <Carousel slides={slides} />;
+  const note = detail.loading ? (
+    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading each currency…</span>
+  ) : detail.error ? (
+    <span className="text-xs font-semibold text-slate-400">The per-currency view couldn&apos;t be loaded.</span>
+  ) : null;
+  return (
+    <Carousel
+      head={<ModuleHead eyebrow="Holdings" title="Allocation" desc={`Every currency together in ${currency}, then each currency on its own, in that currency.`} />}
+      slides={slides}
+      note={note}
+    />
+  );
 }
 
 /**
@@ -1423,7 +1320,9 @@ function HoldingsExplore({ byCurrency, holdings, positions }: { byCurrency: Curr
  * The active slide is read back from the scroll position, so the pills and arrows never run
  * ahead of what's actually on screen while a smooth scroll is under way.
  */
-function Carousel({ slides }: { slides: CarouselSlide[] }) {
+// `head`: the module's heading, above the pills. `note`: a line after the pills, for slides
+// still on their way.
+function Carousel({ head, slides, note }: { head?: React.ReactNode; slides: CarouselSlide[]; note?: React.ReactNode }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
 
@@ -1442,7 +1341,8 @@ function Carousel({ slides }: { slides: CarouselSlide[] }) {
   const arrow = "w-8 h-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
 
   return (
-    <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+    <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+      {head}
       <div className="px-4 md:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5 min-w-0">
           {slides.map((slide, i) => (
@@ -1458,6 +1358,7 @@ function Carousel({ slides }: { slides: CarouselSlide[] }) {
               {slide.label}
             </button>
           ))}
+          {note && <span className="self-center ml-1">{note}</span>}
         </div>
         {slides.length > 1 && (
           <div className="flex items-center gap-1.5 shrink-0">
@@ -1519,36 +1420,16 @@ function SlideBody({ figures, currency, donuts }: { figures: React.ReactNode; cu
 }
 
 /**
- * Every currency together, from GET /holdings, where each position is already converted to the
- * reference currency: market value, cost and unrealized P&L, then the split by asset, by asset
- * class and by the currency each holding trades in. `positions` is null while
- * the backend hasn't computed it yet.
+ * Every currency together, from the holdings module, where each position is already converted
+ * to the reference currency: market value, cost and unrealized P&L, then the split by asset, by
+ * asset class and by the currency each holding trades in.
  */
-function AllCurrenciesSlide({ positions, holdings }: { positions: HoldingsResponse | null; holdings: Holding[] }) {
-  // /holdings doesn't carry a position's own currency: it comes from the summary's holdings,
-  // matched by ticker (or ISIN, or name for a position with neither).
-  const byCurrency = useMemo(() => {
-    const currencyOf = new Map(holdings.map((h) => [h.ticker ?? h.isin ?? h.name, h.currency]));
-    const totals = new Map<string, number>();
-    for (const p of positions?.holdings ?? []) {
-      const c = currencyOf.get(p.ticker ?? p.isin ?? p.name) ?? "Other";
-      totals.set(c, (totals.get(c) ?? 0) + p.marketValue);
-    }
-    return [...totals].map(([label, value]) => ({ label, value }));
-  }, [positions, holdings]);
+function AllCurrenciesSlide({ holdings, currency }: { holdings: PortfolioHoldingResponse[]; currency: string }) {
+  const byCurrency = useMemo(() => sumBy(holdings, (h) => h.currency), [holdings]);
+  const byClass = useMemo(() => sumBy(holdings, (h) => h.assetClass), [holdings]);
 
-  const byClass = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const p of positions?.holdings ?? []) totals.set(p.assetClass, (totals.get(p.assetClass) ?? 0) + p.marketValue);
-    return [...totals].map(([label, value]) => ({ label, value }));
-  }, [positions]);
-
-  if (positions === null || positions.holdings.length === 0) {
-    return <ModuleMessage>Being prepared — this shows up shortly after your first transactions are processed.</ModuleMessage>;
-  }
-  const { currency } = positions;
-  const marketValue = positions.holdings.reduce((sum, p) => sum + p.marketValue, 0);
-  const cost = positions.holdings.reduce((sum, p) => sum + p.costBasis, 0);
+  const marketValue = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+  const cost = holdings.reduce((sum, h) => sum + h.costBasis, 0);
   const pnl = marketValue - cost;
 
   return (
@@ -1563,12 +1444,12 @@ function AllCurrenciesSlide({ positions, holdings }: { positions: HoldingsRespon
             note={cost > 0 ? `${pnl >= 0 ? "+" : ""}${((pnl / cost) * 100).toFixed(2)}%` : undefined}
             tone={pnl >= 0 ? "gain" : "loss"}
           />
-          <SlideFigure label="Holdings" value={String(positions.holdings.length)} note={`In ${byCurrency.length} ${byCurrency.length === 1 ? "currency" : "currencies"}`} />
+          <SlideFigure label="Holdings" value={String(holdings.length)} note={`In ${byCurrency.length} ${byCurrency.length === 1 ? "currency" : "currencies"}`} />
         </>
       }
       currency={currency}
       donuts={[
-        { title: "By asset", subtitle: "Individual positions", items: positions.holdings.map((p) => ({ label: p.ticker ?? p.isin ?? p.name, value: p.marketValue })) },
+        { title: "By asset", subtitle: "Individual positions", items: holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.marketValue })) },
         { title: "By category", subtitle: "Asset class", items: byClass },
         { title: "By currency", subtitle: "The currency each holding trades in", items: byCurrency },
       ]}
@@ -1576,161 +1457,191 @@ function AllCurrenciesSlide({ positions, holdings }: { positions: HoldingsRespon
   );
 }
 
+// Market value summed by a label (asset class, trading currency), for a donut.
+const sumBy = (holdings: PortfolioHoldingResponse[], labelOf: (h: PortfolioHoldingResponse) => string) => {
+  const totals = new Map<string, number>();
+  for (const h of holdings) totals.set(labelOf(h), (totals.get(labelOf(h)) ?? 0) + h.marketValue);
+  return [...totals].map(([label, value]) => ({ label, value }));
+};
+
 /**
  * One currency's holdings, in that currency: inside a single currency they can be weighted by
  * what was invested in them without any conversion: what's invested, fees and realized P&L,
  * then the split by asset, by asset class and by broker.
  */
-function CurrencySlide({ breakdown, holdings }: { breakdown: CurrencyBreakdown; holdings: Holding[] }) {
-  const { currency } = breakdown;
+function CurrencySlide({ detail }: { detail: CurrencyDetail }) {
+  const { currency } = detail;
+  const sales = `${detail.sellCount} ${detail.sellCount === 1 ? "sale" : "sales"}`;
   return (
     <SlideBody
       figures={
         <>
-          <SlideFigure label="Invested" value={formatCurrency(breakdown.totalInvested, currency, 0)} note="In holdings still open" />
-          <SlideFigure label="Holdings" value={String(breakdown.holdingsCount)} />
-          <SlideFigure label="Fees paid" value={formatCurrency(breakdown.totalFeesPaid, currency, 0)} />
+          <SlideFigure label="Invested" value={formatCurrency(detail.totalInvested, currency, 0)} note="In holdings still open" />
+          <SlideFigure label="Holdings" value={String(detail.holdingsCount)} />
+          <SlideFigure label="Fees paid" value={formatCurrency(detail.totalFeesPaid, currency, 0)} />
           <SlideFigure
             label="Realized P&L"
-            value={formatSignedCurrency(breakdown.totalRealizedPl, currency)}
-            note={`${breakdown.sellCount} ${breakdown.sellCount === 1 ? "sale" : "sales"}`}
-            tone={breakdown.totalRealizedPl >= 0 ? "gain" : "loss"}
+            value={formatSignedCurrency(detail.totalRealizedPl, currency)}
+            note={detail.sellCount > 0 ? `${sales}, ${Math.round(detail.winRate * 100)}% at a gain` : sales}
+            tone={detail.totalRealizedPl >= 0 ? "gain" : "loss"}
           />
         </>
       }
       currency={currency}
       donuts={[
-        { title: "By asset", subtitle: "Individual positions", items: holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue })) },
-        { title: "By category", subtitle: "Asset class", items: breakdown.purchasesByAssetClass.map((a) => ({ label: a.assetClass, value: a.totalInvested })) },
-        { title: "By broker", subtitle: "Where your orders were placed", items: breakdown.purchasesByBroker.map((b) => ({ label: b.broker, value: b.totalInvested })) },
+        { title: "By asset", subtitle: "Individual positions", items: detail.holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue })) },
+        { title: "By category", subtitle: "Asset class", items: detail.purchasesByAssetClass.map((a) => ({ label: a.assetClass, value: a.totalInvested })) },
+        { title: "By broker", subtitle: "Where your orders were placed", items: detail.purchasesByBroker.map((b) => ({ label: b.broker, value: b.totalInvested })) },
       ]}
     />
   );
 }
 
 /**
- * HOLDINGS EXPLORER — the searchable/filterable holdings table, each figure in its own
- * currency. Deliberately a plain table rather than a bar chart: bar length would encode
- * invested value, and a USD bar next to a EUR bar of the same length would visually claim
- * they're equal. Its title opens how the holdings add up (HoldingsExplore): across every
- * currency, then within each one.
+ * HOLDINGS EXPLORER — the Holdings module: every position held now, at today's price and in the
+ * reference currency, searchable and filterable by asset class and by the currency it trades in.
+ * A row opens that asset's own page (AssetExplore); its title opens how the holdings add up
+ * (HoldingsExplore): on the aggregate how the portfolios make it up first, then across every
+ * currency, then within each one, then by sector and region.
  */
-function HoldingsExplorer({ holdings, byCurrency, positions }: { holdings: Holding[]; byCurrency: CurrencyBreakdown[]; positions: HoldingsResponse | null }) {
+function HoldingsExplorer({
+  slot, sector, region, aggregate, currency, portfolioUuid,
+}: {
+  slot: ModuleSlot<InsightsHoldingsModule>;
+  sector: InsightsExposureModule | null;
+  region: InsightsExposureModule | null;
+  // "All portfolios" only.
+  aggregate: AggregateSlots | null;
+  currency: string;
+  portfolioUuid: string;
+}) {
+  const holdings = useMemo(() => slot.module?.holdings ?? [], [slot.module]);
   const [exploringCurrencies, setExploringCurrencies] = useState(false);
   const [search, setSearch] = useState("");
   const [assetClass, setAssetClass] = useState("all");
-  const [currency, setCurrency] = useState("all");
-  // The ticker whose detail view (AssetExplore) is open. Rows without a ticker can't open one:
-  // the asset endpoint is keyed by it.
-  const [exploringTicker, setExploringTicker] = useState<string | null>(null);
+  const [tradedIn, setTradedIn] = useState("all");
+  // The holding whose detail view (AssetExplore) is open. Rows without a ticker can't open one:
+  // the market-data endpoint is keyed by it.
+  const [exploringAsset, setExploringAsset] = useState<PortfolioHoldingResponse | null>(null);
 
   const assetClasses = useMemo(() => [...new Set(holdings.map(h => h.assetClass))].sort(), [holdings]);
   const currencies = useMemo(() => [...new Set(holdings.map(h => h.currency))].sort(), [holdings]);
 
+  // Kept in the backend's order, largest market value first: every figure is in one currency.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return holdings
       .filter(h => assetClass === "all" || h.assetClass === assetClass)
-      .filter(h => currency === "all" || h.currency === currency)
-      .filter(h => !q || h.ticker?.toLowerCase().includes(q) || h.name.toLowerCase().includes(q))
-      // Grouped by currency first so ordering never implies a cross-currency size comparison.
-      .sort((a, b) => a.currency.localeCompare(b.currency) || b.investedValue - a.investedValue);
-  }, [holdings, search, assetClass, currency]);
+      .filter(h => tradedIn === "all" || h.currency === tradedIn)
+      .filter(h => !q || h.ticker?.toLowerCase().includes(q) || h.name.toLowerCase().includes(q));
+  }, [holdings, search, assetClass, tradedIn]);
+
+  const th = "py-3 text-[10px] font-black uppercase tracking-wider text-slate-400";
 
   return (
     <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
       <ModuleHead
-        eyebrow="Composition"
+        eyebrow={currency}
         title="Holdings"
-        desc="Every position with what was invested in it, each in its own currency. Open it for the allocation, overall and by currency."
-        onExplore={holdings.length > 0 ? () => setExploringCurrencies(true) : undefined}
+        desc={`Every position at today's price, in ${currency}. Open it for the allocation: overall, by currency, by sector and by region.`}
+        onExplore={ready(slot) && holdings.length > 0 ? () => setExploringCurrencies(true) : undefined}
       />
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-5 md:p-6 border-b border-slate-200">
-        <div className="relative flex-1 min-w-0">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by ticker or name…"
-            className="w-full h-10 pl-10 pr-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
-          />
-        </div>
-        <FilterSelect label="Asset class" value={assetClass} onChange={setAssetClass} options={assetClasses} />
-        <FilterSelect label="Currency" value={currency} onChange={setCurrency} options={currencies} />
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="py-14 flex flex-col items-center justify-center text-center px-6">
-          <div className="p-4 bg-slate-50 rounded-2xl mb-3">
-            <Wallet className="h-6 w-6 text-slate-300" />
+      {SlotPlaceholder({ slot, preparingMessage: PREPARING_TICK }) ?? (
+        <>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-5 md:p-6 border-b border-slate-200">
+            <div className="relative flex-1 min-w-0">
+              <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by ticker or name…"
+                className="w-full h-10 pl-10 pr-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
+              />
+            </div>
+            <FilterSelect label="Asset class" value={assetClass} onChange={setAssetClass} options={assetClasses} />
+            <FilterSelect label="Currency" value={tradedIn} onChange={setTradedIn} options={currencies} />
           </div>
-          <p className="text-slate-600 font-semibold">{holdings.length === 0 ? "No holdings yet" : "No holdings match your filters"}</p>
-          <p className="text-slate-400 text-sm mt-1">
-            {holdings.length === 0 ? "Upload or add transactions to see your holdings here." : "Try a different search or filter."}
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-150">
-            <thead>
-              <tr className="border-b border-slate-200">
-                <th className="px-5 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Asset</th>
-                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Class</th>
-                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Quantity</th>
-                <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Invested</th>
-                <th className="px-3 md:px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Broker</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((h, i) => (
-                <tr
-                  key={`${h.currency}::${h.ticker ?? h.isin ?? i}::${h.broker ?? ""}`}
-                  onClick={h.ticker ? () => setExploringTicker(h.ticker) : undefined}
-                  className={`hover:bg-slate-50/60 transition-colors ${h.ticker ? "group/explore cursor-pointer" : ""}`}
-                >
-                  <td className="px-5 md:px-6 py-3.5">
-                    {/* Capped, the name truncated (full name on hover): a long fund name would
-                        otherwise widen this column until the figures wrap. */}
-                    <div className="flex items-baseline gap-2 min-w-0 max-w-56 md:max-w-72" title={h.name}>
-                      {h.ticker ? (
-                        <button
-                          type="button"
-                          className="text-sm font-bold text-slate-900 shrink-0 group-hover/explore:text-[#C49A3C] transition-colors rounded outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-                        >
-                          {h.ticker}
-                        </button>
-                      ) : (
-                        <span className="text-sm font-bold text-slate-900 shrink-0">{h.isin ?? "—"}</span>
-                      )}
-                      <span className="text-xs text-slate-400 truncate">{h.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-3.5 whitespace-nowrap">
-                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                      {h.assetClass}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums whitespace-nowrap">{formatQuantity(h.quantity)}</td>
-                  <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums whitespace-nowrap">
-                    {formatCurrency(h.investedValue, h.currency, 2)}
-                  </td>
-                  <td className="px-3 md:px-6 py-3.5 text-sm font-medium text-slate-500 whitespace-nowrap">{h.broker ?? "Unknown"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+          {filtered.length === 0 ? (
+            <div className="py-14 flex flex-col items-center justify-center text-center px-6">
+              <div className="p-4 bg-slate-50 rounded-2xl mb-3">
+                <Wallet className="h-6 w-6 text-slate-300" />
+              </div>
+              <p className="text-slate-600 font-semibold">{holdings.length === 0 ? "No holdings yet" : "No holdings match your filters"}</p>
+              <p className="text-slate-400 text-sm mt-1">
+                {holdings.length === 0 ? "Upload or add transactions to see your holdings here." : "Try a different search or filter."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-150">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className={`px-5 md:px-6 ${th}`}>Asset</th>
+                    <th className={`px-3 ${th}`}>Class</th>
+                    <th className={`px-3 ${th} text-right`}>Quantity</th>
+                    <th className={`px-3 ${th} text-right`}>Value</th>
+                    <th className={`px-3 ${th} text-right`}>Weight</th>
+                    <th className={`px-3 md:px-6 ${th} text-right`}>Unrealized P&L</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((h) => (
+                    <tr
+                      key={h.assetId}
+                      onClick={h.ticker ? () => setExploringAsset(h) : undefined}
+                      className={`hover:bg-slate-50/60 transition-colors ${h.ticker ? "group/explore cursor-pointer" : ""}`}
+                    >
+                      <td className="px-5 md:px-6 py-3.5">
+                        {/* Capped, the name truncated (full name on hover): a long fund name would
+                            otherwise widen this column until the figures wrap. */}
+                        <div className="flex items-baseline gap-2 min-w-0 max-w-56 md:max-w-72" title={h.name}>
+                          {h.ticker ? (
+                            <button
+                              type="button"
+                              className="text-sm font-bold text-slate-900 shrink-0 group-hover/explore:text-[#C49A3C] transition-colors rounded outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+                            >
+                              {h.ticker}
+                            </button>
+                          ) : (
+                            <span className="text-sm font-bold text-slate-900 shrink-0">{h.isin ?? "—"}</span>
+                          )}
+                          <span className="text-xs text-slate-400 truncate">{h.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                          {h.assetClass}
+                        </span>
+                        {h.currency !== currency && <span className="ml-1.5 text-[10px] font-bold text-slate-400">{h.currency}</span>}
+                      </td>
+                      <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums whitespace-nowrap">{formatQuantity(h.quantity)}</td>
+                      <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums whitespace-nowrap">{formatCurrency(h.marketValue, currency, 2)}</td>
+                      <td className="px-3 py-3.5 text-sm font-semibold text-slate-500 text-right tabular-nums whitespace-nowrap">{h.weightPct.toFixed(1)}%</td>
+                      <td className="px-3 md:px-6 py-3.5 text-right tabular-nums whitespace-nowrap">
+                        <span className={`text-sm font-bold ${h.unrealizedPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatSignedCurrency(h.unrealizedPnl, currency)}</span>
+                        <span className="block text-[11px] font-semibold text-slate-400">{formatPct(h.roiPct)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {exploringCurrencies && (
         <ExploreView title="Holdings" onClose={() => setExploringCurrencies(false)}>
-          <HoldingsExplore byCurrency={byCurrency} holdings={holdings} positions={positions} />
+          {aggregate && <PortfoliosMixModule slot={aggregate.portfolios} comovement={aggregate.comovement.module} currency={currency} />}
+          <HoldingsExplore holdings={holdings} currency={currency} portfolioUuid={portfolioUuid} revision={slot.revision} />
+          <ExposurePanels sector={sector} region={region} />
         </ExploreView>
       )}
-      {exploringTicker && (
-        <ExploreView title={exploringTicker} onClose={() => setExploringTicker(null)}>
-          <AssetExplore ticker={exploringTicker} positions={holdings.filter((h) => h.ticker === exploringTicker)} />
+      {exploringAsset?.ticker && (
+        <ExploreView title={exploringAsset.ticker} onClose={() => setExploringAsset(null)}>
+          <AssetExplore ticker={exploringAsset.ticker} assetId={exploringAsset.assetId} portfolioUuid={portfolioUuid} revision={slot.revision} />
         </ExploreView>
       )}
     </div>
@@ -1743,15 +1654,17 @@ const ASSET_RANGE_LABELS: Record<AssetChartRange, string> = { "1M": "1 month", "
 /**
  * ASSET EXPLORE — one holding's own page, opened from a row of HoldingsExplorer: its price
  * over a chosen range (GET /v1/assets/{ticker}), what the asset is (identifiers, class,
- * sector or TER…), what it's made of when it's a fund, and the position held in it (the
- * HoldingsExplorer rows for that ticker — the endpoint knows nothing about portfolios).
+ * sector or TER…), what it's made of when it's a fund, and the user's own position in it
+ * (GET /positions/{assetId}, fetched alongside: the asset endpoint knows nothing about
+ * portfolios).
  *
  * Prices default to the user's reference currency, the one the rest of Insights is in; when
  * the asset is quoted in another one, a toggle switches to its own quote prices. Changing
  * range keeps the previous chart on screen (dimmed) until the new one arrives, since a ticker
  * nobody else holds can take a few seconds.
  */
-function AssetExplore({ ticker, positions }: { ticker: string; positions: Holding[] }) {
+function AssetExplore({ ticker, assetId, portfolioUuid, revision }: { ticker: string; assetId: string; portfolioUuid: string; revision: number }) {
+  const position = useDetail(() => portfolioService.getPosition(portfolioUuid, assetId), assetId, revision);
   const [range, setRange] = useState<AssetChartRange>("1Y");
   const [inQuoteCurrency, setInQuoteCurrency] = useState(false);
   // `forRange`: the range the last answer (data or error) was for — loading while it isn't the
@@ -1904,7 +1817,7 @@ function AssetExplore({ ticker, positions }: { ticker: string; positions: Holdin
       </Module>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ExplorePanel title="About">
+        <ExplorePanel eyebrow={data.assetClass} title="About" desc="What the asset is and where it trades.">
           <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">
             {facts.map((f) => (
               <div key={f.label} className="flex items-center justify-between gap-4 py-3">
@@ -1914,41 +1827,11 @@ function AssetExplore({ ticker, positions }: { ticker: string; positions: Holdin
             ))}
           </dl>
         </ExplorePanel>
-        {positions.length > 0 && (
-          <ExplorePanel title="Your position">
-            <div className="divide-y divide-slate-100">
-              {positions.map((p, i) => (
-                <dl key={`${p.broker ?? ""}-${p.currency}-${i}`} className="px-6 md:px-7 py-2">
-                  {positions.length > 1 && (
-                    <p className="pt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{p.broker ?? "Unknown broker"}</p>
-                  )}
-                  <div className="flex items-center justify-between gap-4 py-3">
-                    <dt className="text-[13px] font-semibold text-slate-600">Quantity</dt>
-                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatQuantity(p.quantity)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-                    <dt className="text-[13px] font-semibold text-slate-600">Invested</dt>
-                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(p.investedValue, p.currency, 2)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-                    <dt className="text-[13px] font-semibold text-slate-600">Fees paid</dt>
-                    <dd className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(p.fees, p.currency, 2)}</dd>
-                  </div>
-                  {positions.length === 1 && (
-                    <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-                      <dt className="text-[13px] font-semibold text-slate-600">Broker</dt>
-                      <dd className="text-[13px] font-bold text-slate-900">{p.broker ?? "Unknown"}</dd>
-                    </div>
-                  )}
-                </dl>
-              ))}
-            </div>
-          </ExplorePanel>
-        )}
+        {position.data && <PositionPanel position={position.data} />}
       </div>
 
       {data.topHoldings.length > 0 && (
-        <ExplorePanel title="Largest holdings">
+        <ExplorePanel eyebrow="Fund" title="Largest Holdings" desc="The fund's largest positions, by weight.">
           <div className="p-6 md:p-7">
             <ExposureBreakdown entries={data.topHoldings} />
           </div>
@@ -1957,18 +1840,68 @@ function AssetExplore({ ticker, positions }: { ticker: string; positions: Holdin
       {(data.sectorWeightings.length > 1 || data.regionWeightings.length > 1) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {data.sectorWeightings.length > 1 && (
-            <ExplorePanel title="By sector">
+            <ExplorePanel eyebrow="Fund" title="By Sector" desc="Where the fund's companies operate, by weight.">
               <div className="p-6 md:p-7"><ExposureBreakdown entries={data.sectorWeightings} /></div>
             </ExplorePanel>
           )}
           {data.regionWeightings.length > 1 && (
-            <ExplorePanel title="By region">
+            <ExplorePanel eyebrow="Fund" title="By Region" desc="The fund's geographic exposure, by weight.">
               <div className="p-6 md:p-7"><ExposureBreakdown entries={data.regionWeightings} /></div>
             </ExplorePanel>
           )}
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * POSITION PANEL — the user's own position in an asset, in the reference currency: what's held
+ * now and what it's worth, what selling it has realized, what it has paid, and what trading it
+ * has cost on each broker. Each part shows only when it applies.
+ */
+function PositionPanel({ position }: { position: PositionResponse }) {
+  const { currency, holding, realized, dividends, costs } = position;
+  const rows: { label: string; value: string; tone?: "gain" | "loss" }[] = [];
+  const tone = (n: number) => (n >= 0 ? "gain" : "loss");
+  if (holding) {
+    rows.push(
+      { label: "Quantity", value: formatQuantity(holding.quantity) },
+      { label: "Value", value: formatCurrency(holding.marketValue, currency, 2) },
+      { label: "Average cost", value: formatCurrency(holding.avgCost, currency, 2) },
+      { label: "Unrealized P&L", value: `${formatSignedCurrency(holding.unrealizedPnl, currency)} · ${formatPct(holding.roiPct)}`, tone: tone(holding.unrealizedPnl) },
+      { label: "Weight in the portfolio", value: `${holding.weightPct.toFixed(1)}%` },
+    );
+  }
+  if (realized && realized.realizedTradingPnl !== 0) {
+    rows.push({ label: "Realized from sales", value: formatSignedCurrency(realized.realizedTradingPnl, currency), tone: tone(realized.realizedTradingPnl) });
+  }
+  if (dividends && dividends.lifetimeIncome > 0) {
+    rows.push({ label: "Dividends received", value: formatCurrency(dividends.lifetimeIncome, currency, 2) });
+    if (dividends.yieldOnCostPct !== null) rows.push({ label: "Yield on cost", value: `${dividends.yieldOnCostPct.toFixed(2)}%` });
+  }
+  for (const c of costs) {
+    rows.push({ label: costs.length > 1 ? `Trading costs · ${c.broker}` : "Trading costs", value: formatCurrency(c.totalCosts, currency, 2) });
+  }
+  if (rows.length === 0) return null;
+
+  return (
+    <ExplorePanel
+      eyebrow={currency}
+      title={holding ? "Your Position" : "Your Past Position"}
+      desc="What you hold of it, what selling it has realized, what it has paid and what trading it has cost."
+    >
+      <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-4 py-3">
+            <dt className="text-[13px] font-semibold text-slate-600">{r.label}</dt>
+            <dd className={`text-[13px] font-bold tabular-nums text-right ${r.tone === "gain" ? "text-emerald-600" : r.tone === "loss" ? "text-rose-600" : "text-slate-900"}`}>
+              {r.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </ExplorePanel>
   );
 }
 
@@ -2055,6 +1988,11 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
       ) : (
         <>
           <Module>
+            <ModuleHead
+              eyebrow={period.currency}
+              title="The Month"
+              desc={period.inProgress ? "From the value at the end of last month to today's." : "From the value at the end of the previous month to its own."}
+            />
             <PeriodHero
               currency={period.currency}
               endValue={period.t1Value}
@@ -2222,152 +2160,157 @@ function MonthlyReturnsHeatmap({
   );
 }
 
-interface CurrencyRealizedGroup {
-  currency: string;
-  totalPl: number;
-  sellCount: number;
-  trades: AssetRealizedTrade[];
-}
-
-function groupRealizedTradesByCurrency(trades: AssetRealizedTrade[]): CurrencyRealizedGroup[] {
-  const byCurrency = new Map<string, AssetRealizedTrade[]>();
-  for (const t of trades) {
-    if (!byCurrency.has(t.currency)) byCurrency.set(t.currency, []);
-    byCurrency.get(t.currency)!.push(t);
-  }
-  return [...byCurrency.entries()]
-    .map(([currency, list]) => ({
-      currency,
-      totalPl: list.reduce((sum, t) => sum + t.realizedPl, 0),
-      sellCount: list.reduce((sum, t) => sum + t.sellCount, 0),
-      trades: [...list].sort((a, b) => Math.abs(b.realizedPl) - Math.abs(a.realizedPl)),
-    }))
-    .sort((a, b) => b.trades.length - a.trades.length);
+/**
+ * REALIZED BARS — assets' realized trading P&L as bars growing from a centre line, gains to the
+ * right and losses to the left, all on one scale. Under each, what it paid in dividends and
+ * whether it's still held.
+ */
+function RealizedBars({ rows, currency }: { rows: RealizedPnlEntryResponse[]; currency: string }) {
+  const maxAbs = Math.max(0, ...rows.map((r) => Math.abs(r.realizedTradingPnl)));
+  return (
+    <div className="space-y-5">
+      {rows.map((r) => {
+        const isGain = r.realizedTradingPnl >= 0;
+        const halfWidthPct = maxAbs > 0 ? (Math.abs(r.realizedTradingPnl) / maxAbs) * 50 : 0;
+        return (
+          <div key={r.assetId}>
+            <div className="flex items-baseline justify-between gap-4 mb-1.5">
+              <span className="text-sm font-bold text-slate-900 truncate">{r.ticker ? `${r.name} (${r.ticker})` : r.name}</span>
+              <span className={`text-sm font-bold shrink-0 ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
+                {formatSignedCurrency(r.realizedTradingPnl, currency)}
+              </span>
+            </div>
+            <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
+              {isGain ? (
+                <div className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500" style={{ width: `${halfWidthPct}%` }} />
+              ) : (
+                <div className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500" style={{ width: `${halfWidthPct}%` }} />
+              )}
+            </div>
+            <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400">
+              <span>{r.isHeld ? "Still partly held" : "Closed"}</span>
+              {r.dividendIncome !== 0 && <span>+ {formatCurrency(r.dividendIncome, currency, 0)} in dividends</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
- * REALIZED P&L CARD — lifetime closed-position P&L, moved here from the Dashboard Overview
- * (which now only covers live/open-position figures) since it's a performance figure over
- * the portfolio's full history, same time horizon as the rest of this page. Grouped by each
- * trade's own native currency (not the reference currency the rest of this page's figures
- * are in) — a group's totals are computed locally from its trades rather than relying on a
- * pre-aggregated backend figure, since FullHistoryDashboard only supplies the trade list.
- *
- * With exactly one currency in play, its Total P&L / Sell Transactions move up into the card's
- * own header (right-aligned next to the title, same treatment as VolatilityModule's headline
- * figure) instead of repeating in a row above that single group's trade list — one currency
- * means one unambiguous total. With more than one currency, a single header figure would imply
- * the totals can be summed across them, which they can't (see groupRealizedTradesByCurrency),
- * so each group keeps its own totals row in that case.
+ * REALIZED P&L MODULE — the Income & Costs section's realized P&L: what selling has locked in
+ * since inception, in the reference currency (each sale converted at its own date, the PDF
+ * report's figures), with the dividends received on the side, then the five assets whose sales
+ * made or lost the most. Its detail is Profit & Loss's: every asset (RealizedPnlExplore,
+ * /insights/realized-pnl), then every dividend figure and payer (DividendsExplore).
  */
-function RealizedPnLCard({ trades }: { trades: AssetRealizedTrade[] }) {
-  const groups = useMemo(() => groupRealizedTradesByCurrency(trades), [trades]);
-  const single = groups.length === 1 ? groups[0] : null;
-  const singleIsGain = single !== null && single.totalPl >= 0;
+function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot<InsightsRealizedPnlModule>; currency: string; portfolioUuid: string }) {
+  const [exploring, setExploring] = useState(false);
+  const data = slot.module;
+  const hasAny = data !== null && (data.topAssets.length > 0 || data.totalRealizedPnl !== 0);
+  const canExplore = hasAny && !slot.updating;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow="Lifetime"
+        eyebrow={currency}
         title="Realized P&L"
-        desc="From closed positions, based on recorded buy and sell prices."
-        right={single ? (
-          <div className="grid grid-cols-2 divide-x divide-slate-200">
-            <div className="pr-6">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total P&L</p>
-              <p
-                className={`text-2xl font-black tabular-nums mt-1 ${singleIsGain ? "text-emerald-600" : "text-rose-600"}`}
-                style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-              >
-                {singleIsGain ? "+" : ""}{formatCurrency(single.totalPl, single.currency, 2)}
-              </p>
-            </div>
-            <div className="pl-6">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sell Transactions</p>
-              <p className="text-2xl font-black tabular-nums text-slate-900 mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                {single.sellCount}
-              </p>
-            </div>
+        desc="What selling has locked in since inception, plus the dividends received."
+        onExplore={canExplore ? () => setExploring(true) : undefined}
+        right={hasAny && !slot.updating ? (
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total</p>
+            <p
+              className={`text-2xl font-black tabular-nums mt-1 ${data.totalRealizedPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+              style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+            >
+              {formatSignedCurrency(data.totalRealizedPnl, currency)}
+            </p>
           </div>
         ) : undefined}
       />
-      {groups.length === 0 ? (
-        <p className="text-sm text-slate-400 p-6 md:p-7">No closed positions yet.</p>
-      ) : (
-        <div className="divide-y divide-slate-100">
-          {groups.map((group) => (
-            <RealizedPnLGroup key={group.currency} group={group} showCurrencyLabel={groups.length > 1} showTotals={groups.length > 1} />
-          ))}
-        </div>
+      <SlotPlaceholder slot={slot} preparingMessage={PREPARING_TICK} />
+      {data !== null && !slot.updating && (
+        <>
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {!hasAny ? (
+            <ModuleMessage>No closed positions yet.</ModuleMessage>
+          ) : (
+            <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] divide-y divide-slate-100 @3xl:divide-y-0 @3xl:divide-x">
+              <FigureList>
+                <FigureRow
+                  label="From sales"
+                  info="Sale proceeds minus what those units cost, each sale converted at its own date."
+                  value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)}
+                  tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"}
+                />
+                <FigureRow
+                  label="From dividends"
+                  info="Dividends received since inception, from the holdings you still have and the ones you sold."
+                  value={formatCurrency(data.totalDividendIncome, currency, 0)}
+                />
+              </FigureList>
+              <div className="p-6 md:p-7">
+                {data.topAssets.length === 0 ? (
+                  <p className="text-sm text-slate-400">Nothing sold yet: the total is all dividends.</p>
+                ) : (
+                  <RealizedBars rows={data.topAssets} currency={currency} />
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {canExplore && exploring && (
+        <ExploreView title="Profit & Loss" onClose={() => setExploring(false)}>
+          <RealizedPnlExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
+          <DividendsExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
+        </ExploreView>
       )}
     </Module>
   );
 }
 
-function RealizedPnLGroup({
-  group, showCurrencyLabel, showTotals,
-}: { group: CurrencyRealizedGroup; showCurrencyLabel: boolean; showTotals: boolean }) {
-  const isGain = group.totalPl >= 0;
-  const maxAbsPl = Math.max(0, ...group.trades.map(t => Math.abs(t.realizedPl)));
+/**
+ * REALIZED P&L EXPLORE — the first part of Profit & Loss's detail, /insights/realized-pnl: the
+ * totals, then every asset sold or that paid dividends, sortable.
+ */
+function RealizedPnlExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getRealizedPnl(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <RealizedPnlDetail data={data} />}</DetailBody>;
+}
+
+function RealizedPnlDetail({ data }: { data: RealizedPnlResponse }) {
+  const { currency } = data;
+  const columns = useMemo((): DataColumn<RealizedPnlEntryResponse>[] => [
+    { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} sub={a.isHeld ? "Still partly held" : "Closed"} /> },
+    { key: "trading", label: "From sales", align: "right", sortValue: (a) => a.realizedTradingPnl, render: (a) => <SignedAmount amount={a.realizedTradingPnl} currency={currency} /> },
+    { key: "dividends", label: "Dividends", align: "right", sortValue: (a) => a.dividendIncome, render: (a) => formatCurrency(a.dividendIncome, currency, 0) },
+    { key: "total", label: "Total", align: "right", sortValue: (a) => a.realizedPnl, render: (a) => <SignedAmount amount={a.realizedPnl} currency={currency} /> },
+  ], [currency]);
 
   return (
-    <div className="p-6 md:p-7">
-      {/* Skipped entirely when there's nothing left to show here — a single currency's Total
-          P&L / Sell Transactions already moved up into the card header (see RealizedPnLCard). */}
-      {(showCurrencyLabel || showTotals) && (
-        <div className="flex flex-wrap items-baseline justify-between gap-4 mb-5">
-          {showCurrencyLabel && <p className="text-xs font-black uppercase tracking-wider text-slate-400">{group.currency}</p>}
-          {showTotals && (
-            <div className="grid grid-cols-2 divide-x divide-slate-200 ml-auto">
-              <div className="pr-6">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total P&L</p>
-                <p className={`text-lg font-black tabular-nums ${isGain ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                  {isGain ? "+" : ""}{formatCurrency(group.totalPl, group.currency, 2)}
-                </p>
-              </div>
-              <div className="pl-6">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Sell Transactions</p>
-                <p className="text-lg font-black tabular-nums text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                  {group.sellCount}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="space-y-5">
-        {group.trades.map((t) => {
-          const tradeIsGain = t.realizedPl >= 0;
-          const halfWidthPct = maxAbsPl > 0 ? (Math.abs(t.realizedPl) / maxAbsPl) * 50 : 0;
-          const label = t.ticker ? `${t.name} (${t.ticker})` : t.name;
-          return (
-            <div key={`${t.currency}::${t.assetId}`}>
-              <div className="flex items-baseline justify-between gap-4 mb-1.5">
-                <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
-                <span className={`text-sm font-bold shrink-0 ${tradeIsGain ? "text-emerald-600" : "text-rose-600"}`}>
-                  {tradeIsGain ? "+" : ""}{formatCurrency(t.realizedPl, t.currency, 2)}
-                </span>
-              </div>
-              <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
-                {tradeIsGain ? (
-                  <div className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500" style={{ width: `${halfWidthPct}%` }} />
-                ) : (
-                  <div className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500" style={{ width: `${halfWidthPct}%` }} />
-                )}
-              </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[11px] text-slate-400">
-                  {formatQuantity(t.quantitySold)} units · {t.sellCount} {t.sellCount === 1 ? "sale" : "sales"}
-                </span>
-                <span className="text-[11px] text-slate-400">{formatCurrency(t.totalCost, t.currency)} → {formatCurrency(t.totalProceeds, t.currency)}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <>
+      <ExplorePanel eyebrow={currency} title="Realized P&L" desc="What selling has locked in since inception, each sale converted at its own date, plus the dividends received.">
+        <FigureList>
+          <FigureRow label="Total" info="From sales plus dividends, since inception." value={formatSignedCurrency(data.totalRealizedPnl, currency)} tone={data.totalRealizedPnl >= 0 ? "gain" : "loss"} emphasis />
+          <FigureRow label="From sales" info="Sale proceeds minus what those units cost, each sale converted at its own date." value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)} tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"} />
+          <FigureRow label="From dividends" info="Dividends received since inception, from the holdings you still have and the ones you sold." value={formatCurrency(data.totalDividendIncome, currency, 0)} />
+        </FigureList>
+      </ExplorePanel>
+      <ExplorePanel eyebrow={currency} title="Realized P&L by Asset" desc="Every asset sold or that paid dividends, the largest gains and losses from sales first.">
+        {/* The backend's order: largest trading P&L either way first, dividend-only assets last. */}
+        <DataTable columns={columns} rows={data.byAsset} rowKey={(a) => a.assetId} />
+      </ExplorePanel>
+    </>
   );
+}
+
+// A signed amount in a table cell, green or red by its sign.
+function SignedAmount({ amount, currency }: { amount: number; currency: string }) {
+  return <span className={`font-bold ${amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatSignedCurrency(amount, currency)}</span>;
 }
 
 const monthShortYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
@@ -2375,82 +2318,96 @@ const monthShortYearLabel = (iso: string) => new Date(iso).toLocaleDateString("e
 const formatPctOrDash = (pct: number | null) => (pct === null ? "—" : formatPct(pct));
 
 /**
- * Fetches one analytics document for a module. Every analytics endpoint answers 200 with the
- * document or null ("being prepared"), so `data` null with `failed` false means "not computed
- * yet"; `failed` is only for a request that errored. A failed request degrades to the
- * module's own message rather than the page-level error banner, since the other modules on
- * the page are unaffected.
- *
- * `updating` is true while the document came back `isStale: true` and the rebuild it's waiting
- * on hasn't landed: the caller should hide its numbers/charts behind an "updating" state rather
- * than draw them (see StaleUpdatingState). This hook refetches every STALE_POLL_INTERVAL_MS
- * while that's the case, and gives up after STALE_TIMEOUT_MS — at that point `updating` drops
- * back to false (so the caller draws the — possibly still-mixed — data) even though
- * `data.isStale` is still true, which the caller reads as "show the taking-longer-than-usual
- * hint instead of the updating state" (see UpdatingNote's call sites).
+ * MODULE SLOT — what a module on the page is drawn from: its own object in its section's
+ * response (null until its document is first computed), and the state of the section's request
+ * around it. A stale module (the user edited transactions, the rebuild hasn't landed) is
+ * `updating` while useInsights is still waiting for it — the caller hides its figures behind
+ * StaleUpdatingState, since old and new numbers would describe two different portfolios — and
+ * `lagging` once it has stopped waiting: the figures are drawn with an UpdatingNote.
+ * `revision` goes up with each fetch of the section, so an open detail view fetches again too.
  */
-function useAnalytics<T extends { isStale: boolean }>(
-  load: (portfolioUuid: string) => Promise<T | null>,
-  portfolioUuid: string,
-) {
-  const [state, setState] = useState<{ data: T | null; loading: boolean; failed: boolean; updating: boolean }>({
-    data: null, loading: true, failed: false, updating: false,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let staleSince: number | null = null;
-
-    const tick = async (isFirst: boolean) => {
-      if (isFirst) setState({ data: null, loading: true, failed: false, updating: false });
-      try {
-        const data = await load(portfolioUuid);
-        if (cancelled) return;
-        if (data?.isStale) {
-          staleSince ??= Date.now();
-          const timedOut = Date.now() - staleSince >= STALE_TIMEOUT_MS;
-          setState({ data, loading: false, failed: false, updating: !timedOut });
-          if (!timedOut) timer = setTimeout(() => tick(false), STALE_POLL_INTERVAL_MS);
-        } else {
-          staleSince = null;
-          setState({ data, loading: false, failed: false, updating: false });
-        }
-      } catch {
-        if (!cancelled) setState({ data: null, loading: false, failed: true, updating: false });
-      }
-    };
-    tick(true);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [load, portfolioUuid]);
-
-  return state;
+interface ModuleSlot<M> {
+  module: M | null;
+  loading: boolean;
+  failed: boolean;
+  updating: boolean;
+  lagging: boolean;
+  revision: number;
 }
 
+function slotOf<S, M>(
+  section: SectionState<S>, timedOut: boolean, pick: (data: S) => M | null, staleOf: (module: M, data: S) => boolean,
+): ModuleSlot<M> {
+  const data = section.data;
+  const picked = data === null ? null : pick(data);
+  const stale = data !== null && picked !== null && staleOf(picked, data);
+  return {
+    module: picked,
+    loading: data === null && !section.failed,
+    failed: data === null && section.failed,
+    updating: stale && !timedOut,
+    lagging: stale && timedOut,
+    revision: section.revision,
+  };
+}
+
+// Most modules carry their own isStale; value, this month and the heatmap go by the Performance
+// section's historyIsStale instead (see HistoryPage).
+const ownStale = (module: { isStale: boolean }) => module.isStale;
+
+// How deep each overlay sits over the page: a month opens from a detail view.
+const OVERLAY_DEPTH: Record<DashboardOverlay | "none", number> = { none: 0, explore: 1, month: 2 };
+
+const PREPARING_ANALYTICS = "Being prepared — this shows up after the overnight analysis of your portfolio has run.";
+const PREPARING_TICK = "Being prepared — this shows up shortly after your first transactions are processed.";
+
 /**
- * Shared loading / failed / null / updating placeholder for the analytics modules; null when
- * there's a document to draw normally. `updating` (see useAnalytics) takes priority over
- * drawing the module's own content but comes after the other states, which all mean there's no
- * document at all to be stale about.
+ * Shared loading / failed / null / updating placeholder for a module; null when there's a module
+ * to draw normally. `updating` takes priority over drawing the module's own content but comes
+ * after the other states, which all mean there's nothing to be stale about.
  */
-function AnalyticsPlaceholder({
-  loading, failed, hasData, updating, preparingMessage,
-}: { loading: boolean; failed: boolean; hasData: boolean; updating: boolean; preparingMessage: string }) {
-  if (loading) {
+function SlotPlaceholder({ slot, preparingMessage = PREPARING_ANALYTICS }: { slot: ModuleSlot<unknown>; preparingMessage?: string }) {
+  if (slot.loading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="animate-spin h-6 w-6 text-[#C49A3C]" />
       </div>
     );
   }
-  if (failed) return <ModuleMessage>Unable to load this right now. Try again in a moment.</ModuleMessage>;
-  if (!hasData) return <ModuleMessage>{preparingMessage}</ModuleMessage>;
-  if (updating) return <StaleUpdatingState />;
+  if (slot.failed) return <ModuleMessage>Unable to load this right now. Try again in a moment.</ModuleMessage>;
+  if (slot.module === null) return <ModuleMessage>{preparingMessage}</ModuleMessage>;
+  if (slot.updating) return <StaleUpdatingState />;
   return null;
+}
+
+// The module's figures can be drawn: loaded, computed, and not waiting on a rebuild.
+const ready = <M,>(slot: ModuleSlot<M>): slot is ModuleSlot<M> & { module: M } => slot.module !== null && !slot.updating;
+
+/**
+ * A detail view's document (see useDetail): a spinner while it loads, a message when it failed or
+ * isn't computed yet, otherwise `children` with it. A document that's stale inside its detail is
+ * drawn with an UpdatingNote on top: the module that opened it was fresh a moment ago, and the
+ * page fetches it again once the rebuild lands.
+ */
+function DetailBody<T extends { isStale: boolean }>({
+  detail, children,
+}: { detail: { data: T | null; error: unknown; loading: boolean }; children: (data: T) => React.ReactNode }) {
+  if (detail.loading) {
+    return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" /></div>;
+  }
+  if (detail.data === null) {
+    return (
+      <Module>
+        <ModuleMessage>{detail.error ? "Unable to load this right now. Try again in a moment." : PREPARING_ANALYTICS}</ModuleMessage>
+      </Module>
+    );
+  }
+  return (
+    <>
+      {detail.data.isStale && <UpdatingNote />}
+      {children(detail.data)}
+    </>
+  );
 }
 
 /**
@@ -2496,20 +2453,22 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
 }
 
 /**
- * VOLATILITY MODULE — /volatility: the portfolio's annualized volatility as a headline, and
- * the rolling series behind it. The document is null until the first analytics run, and
- * "insufficient_history" (nothing to show but a message) under a year of history.
+ * VOLATILITY MODULE — the Risk section's volatility: the portfolio's annualized volatility as a
+ * headline, and the rolling series behind it. Null until the first analytics run, and
+ * "insufficient_history" (nothing to show but a message) under a year of history. Risk on the
+ * page: its detail (RiskDetail) holds the rest of it.
  */
-function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<VolatilityResponse>(portfolioService.getVolatility, portfolioUuid);
-
-  const showFigure = data !== null && !updating && data.status !== "insufficient_history";
+function VolatilityModule({
+  slot, portfolioUuid, returnsRevision, aggregate,
+}: { slot: ModuleSlot<InsightsVolatilityModule>; portfolioUuid: string; returnsRevision: number; aggregate: AggregateSlots | null }) {
+  const data = slot.module;
+  const showFigure = ready(slot) && slot.module.status !== "insufficient_history";
   const [exploring, setExploring] = useState(false);
 
   return (
     <Module>
       <ModuleHead
-        onExplore={showFigure ? () => setExploring(true) : undefined}
+        onExplore={ready(slot) ? () => setExploring(true) : undefined}
         eyebrow="Risk"
         title="Volatility"
         icon={
@@ -2524,31 +2483,25 @@ function VolatilityModule({ portfolioUuid }: { portfolioUuid: string }) {
           <div className="sm:text-right shrink-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Annualized volatility</p>
             <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {data.annualizedVolatilityPct === null ? "—" : `${data.annualizedVolatilityPct.toFixed(2)}%`}
+              {plainPctOrDash(slot.module.annualizedVolatilityPct)}
             </p>
           </div>
         ) : undefined}
       />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
+      <SlotPlaceholder slot={slot} />
+      {ready(slot) && (
         <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          {data.status === "insufficient_history" ? (
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.module.status === "insufficient_history" ? (
             <ModuleMessage>Volatility needs at least a year of history — it will appear once your portfolio has one.</ModuleMessage>
           ) : (
-            data.rollingVolatilityPct && <RollingVolatilityChart series={data.rollingVolatilityPct} />
+            slot.module.rollingVolatilityPct && <RollingVolatilityChart series={slot.module.rollingVolatilityPct} />
           )}
         </>
       )}
-      {showFigure && exploring && (
-        <ExploreView title="Volatility" onClose={() => setExploring(false)}>
-          <VolatilityExplore data={data} portfolioUuid={portfolioUuid} />
+      {ready(slot) && exploring && (
+        <ExploreView title="Risk" onClose={() => setExploring(false)}>
+          <RiskDetail portfolioUuid={portfolioUuid} revision={slot.revision} returnsRevision={returnsRevision} aggregate={aggregate} />
         </ExploreView>
       )}
     </Module>
@@ -2560,17 +2513,32 @@ const rangeLabel = (start: string, end: string) => `${shortDateLabel(start)} –
 const daysBetween = (start: string, end: string) => Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86_400_000);
 
 /**
- * VOLATILITY EXPLORE — the detail view behind VolatilityModule: the rolling chart, then the
- * turbulent stretches the backend picked out of it (riskEvents), most recent first, with what
- * the portfolio did through each and what it held at the time; then the drawdown
- * (DrawdownSection): how far below its previous high it fell, and its deepest falls.
+ * VOLATILITY EXPLORE — the detail view behind VolatilityModule, /insights/volatility: the
+ * rolling chart, then the turbulent stretches the backend picked out of it (riskEvents), most
+ * recent first, with what the portfolio did through each and what it held at the time; then the
+ * drawdown (DrawdownSection): how far below its previous high it fell, and its deepest falls.
+ * `revision` follows both documents it's built from (volatility and returns).
  */
-function VolatilityExplore({ data, portfolioUuid }: { data: VolatilityResponse; portfolioUuid: string }) {
+function VolatilityExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getVolatility(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <VolatilityDetail data={data} />}</DetailBody>;
+}
+
+function VolatilityDetail({ data }: { data: VolatilityDetailResponse }) {
+  if (data.status === "insufficient_history") {
+    return <Module><ModuleMessage>Volatility needs at least a year of history — it will appear once your portfolio has one.</ModuleMessage></Module>;
+  }
+  return <VolatilityPanels data={data} />;
+}
+
+function VolatilityPanels({ data }: { data: VolatilityDetailResponse }) {
   const events = useMemo(() => [...data.riskEvents].sort((a, b) => b.startDate.localeCompare(a.startDate)), [data]);
   return (
     <>
       <ExplorePanel
-        title={data.rollingWindowDays ? `Rolling ${data.rollingWindowDays}-day volatility` : "Rolling volatility"}
+        eyebrow="Risk"
+        title="Rolling Volatility"
+        desc={`Annualized volatility${data.rollingWindowDays ? ` over a rolling ${data.rollingWindowDays}-day window` : ""}, day by day.`}
         right={
           <span className="text-sm font-black tabular-nums text-slate-900">
             {plainPctOrDash(data.annualizedVolatilityPct)} <span className="text-xs font-bold text-slate-400">overall</span>
@@ -2580,12 +2548,9 @@ function VolatilityExplore({ data, portfolioUuid }: { data: VolatilityResponse; 
         {data.rollingVolatilityPct ? <RollingVolatilityChart series={data.rollingVolatilityPct} /> : <ModuleMessage>Not enough data yet to chart.</ModuleMessage>}
       </ExplorePanel>
       <ExplorePanel
-        title="Turbulent periods"
-        right={
-          <InfoTip text="Stretches of at least five trading days when the portfolio's 20-day volatility stayed in its top 10%.">
-            <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
-          </InfoTip>
-        }
+        eyebrow="Risk"
+        title="Turbulent Periods"
+        desc="Stretches of at least five trading days when the portfolio's 20-day volatility stayed in its top 10%, with what it held then."
       >
         {events.length === 0 ? (
           <ModuleMessage>No stretch of unusual turbulence so far.</ModuleMessage>
@@ -2615,7 +2580,7 @@ function VolatilityExplore({ data, portfolioUuid }: { data: VolatilityResponse; 
           </ul>
         )}
       </ExplorePanel>
-      <DrawdownSection portfolioUuid={portfolioUuid} />
+      <DrawdownSection data={data} />
     </>
   );
 }
@@ -2668,26 +2633,6 @@ function CumulativeReturnChart({ portfolio, benchmark }: { portfolio: TimeSeries
   );
 }
 
-/**
- * SERIES VALUE — one labelled figure for a StatContent that compares two series: a marker
- * matching that series' line on the chart (solid gold for the portfolio, dashed grey for the
- * benchmark), its name, and its value. Reads as its own legend, so the two figures can't be
- * mistaken for one another the way a "56% vs 59%" string could.
- */
-function SeriesValue({
-  label, value, color, dashed = false,
-}: { label: string; value: string; color: string; dashed?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="flex items-center gap-2 font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500">
-        <span className="w-4 border-t-2" style={{ borderColor: color, borderStyle: dashed ? "dashed" : "solid" }} />
-        {label}
-      </span>
-      <span className="text-lg tabular-nums">{value}</span>
-    </div>
-  );
-}
-
 type BasketEntry = BenchmarkComponentEntry & { weightPct: number };
 
 // The benchmark's current basket, largest first. The backend also lists proxies of closed
@@ -2724,65 +2669,8 @@ function BenchmarkBasketList({ basket }: { basket: BasketEntry[] }) {
 const BENCHMARK_BASKET_INFO =
   "Each of your holdings is matched to a proxy ETF. The benchmark holds them at today's weights and receives the same deposits and withdrawals as your portfolio.";
 
-/**
- * BENCHMARK TILE — /benchmark on the page: the portfolio against the benchmark, the chart with
- * both total returns as its legend. Everything else (alpha, beta, tracking error, the
- * side-by-side risk figures, what the benchmark is made of) lives in its detail view
- * (BenchmarkExplore), so the page keeps the one question "am I beating it?" and the detail
- * answers "how, and at what risk?".
- */
-function BenchmarkTile({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<BenchmarkResponse>(portfolioService.getBenchmark, portfolioUuid);
-  const [exploring, setExploring] = useState(false);
-
-  const ready = data !== null && !updating && data.status === "ok";
-  const basket = useMemo(() => (data ? benchmarkBasket(data.components) : []), [data]);
-  const coverage = data?.yearsCovered != null ? `Over the ${data.yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
-  const explore = ready ? () => setExploring(true) : undefined;
-
-  return (
-    <>
-      <Tile>
-        <Module>
-          <ModuleHead
-            eyebrow="All Time"
-            title="Benchmark"
-            desc={data && !updating ? `${coverage}.` : "How your portfolio compares to the market."}
-            onExplore={explore}
-            right={ready ? (
-              <div className="w-52 space-y-1.5 font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                <SeriesValue label="Portfolio" value={formatPctOrDash(data.portfolioTotalReturnPct)} color={PORTFOLIO_COLOR} />
-                <SeriesValue label="Benchmark" value={formatPctOrDash(data.benchmarkTotalReturnPct)} color={BENCHMARK_COLOR} dashed />
-              </div>
-            ) : undefined}
-          />
-          <AnalyticsPlaceholder
-            loading={loading}
-            failed={failed}
-            hasData={data !== null}
-            updating={updating}
-            preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-          />
-          {data !== null && !updating && (
-            <>
-              {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-              {data.status !== "ok" ? (
-                <ModuleMessage>Not enough overlapping history with the benchmark yet to compare.</ModuleMessage>
-              ) : data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct ? (
-                <CumulativeReturnChart portfolio={data.portfolioCumulativeReturnPct} benchmark={data.benchmarkCumulativeReturnPct} />
-              ) : null}
-            </>
-          )}
-        </Module>
-      </Tile>
-      {ready && exploring && (
-        <ExploreView title="Benchmark" onClose={() => setExploring(false)}>
-          <BenchmarkExplore data={data} basket={basket} coverage={coverage} />
-        </ExploreView>
-      )}
-    </>
-  );
-}
+const benchmarkCoverage = (yearsCovered: number | null) =>
+  yearsCovered !== null ? `Over the ${yearsCovered.toFixed(1)} years you share with the benchmark` : "Since inception";
 
 // A difference in percentage points, green when it's the better side for the portfolio.
 // `higherIsBetter` false for volatility; drawdowns are negative, so a higher one is milder.
@@ -2805,11 +2693,25 @@ interface BenchmarkPairRow {
 }
 
 /**
- * BENCHMARK EXPLORE — the detail view behind BenchmarkTile: the chart again, the portfolio and the
- * benchmark figure by figure (return and risk side by side), the relative statistics, and
- * the whole basket.
+ * BENCHMARK EXPLORE — the detail view behind BenchmarkTile, /insights/benchmark: the chart
+ * again, the portfolio and the benchmark figure by figure (return and risk side by side), the
+ * relative statistics, and the whole basket.
  */
-function BenchmarkExplore({ data, basket, coverage }: { data: BenchmarkResponse; basket: BasketEntry[]; coverage: string }) {
+function BenchmarkExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getBenchmark(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <BenchmarkDetail data={data} />}</DetailBody>;
+}
+
+function BenchmarkDetail({ data }: { data: BenchmarkResponse }) {
+  if (data.status !== "ok") {
+    return <Module><ModuleMessage>Not enough overlapping history with the benchmark yet to compare.</ModuleMessage></Module>;
+  }
+  return <BenchmarkPanels data={data} />;
+}
+
+function BenchmarkPanels({ data }: { data: BenchmarkResponse }) {
+  const basket = useMemo(() => benchmarkBasket(data.components), [data]);
+  const coverage = benchmarkCoverage(data.yearsCovered);
   const pairs: BenchmarkPairRow[] = [
     { key: "total", label: "Total return", portfolio: data.portfolioTotalReturnPct, benchmark: data.benchmarkTotalReturnPct, diff: diffOrNull(data.portfolioTotalReturnPct, data.benchmarkTotalReturnPct), higherIsBetter: true, signed: true },
     { key: "annual", label: "Per year", portfolio: data.portfolioAnnualizedReturnPct, benchmark: data.benchmarkAnnualizedReturnPct, diff: data.excessReturnPct, higherIsBetter: true, signed: true },
@@ -2828,14 +2730,14 @@ function BenchmarkExplore({ data, basket, coverage }: { data: BenchmarkResponse;
   return (
     <>
       {data.portfolioCumulativeReturnPct && data.benchmarkCumulativeReturnPct && (
-        <ExplorePanel title={coverage}>
+        <ExplorePanel eyebrow="Benchmark" title="Portfolio vs. Benchmark" desc={`Cumulative return. ${coverage}.`}>
           <CumulativeReturnChart portfolio={data.portfolioCumulativeReturnPct} benchmark={data.benchmarkCumulativeReturnPct} />
         </ExplorePanel>
       )}
-      <ExplorePanel title="Side by side">
+      <ExplorePanel eyebrow="Benchmark" title="Side by Side" desc="The return and risk of each, over the same period.">
         <DataTable columns={pairColumns} rows={pairs} rowKey={(r) => r.key} />
       </ExplorePanel>
-      <ExplorePanel title="Relative figures">
+      <ExplorePanel eyebrow="Benchmark" title="Relative Figures" desc="How the portfolio's returns relate to the benchmark's. Hover a figure for what it means.">
         <FigureList>
           <FigureRow label="Alpha" info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain. Positive means the portfolio earned more than its market exposure alone would suggest." value={formatPctOrDash(data.alphaPct)} tone={data.alphaPct === null ? undefined : data.alphaPct >= 0 ? "gain" : "loss"} />
           <FigureRow label="Beta" info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves." value={ratioOrDash(data.beta)} />
@@ -2851,14 +2753,7 @@ function BenchmarkExplore({ data, basket, coverage }: { data: BenchmarkResponse;
         </FigureList>
       </ExplorePanel>
       {basket.length > 0 && (
-        <ExplorePanel
-          title="What the benchmark is made of"
-          right={
-            <InfoTip text={BENCHMARK_BASKET_INFO}>
-              <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
-            </InfoTip>
-          }
-        >
+        <ExplorePanel eyebrow="Benchmark" title="What the Benchmark Is Made Of" desc={BENCHMARK_BASKET_INFO}>
           <div className="p-6 md:p-7">
             <BenchmarkBasketList basket={basket} />
           </div>
@@ -2868,95 +2763,28 @@ function BenchmarkExplore({ data, basket, coverage }: { data: BenchmarkResponse;
   );
 }
 
-const RISE_ICON = <TrendingUp className="h-4 w-4 text-emerald-600" />;
-const FALL_ICON = <TrendingDown className="h-4 w-4 text-rose-600" />;
-const pctColor = (pct: number | null) => (pct === null ? "slate" : pct >= 0 ? "emerald" : "red");
-
-const lifespanLabel = (days: number) =>
-  days >= 365 ? `${(days / 365).toFixed(1)} years` : `${days} ${days === 1 ? "day" : "days"}`;
-
-/**
- * RETURNS MODULE — /performance: the time-weighted return since inception and per year, then
- * the trailing horizons. Time-weighted, so money added or withdrawn is neither a gain nor a
- * loss — the same figure the monthly heatmap uses. The "Inception" horizon is left out of the
- * row below, since it's the headline already; a horizon longer than the portfolio's history
- * isn't returned at all.
- */
-function ReturnsModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
-  const horizons = data?.horizons.filter((h) => h.period !== "Inception") ?? [];
-  const [exploring, setExploring] = useState(false);
-  const canExplore = data !== null && !updating && data.status !== "insufficient_history";
-
-  return (
-    <Module>
-      <ModuleHead
-        onExplore={canExplore ? () => setExploring(true) : undefined}
-        eyebrow="Performance"
-        title="Returns"
-        desc="Time-weighted: money you add or withdraw doesn't count as a gain or a loss."
-      />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
-        <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          {data.status === "insufficient_history" ? (
-            <ModuleMessage>Not enough history yet to measure returns — they&apos;ll show up here soon.</ModuleMessage>
-          ) : (
-            <>
-              {/* The since-inception figures side by side, then the recent horizons two by two —
-                  beside them in a wide tile, under them in a narrow one. */}
-              <div className={`grid grid-cols-1 divide-y divide-slate-100 ${horizons.length > 0 ? "@3xl:grid-cols-2 @3xl:divide-y-0 @3xl:divide-x" : ""}`}>
-                <div className="grid grid-cols-2 items-center divide-x divide-slate-100">
-                  <StatContent
-                    title="Since Inception"
-                    value={formatPctOrDash(data.totalReturnPct)}
-                    icon={data.totalReturnPct !== null && data.totalReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                    info={`Total return over ${lifespanLabel(data.lifespanDays)}.`}
-                    color={pctColor(data.totalReturnPct)}
-                  />
-                  <StatContent
-                    title="Per Year"
-                    value={formatPctOrDash(data.annualizedReturnPct)}
-                    icon={data.annualizedReturnPct !== null && data.annualizedReturnPct < 0 ? FALL_ICON : RISE_ICON}
-                    info={data.annualizedReturnPct === null ? "Not enough history yet." : "The return since inception, annualized."}
-                    color={pctColor(data.annualizedReturnPct)}
-                  />
-                </div>
-                {horizons.length > 0 && (
-                  <div className="grid grid-cols-2 auto-rows-fr gap-px bg-slate-100">
-                    {horizons.map((h) => <HorizonCell key={h.period} horizon={h} onClick={() => setExploring(true)} />)}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </>
-      )}
-      {canExplore && exploring && (
-        <ExploreView title="Returns" onClose={() => setExploring(false)}>
-          <ReturnsExplore data={data} />
-        </ExploreView>
-      )}
-    </Module>
-  );
-}
 
 const monthYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 const horizonLabel = (period: string) => (period === "Inception" ? "Since inception" : `Last ${period.toLowerCase()}`);
 
 /**
- * RETURNS EXPLORE — the detail view behind ReturnsModule: the growth curve the headline figure is
- * the end of, the return of each calendar year, every horizon with the risk taken to earn it,
- * and the best and worst month.
+ * RETURNS EXPLORE — the detail view behind ReturnsModule, /insights/returns: the growth curve the
+ * headline figure is the end of, the return of each calendar year, every horizon with the risk
+ * taken to earn it, and the best and worst month.
  */
-function ReturnsExplore({ data }: { data: PerformanceResponse }) {
+function ReturnsExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getReturns(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <ReturnsDetail data={data} />}</DetailBody>;
+}
+
+function ReturnsDetail({ data }: { data: ReturnsResponse }) {
+  if (data.status === "insufficient_history") {
+    return <Module><ModuleMessage>Not enough history yet to measure returns — they&apos;ll show up here soon.</ModuleMessage></Module>;
+  }
+  return <ReturnsPanels data={data} />;
+}
+
+function ReturnsPanels({ data }: { data: ReturnsResponse }) {
   const cumulative = useMemo(() => (data.cumulativeReturnPct ? toChartPoints(data.cumulativeReturnPct) : []), [data]);
   const annual = useMemo(
     () => data.annual.filter((a): a is { year: number; returnPct: number } => a.returnPct !== null).map((a) => ({ year: String(a.year), value: a.returnPct })),
@@ -2975,8 +2803,15 @@ function ReturnsExplore({ data }: { data: PerformanceResponse }) {
     <>
       {cumulative.length >= 2 && (
         <ExplorePanel
-          title="Growth since inception"
-          right={<span className="text-sm tabular-nums"><SignedPct pct={data.totalReturnPct} /></span>}
+          eyebrow="Returns"
+          title="Since Inception"
+          desc="Time-weighted: money you add or withdraw doesn't count as a gain or a loss."
+          right={
+            <span className="text-sm tabular-nums">
+              <SignedPct pct={data.totalReturnPct} />
+              {data.annualizedReturnPct !== null && <span className="text-xs font-bold text-slate-400"> · <SignedPct pct={data.annualizedReturnPct} /> per year</span>}
+            </span>
+          }
         >
           <div className="p-6 md:p-7 h-64">
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 256 }}>
@@ -2995,7 +2830,7 @@ function ReturnsExplore({ data }: { data: PerformanceResponse }) {
         </ExplorePanel>
       )}
       {annual.length > 0 && (
-        <ExplorePanel title="By calendar year">
+        <ExplorePanel eyebrow="Returns" title="By Calendar Year" desc="The time-weighted return of each calendar year.">
           <div className="p-6 md:p-7 h-56">
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 224 }}>
               <BarChart data={annual} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
@@ -3012,18 +2847,15 @@ function ReturnsExplore({ data }: { data: PerformanceResponse }) {
       )}
       {data.horizons.length > 0 && (
         <ExplorePanel
-          title="By horizon"
-          right={
-            <InfoTip text="Return / risk is the return over the period divided by its volatility: how much it earned for each unit of swing.">
-              <Info className="h-4 w-4 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
-            </InfoTip>
-          }
+          eyebrow="Returns"
+          title="By Horizon"
+          desc="Each trailing period with the risk taken to earn it. Return / risk is the return divided by the volatility: how much it earned for each unit of swing."
         >
           <DataTable columns={horizonColumns} rows={data.horizons} rowKey={(h) => h.period} />
         </ExplorePanel>
       )}
       {(data.bestMonth || data.worstMonth) && (
-        <ExplorePanel title="Extremes">
+        <ExplorePanel eyebrow="Returns" title="Best and Worst Months" desc="The extremes of the monthly returns, and the deepest fall since inception.">
           <FigureList>
             {data.bestMonth && (
               <FigureRow label={`Best month · ${monthYearLabel(data.bestMonth.month)}`} info="The calendar month with the highest return." value={formatPct(data.bestMonth.returnPct)} tone={data.bestMonth.returnPct >= 0 ? "gain" : "loss"} />
@@ -3039,47 +2871,23 @@ function ReturnsExplore({ data }: { data: PerformanceResponse }) {
   );
 }
 
-function HorizonCell({ horizon, onClick }: { horizon: HorizonEntry; onClick: () => void }) {
-  const pct = horizon.totalReturnPct;
-  return (
-    <button type="button" onClick={onClick} className="bg-white hover:bg-slate-50 transition-colors text-left px-5 md:px-6 py-4 flex flex-col justify-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last {horizon.period.toLowerCase()}</p>
-      <p className={`text-lg font-black tabular-nums mt-1 ${pct === null ? "text-slate-400" : pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-        {formatPctOrDash(pct)}
-      </p>
-    </button>
-  );
-}
-
 /**
- * DRAWDOWN SECTION — part of Volatility's detail view (VolatilityExplore): /performance's
- * drawdown series, how far below its previous high the portfolio stood on each day (0 at a new
- * high, always ≤0), charted and then broken into its deepest falls (DrawdownExplore). Same
- * document as ReturnsModule, fetched on its own.
+ * DRAWDOWN SECTION — part of Volatility's detail view (VolatilityExplore): the drawdown series,
+ * how far below its previous high the portfolio stood on each day (0 at a new high, always ≤0),
+ * charted and then broken into its deepest falls (DrawdownExplore). It comes from the returns
+ * document, so it can be missing while the volatility is there.
  */
-function DrawdownSection({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<PerformanceResponse>(portfolioService.getPerformance, portfolioUuid);
-  const points = useMemo(() => (data?.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
+function DrawdownSection({ data }: { data: VolatilityDetailResponse }) {
+  const points = useMemo(() => (data.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
 
-  if (data === null || updating || !data.drawdownPct || points.length < 2 || data.status === "insufficient_history") {
+  if (!data.drawdownPct || points.length < 2) {
     return (
-      <ExplorePanel title="Below the previous high">
-        {loading || updating ? (
-          <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" /></div>
-        ) : failed ? (
-          <ModuleMessage>The drawdown couldn&apos;t be loaded right now.</ModuleMessage>
-        ) : (
-          <ModuleMessage>Not enough history yet to chart the drawdown.</ModuleMessage>
-        )}
+      <ExplorePanel eyebrow="Risk" title="Drawdown" desc="How far below its previous high the portfolio stood, day by day.">
+        <ModuleMessage>Not enough history yet to chart the drawdown.</ModuleMessage>
       </ExplorePanel>
     );
   }
-  return (
-    <>
-      {data.isStale && <UpdatingNote />}
-      <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />
-    </>
-  );
+  return <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />;
 }
 
 function DrawdownChart({ points }: { points: { date: string; value: number }[] }) {
@@ -3183,12 +2991,14 @@ function DrawdownExplore({
   return (
     <>
       <ExplorePanel
-        title="Below the previous high"
+        eyebrow="Risk"
+        title="Drawdown"
+        desc="How far below its previous high the portfolio stood, day by day."
         right={<span className="text-sm font-black tabular-nums text-rose-600">{plainPctOrDash(maxDrawdownPct)} <span className="text-xs font-bold text-slate-400">deepest</span></span>}
       >
         <DrawdownChart points={points} />
       </ExplorePanel>
-      <ExplorePanel title="Deepest falls">
+      <ExplorePanel eyebrow="Risk" title="Deepest Falls" desc="The portfolio's deepest falls, how long each took to hit bottom and to climb back.">
         {episodes.length === 0 ? (
           <ModuleMessage>The portfolio hasn&apos;t fallen below a previous high yet.</ModuleMessage>
         ) : (
@@ -3207,7 +3017,7 @@ const TOP_ROWS = 5;
  * RANKED BARS — a short "who contributes most" list: a label, a figure, and a bar scaled to the
  * largest row. Shared by the top dividend payers and the costs by platform. With `onSelect`
  * each row is a button that opens the module's detail view on that row; `more` adds a last line
- * for the rows left out, opening the detail too.
+ * leading to the whole list in the detail, for when the summary may have left rows out.
  */
 function RankedBars({
   title, rows, onSelect, more,
@@ -3215,7 +3025,7 @@ function RankedBars({
   title: string;
   rows: { key: string; label: string; sub?: string; value: number; figure: string }[];
   onSelect?: (key: string) => void;
-  more?: { count: number; onClick: () => void };
+  more?: { label: string; onClick: () => void };
 }) {
   const max = Math.max(...rows.map((r) => r.value), 0.01);
   return (
@@ -3252,13 +3062,13 @@ function RankedBars({
           );
         })}
       </div>
-      {more && more.count > 0 && (
+      {more && (
         <button
           type="button"
           onClick={more.onClick}
           className="mt-3 text-xs font-bold text-[#C49A3C] hover:text-[#8A6A28] transition-colors"
         >
-          +{more.count} more
+          {more.label}
         </button>
       )}
     </div>
@@ -3266,40 +3076,27 @@ function RankedBars({
 }
 
 /**
- * DIVIDENDS MODULE — /dividends: the last 12 months' income as the headline, the yields behind
- * it, and the biggest payers. wholePortfolioYieldPct is the portfolio's yield as a whole (not
- * just the holdings that pay), which is what "what does my portfolio yield" means.
+ * DIVIDENDS MODULE — the Income & Costs section's dividends: the income since inception as the
+ * headline, the yields behind it, and the biggest payers over the last 12 months (the section
+ * sends the top TOP_ROWS). wholePortfolioYieldPct is the portfolio's yield as a whole (not just
+ * the holdings that pay), which is what "what does my portfolio yield" means. No detail of its
+ * own: every dividend figure and asset is in Profit & Loss's (RealizedPnlExplore).
  */
-function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<DividendsResponse>(portfolioService.getDividends, portfolioUuid);
-  const allPayers = useMemo(
-    () => (data ? [...data.byAsset].filter((a) => a.trailing12MIncome > 0).sort((a, b) => b.trailing12MIncome - a.trailing12MIncome) : []),
-    [data],
-  );
-  const payers = allPayers.slice(0, TOP_ROWS);
+function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividendsModule>; currency: string }) {
+  const data = slot.module;
   const hasIncome = data !== null && data.totalLifetimeIncome > 0;
-  // undefined: closed; null: open on the whole list; a key: open on that payer's row.
-  const [exploring, setExploring] = useState<string | null | undefined>(undefined);
-  const canExplore = hasIncome && !updating;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={data?.currency ?? "Income"}
+        eyebrow={currency}
         title="Dividends"
         desc="Cash paid out by your holdings."
-        onExplore={canExplore ? () => setExploring(null) : undefined}
       />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
+      <SlotPlaceholder slot={slot} />
+      {data !== null && !slot.updating && (
         <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {!hasIncome ? (
             <ModuleMessage>No dividends received yet.</ModuleMessage>
           ) : (
@@ -3308,13 +3105,13 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
                 <FigureRow
                   label="Since inception"
                   info="All the dividends you've received, since your first transaction."
-                  value={formatCurrency(data.totalLifetimeIncome, data.currency, 0)}
+                  value={formatCurrency(data.totalLifetimeIncome, currency, 0)}
                   emphasis
                 />
                 <FigureRow
                   label="Last 12 months"
                   info="The dividends received over the last 12 months."
-                  value={formatCurrency(data.totalTrailing12MIncome, data.currency, 0)}
+                  value={formatCurrency(data.totalTrailing12MIncome, currency, 0)}
                 />
                 <FigureRow
                   label="Yield"
@@ -3333,28 +3130,21 @@ function DividendsModule({ portfolioUuid }: { portfolioUuid: string }) {
                   tone={data.portfolioGrowthYoyPct === null ? undefined : data.portfolioGrowthYoyPct >= 0 ? "gain" : "loss"}
                 />
               </FigureList>
-              {payers.length > 0 && (
+              {data.topPayers.length > 0 && (
                 <RankedBars
                   title="Top payers, last 12 months"
-                  rows={payers.map((a) => ({
+                  rows={data.topPayers.map((a) => ({
                     key: a.assetId,
                     label: a.ticker ?? a.name,
                     sub: a.ticker ? a.name : undefined,
                     value: a.trailing12MIncome,
-                    figure: formatCurrency(a.trailing12MIncome, data.currency, 0),
+                    figure: formatCurrency(a.trailing12MIncome, currency, 0),
                   }))}
-                  onSelect={setExploring}
-                  more={{ count: allPayers.length - payers.length, onClick: () => setExploring(null) }}
                 />
               )}
             </>
           )}
         </>
-      )}
-      {canExplore && exploring !== undefined && (
-        <ExploreView title="Dividends" onClose={() => setExploring(undefined)}>
-          <DividendsExplore data={data} focus={exploring} />
-        </ExploreView>
       )}
     </Module>
   );
@@ -3371,16 +3161,21 @@ const DIVIDEND_COLUMNS = (currency: string): DataColumn<DividendsResponse["byAss
 ];
 
 /**
- * DIVIDENDS EXPLORE — the detail view behind DividendsModule: every figure the module summarises,
- * plus the two it leaves out (the previous 12 months, and the yield of just the paying
- * holdings), then every asset that has ever paid, sortable.
+ * DIVIDENDS EXPLORE — the dividends in Profit & Loss's detail, /insights/dividends: every figure
+ * the Dividends module summarises, plus the ones it leaves out (the previous 12 months, the yield
+ * of just the paying holdings), then every asset that has ever paid, sortable.
  */
-function DividendsExplore({ data, focus }: { data: DividendsResponse; focus: string | null }) {
+function DividendsExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
+  const detail = useDetail(() => portfolioService.getDividends(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <DividendsDetail data={data} />}</DetailBody>;
+}
+
+function DividendsDetail({ data }: { data: DividendsResponse }) {
   const assets = useMemo(() => data.byAsset.filter((a) => a.lifetimeIncome > 0), [data]);
   const columns = useMemo(() => DIVIDEND_COLUMNS(data.currency), [data.currency]);
   return (
     <>
-      <ExplorePanel title="Overview">
+      <ExplorePanel eyebrow={data.currency} title="Dividends" desc="Cash paid out by your holdings.">
         <FigureList>
           <FigureRow label="Since inception" info="All the dividends you've received, since your first transaction." value={formatCurrency(data.totalLifetimeIncome, data.currency, 0)} emphasis />
           <FigureRow label="Last 12 months" info="The dividends received over the last 12 months." value={formatCurrency(data.totalTrailing12MIncome, data.currency, 0)} />
@@ -3397,8 +3192,8 @@ function DividendsExplore({ data, focus }: { data: DividendsResponse; focus: str
           <FigureRow label="Yield on cost" info="The last 12 months' dividends over what you paid for the holdings that pay them." value={plainPctOrDash(data.portfolioYieldOnCostPct)} />
         </FigureList>
       </ExplorePanel>
-      <ExplorePanel title="By asset">
-        <DataTable columns={columns} rows={assets} rowKey={(a) => a.assetId} initialSort={{ key: "t12m", desc: true }} highlight={focus} />
+      <ExplorePanel eyebrow={data.currency} title="Dividends by Asset" desc="Every asset that has paid, the largest payers over the last 12 months first.">
+        <DataTable columns={columns} rows={assets} rowKey={(a) => a.assetId} initialSort={{ key: "t12m", desc: true }} />
       </ExplorePanel>
     </>
   );
@@ -3472,39 +3267,30 @@ function FigureRow({
 }
 
 /**
- * TRADING COSTS MODULE — /trading-costs: what trading has cost (commissions plus spread) as
- * the headline, how heavy that is relative to what was traded and to the portfolio's return,
- * and which platforms it went to.
+ * TRADING COSTS MODULE — the Income & Costs section's trading costs: what trading has cost
+ * (commissions plus spread) as the headline, how heavy that is relative to what was traded and
+ * to the portfolio's return, and which platforms it went to (the section sends the top
+ * TOP_ROWS). Its detail (TradingCostsExplore) is /insights/trading-costs.
  */
-function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<TradingCostsResponse>(portfolioService.getTradingCosts, portfolioUuid);
-  const allPlatforms = useMemo(
-    () => (data ? [...data.byPlatform].sort((a, b) => b.totalCosts - a.totalCosts) : []),
-    [data],
-  );
-  const platforms = allPlatforms.slice(0, TOP_ROWS);
+function TradingCostsModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot<InsightsTradingCostsModule>; currency: string; portfolioUuid: string }) {
+  const data = slot.module;
+  const platforms = data?.topPlatforms ?? [];
   // undefined: closed; null: open; a platform: open on that platform's row.
   const [exploring, setExploring] = useState<string | null | undefined>(undefined);
-  const canExplore = data !== null && !updating && data.totalTransactions > 0;
+  const canExplore = data !== null && !slot.updating && data.totalTransactions > 0;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={data?.currency ?? "Costs"}
+        eyebrow={currency}
         title="Trading Costs"
         desc="Commissions plus the spread paid when buying and selling."
         onExplore={canExplore ? () => setExploring(null) : undefined}
       />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolio has run."
-      />
-      {data !== null && !updating && (
+      <SlotPlaceholder slot={slot} />
+      {data !== null && !slot.updating && (
         <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {data.totalTransactions === 0 ? (
             <ModuleMessage>No trades recorded yet.</ModuleMessage>
           ) : (
@@ -3513,13 +3299,13 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
                 <FigureRow
                   label="Total costs"
                   info="Commissions plus the spread paid on every buy and sell, since your first transaction."
-                  value={formatCurrency(data.totalCosts, data.currency, 0)}
+                  value={formatCurrency(data.totalCosts, currency, 0)}
                   emphasis
                 />
                 <FigureRow
                   label="Per trade"
                   info={`Average cost across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}.`}
-                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, data.currency, 2)}
+                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, currency, 2)}
                 />
                 <FigureRow
                   label="Of traded volume"
@@ -3541,10 +3327,10 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
                     label: pl.platform,
                     sub: `${pl.transactionCount} ${pl.transactionCount === 1 ? "trade" : "trades"}`,
                     value: pl.totalCosts,
-                    figure: formatCurrency(pl.totalCosts, data.currency, 0),
+                    figure: formatCurrency(pl.totalCosts, currency, 0),
                   }))}
                   onSelect={setExploring}
-                  more={{ count: allPlatforms.length - platforms.length, onClick: () => setExploring(null) }}
+                  more={platforms.length >= TOP_ROWS ? { label: "Every platform", onClick: () => setExploring(null) } : undefined}
                 />
               )}
             </>
@@ -3553,7 +3339,7 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
       )}
       {canExplore && exploring !== undefined && (
         <ExploreView title="Trading Costs" onClose={() => setExploring(undefined)}>
-          <TradingCostsExplore data={data} focus={exploring} />
+          <TradingCostsExplore portfolioUuid={portfolioUuid} revision={slot.revision} focus={exploring} />
         </ExploreView>
       )}
     </Module>
@@ -3563,11 +3349,16 @@ function TradingCostsModule({ portfolioUuid }: { portfolioUuid: string }) {
 const bpsOrDash = (bps: number | null) => (bps === null ? "—" : `${bps.toFixed(1)} bps`);
 
 /**
- * TRADING COSTS EXPLORE — the detail view behind TradingCostsModule: how the total splits into
- * commissions and spread, how it built up over time, and where it went, by platform and by
- * asset.
+ * TRADING COSTS EXPLORE — the detail view behind TradingCostsModule, /insights/trading-costs:
+ * how the total splits into commissions and spread, how it built up over time, and where it
+ * went, by platform and by asset.
  */
-function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focus: string | null }) {
+function TradingCostsExplore({ portfolioUuid, revision, focus }: { portfolioUuid: string; revision: number; focus: string | null }) {
+  const detail = useDetail(() => portfolioService.getTradingCosts(portfolioUuid), portfolioUuid, revision);
+  return <DetailBody detail={detail}>{(data) => <TradingCostsDetail data={data} focus={focus} />}</DetailBody>;
+}
+
+function TradingCostsDetail({ data, focus }: { data: TradingCostsResponse; focus: string | null }) {
   const cumulative = useMemo(() => (data.cumulativeCosts ? toChartPoints(data.cumulativeCosts) : []), [data]);
   const commissionShare = data.totalCosts > 0 ? (data.explicitFees / data.totalCosts) * 100 : 0;
 
@@ -3592,7 +3383,7 @@ function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focu
 
   return (
     <>
-      <ExplorePanel title="Where the costs come from">
+      <ExplorePanel eyebrow={data.currency} title="Where the Costs Come From" desc="Commissions your brokers charged, and the spread lost between buying and selling prices.">
         <div className="px-6 md:px-7 pt-5">
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
             <div className="h-full bg-[#C49A3C]" style={{ width: `${commissionShare}%` }} />
@@ -3619,7 +3410,7 @@ function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focu
         </FigureList>
       </ExplorePanel>
       {cumulative.length >= 2 && (
-        <ExplorePanel title="Costs over time">
+        <ExplorePanel eyebrow={data.currency} title="Costs over Time" desc="Trading costs added up since your first transaction.">
           <div className="p-6 md:p-7 h-64">
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 256 }}>
               <AreaChart data={cumulative} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
@@ -3637,12 +3428,12 @@ function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focu
         </ExplorePanel>
       )}
       {data.byPlatform.length > 0 && (
-        <ExplorePanel title="By platform">
+        <ExplorePanel eyebrow={data.currency} title="By Platform" desc="What trading cost on each platform.">
           <DataTable columns={platformColumns} rows={data.byPlatform} rowKey={(p) => p.platform} initialSort={{ key: "total", desc: true }} highlight={focus} />
         </ExplorePanel>
       )}
       {data.byAsset.length > 0 && (
-        <ExplorePanel title="By asset">
+        <ExplorePanel eyebrow={data.currency} title="By Asset" desc="What trading each asset cost, on each broker.">
           <DataTable columns={assetColumns} rows={data.byAsset} rowKey={(a) => `${a.assetId}-${a.broker}`} initialSort={{ key: "total", desc: true }} />
         </ExplorePanel>
       )}
@@ -3650,35 +3441,41 @@ function TradingCostsExplore({ data, focus }: { data: TradingCostsResponse; focu
   );
 }
 
+// The aggregate's own two modules, from the Composition section.
+interface AggregateSlots {
+  portfolios: ModuleSlot<InsightsPortfoliosModule>;
+  comovement: ModuleSlot<InsightsComovementModule>;
+}
+
+const PREPARING_AGGREGATE = "Being prepared — this shows up after the overnight analysis of your portfolios has run.";
+
 /**
- * PORTFOLIOS MIX MODULE — the aggregate's /composition, Composition side: each portfolio's
- * share of the value, of the profit and of the risk, then the assets held in more than one.
- * Risk share next to weight is the point: a portfolio carrying more risk than its size, or one
- * offsetting the rest. Colours match the Compare page (portfolioColorMap).
+ * PORTFOLIOS MIX MODULE — the aggregate's `portfolios` module, Composition side: each
+ * portfolio's share of the value, of the profit and of the risk, then the assets held in more
+ * than one (from `comovement`, the same document). Risk share next to weight is the point: a
+ * portfolio carrying more risk than its size, or one offsetting the rest. Colours match the
+ * Compare page (portfolioColorMap).
  */
-function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<CompositionResponse>(portfolioService.getComposition, portfolioUuid);
+function PortfoliosMixModule({
+  slot, comovement, currency,
+}: { slot: ModuleSlot<InsightsPortfoliosModule>; comovement: InsightsComovementModule | null; currency: string }) {
+  const data = slot.module;
   const { portfolios } = usePortfolio();
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
   const nameOf = (uuid: string) => data?.members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
+  const overlapping = comovement?.overlappingAssets ?? [];
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={data?.currency ?? "All portfolios"}
+        eyebrow={currency}
         title="Your Portfolios"
         desc="How each portfolio makes up the whole: its share of the value, of the profit and of the risk."
       />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolios has run."
-      />
-      {data !== null && !updating && (
+      <SlotPlaceholder slot={slot} preparingMessage={PREPARING_AGGREGATE} />
+      {data !== null && !slot.updating && (
         <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm min-w-[520px]">
               <thead>
@@ -3703,12 +3500,12 @@ function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
                         <span className="font-bold text-slate-900">{m.name}</span>
                       </span>
                     </th>
-                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatCurrency(m.marketValue, data.currency, 0)}</td>
+                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatCurrency(m.marketValue, currency, 0)}</td>
                     <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums">{m.weightPct.toFixed(1)}%</td>
                     <td className="text-right py-3 px-4 tabular-nums whitespace-nowrap">
                       <span className="font-bold text-slate-900">{m.pnlSharePct === null ? "—" : `${m.pnlSharePct.toFixed(1)}%`}</span>
                       <span className={`block text-xs font-semibold ${m.totalPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {formatSignedCurrency(m.totalPnl, data.currency)}
+                        {formatSignedCurrency(m.totalPnl, currency)}
                       </span>
                     </td>
                     <td className="text-right py-3 pl-4 pr-6 md:pr-7 tabular-nums whitespace-nowrap">
@@ -3725,14 +3522,14 @@ function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
               Risk shares need at least 60 trading days shared by your portfolios — they&apos;ll show up once there are.
             </p>
           )}
-          {data.overlappingAssets.length > 0 && (
+          {overlapping.length > 0 && (
             <div className="px-6 md:px-7 py-6 border-t border-slate-100">
               <h3 className="text-sm font-black text-slate-900">Held in more than one portfolio</h3>
               <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
                 Your combined position in these is bigger than any single portfolio shows.
               </p>
               <div className="divide-y divide-slate-100">
-                {data.overlappingAssets.slice(0, 10).map((a) => (
+                {overlapping.slice(0, 10).map((a) => (
                   <div key={a.assetId} className="py-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-1.5">
                     <div className="min-w-0">
                       <p className="truncate">
@@ -3743,13 +3540,13 @@ function PortfoliosMixModule({ portfolioUuid }: { portfolioUuid: string }) {
                         {a.holdings.map((h) => (
                           <span key={h.portfolioUuid} className="flex items-center gap-1.5 text-xs text-slate-500">
                             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorOf(h.portfolioUuid) }} />
-                            {nameOf(h.portfolioUuid)} <span className="tabular-nums">{formatCurrency(h.marketValue, data.currency, 0)}</span>
+                            {nameOf(h.portfolioUuid)} <span className="tabular-nums">{formatCurrency(h.marketValue, currency, 0)}</span>
                           </span>
                         ))}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(a.marketValue, data.currency, 0)}</p>
+                      <p className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(a.marketValue, currency, 0)}</p>
                       <p className="text-xs text-slate-400 tabular-nums">{a.weightPct.toFixed(1)}% of the total</p>
                     </div>
                   </div>
@@ -3775,14 +3572,15 @@ function RiskShareNote({ risk, weight }: { risk: number; weight: number }) {
 }
 
 /**
- * PORTFOLIO CORRELATION MODULE — the aggregate's /composition, Risk side: how the portfolios'
- * daily returns move together. Near 1 they rise and fall together (little diversification
- * between them), near 0 independently, below 0 opposite. Null under "insufficient_history".
+ * PORTFOLIO CORRELATION MODULE — the aggregate's `comovement` module, Risk side (it arrives
+ * with the Composition section): how the portfolios' daily returns move together. Near 1 they
+ * rise and fall together (little diversification between them), near 0 independently, below 0
+ * opposite. Null under "insufficient_history".
  */
-function PortfolioCorrelationModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<CompositionResponse>(portfolioService.getComposition, portfolioUuid);
+function PortfolioCorrelationModule({ slot, members }: { slot: ModuleSlot<InsightsComovementModule>; members: InsightsPortfoliosModule["members"] }) {
+  const data = slot.module;
   const { portfolios } = usePortfolio();
-  const nameOf = (uuid: string) => data?.members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
+  const nameOf = (uuid: string) => members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
   const corr = data?.correlation ?? null;
 
   return (
@@ -3792,16 +3590,10 @@ function PortfolioCorrelationModule({ portfolioUuid }: { portfolioUuid: string }
         title="How Your Portfolios Move Together"
         desc={corr ? `Correlation of daily returns, over ${corr.observations} shared trading days.` : "Correlation of their daily returns."}
       />
-      <AnalyticsPlaceholder
-        loading={loading}
-        failed={failed}
-        hasData={data !== null}
-        updating={updating}
-        preparingMessage="Being prepared — this shows up after the overnight analysis of your portfolios has run."
-      />
-      {data !== null && !updating && (
+      <SlotPlaceholder slot={slot} preparingMessage={PREPARING_AGGREGATE} />
+      {data !== null && !slot.updating && (
         <>
-          {data.isStale && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {corr === null ? (
             <ModuleMessage>Needs at least 60 trading days shared by your portfolios — it will appear once there are.</ModuleMessage>
           ) : (
@@ -3855,57 +3647,30 @@ function PortfolioCorrelationModule({ portfolioUuid }: { portfolioUuid: string }
   );
 }
 
-// Each is null while the backend hasn't computed it for this user yet; `summary` never is
-// (see portfolioService.getPortfolioSummary).
-interface PortfolioComposition {
-  summary: PortfolioSummary;
-  positions: HoldingsResponse | null;
-  sector: ExposureEntryResponse[] | null;
-  region: ExposureEntryResponse[] | null;
-}
-
-/**
- * HISTORY PAGE — Insights' entire page now (see PerformanceSection above): lifetime figures +
- * trend chart, a year-by-month returns heatmap, lifetime realized P&L and benchmark comparison
- * under Overview; current holdings/composition under its own tab; volatility and the risk model
- * under Risk. Used to merge what were three separate tabs (Monthly, Annual, Full History) into
- * just Overview. Clicking a heatmap cell swaps the whole page for that month's own detail
- * (MonthDetail) — same "replace, don't stack" pattern the old Monthly/Annual picker used, with
- * the way back in the header panel, where the tabs usually are. Month detail
- * needs the richer per-month figures (t0/t1 value, dividends, volatility, drawdown, report)
- * that monthlyMarketEffect doesn't carry, so it's fetched on demand via /monthly?year=, one
- * request per year, cached in `monthCache` so re-opening a month already visited this
- * session doesn't refetch.
- */
 /**
  * MONTH TO DATE MODULE — how the market moved the portfolio this month: its value at last
  * month's close, today's and the month-to-date market effect, and a bar per day of that day's
  * market effect. Market effect, not raw value change: a purchase isn't a gain, so money added or
  * withdrawn is kept out of the figures and only mentioned alongside the month-to-date one.
  * Deltas, not raw values: a stable portfolio's value line is visually flat at this timescale.
- * /today carries isStale like the analytics documents, so useAnalytics polls it the same way.
  * In Insights' Performance section, right under the portfolio's value: the short term, before
  * the rest of the history.
  */
-function MonthToDateModule({ portfolioUuid }: { portfolioUuid: string }) {
-  const { data, loading, failed, updating } = useAnalytics<TodayDashboard>(portfolioService.getTodayDashboard, portfolioUuid);
-
+function MonthToDateModule({ slot, currency }: { slot: ModuleSlot<InsightsThisMonthModule>; currency: string }) {
   return (
     <Module>
       <ModuleHead
-        eyebrow={data?.currency ?? "This month"}
+        eyebrow={currency}
         title="This month"
         desc="How the market moved your portfolio, day by day and month to date. Money you added or withdrew is left out."
       />
-      {AnalyticsPlaceholder({
-        loading, failed, hasData: data !== null, updating,
-        preparingMessage: "Not enough history yet to show this month's moves.",
-      }) ?? (data && <MonthToDateBody data={data} />)}
+      {SlotPlaceholder({ slot, preparingMessage: "Not enough history yet to show this month's moves." })
+        ?? (slot.module && <MonthToDateBody data={slot.module} currency={currency} lagging={slot.lagging} />)}
     </Module>
   );
 }
 
-function MonthToDateBody({ data }: { data: TodayDashboard }) {
+function MonthToDateBody({ data, currency, lagging }: { data: InsightsThisMonthModule; currency: string; lagging: boolean }) {
   const isDayGain = data.dayMarketEffect >= 0;
   const isMtdGain = data.mtdMarketEffect >= 0;
   // A day or month with no opening value has no percentage to show (see hasPeriodBaseline).
@@ -3916,30 +3681,30 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
       hasBaseline: s.previousValue !== 0,
     }));
   const mtdFlowsNote = data.mtdNetCapitalContributed !== 0
-    ? `Value change ${formatSignedCurrency(data.deltaMtdValue, data.currency)}, with ${formatCurrency(Math.abs(data.mtdNetCapitalContributed), data.currency, 0)} ${data.mtdNetCapitalContributed > 0 ? "added" : "withdrawn"} by you`
+    ? `Value change ${formatSignedCurrency(data.deltaMtdValue, currency)}, with ${formatCurrency(Math.abs(data.mtdNetCapitalContributed), currency, 0)} ${data.mtdNetCapitalContributed > 0 ? "added" : "withdrawn"} by you`
     : undefined;
 
   return (
     <>
-      {data.isStale && <div className="px-6 md:px-7 pt-6"><UpdatingNote /></div>}
+      {lagging && <div className="px-6 md:px-7 pt-6"><UpdatingNote /></div>}
       <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
         <StatContent
           title="Month Start Value"
-          value={formatCurrency(data.monthStartValue, data.currency, 0)}
+          value={formatCurrency(data.monthStartValue, currency, 0)}
           icon={<Wallet className="h-4 w-4 text-blue-600" />}
           info="Market value at the close of last month."
           color="blue"
         />
         <StatContent
           title="Market Move Today"
-          value={<AmountWithDelta amount={formatSignedCurrency(data.dayMarketEffect, data.currency)} pct={data.dayMarketEffectPct} hasBaseline={data.previousDayValue !== 0} />}
+          value={<AmountWithDelta amount={formatSignedCurrency(data.dayMarketEffect, currency)} pct={data.dayMarketEffectPct} hasBaseline={data.previousDayValue !== 0} />}
           icon={isDayGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
           info="How much prices moved the portfolio since the previous day, excluding buys, sells, costs and dividends."
           color={isDayGain ? "emerald" : "red"}
         />
         <StatContent
           title="Market Move This Month"
-          value={<AmountWithDelta amount={formatSignedCurrency(data.mtdMarketEffect, data.currency)} pct={data.mtdMarketEffectPct} hasBaseline={data.monthStartValue !== 0} />}
+          value={<AmountWithDelta amount={formatSignedCurrency(data.mtdMarketEffect, currency)} pct={data.mtdMarketEffectPct} hasBaseline={data.monthStartValue !== 0} />}
           icon={isMtdGain ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
           info={`How much prices moved the portfolio since the close of last month, excluding buys, sells, costs and dividends.${mtdFlowsNote ? ` ${mtdFlowsNote}.` : ""}`}
           color={isMtdGain ? "emerald" : "red"}
@@ -3970,7 +3735,7 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
               <Tooltip
                 labelFormatter={(label) => fullDateLabel(label as string)}
                 formatter={(value, name, props) => [
-                  `${formatCurrency(Number(value), data.currency, 0)}${props.payload.hasBaseline ? ` (${formatPct(props.payload.marketEffectPct)})` : ""}`,
+                  `${formatCurrency(Number(value), currency, 0)}${props.payload.hasBaseline ? ` (${formatPct(props.payload.marketEffectPct)})` : ""}`,
                   "Market move",
                 ]}
                 contentStyle={TOOLTIP_STYLE}
@@ -3988,82 +3753,76 @@ function MonthToDateBody({ data }: { data: TodayDashboard }) {
   );
 }
 
-function HistoryPage({
-  data, historyUpdating, portfolioUuid, selected,
-  monthCache, monthLoading, monthError, onSelectMonth, selectedYearStale, monthStaleTimedOut, isAggregate,
+/**
+ * MONTH PAGE — a month opened from the returns heatmap, in place of the whole page, the month in
+ * progress followed by how the market moved it day by day (MonthToDateModule) (the way back
+ * is the browser's back button): /insights/monthly/{YYYY-MM}, fetched by PerformanceSection so
+ * its report link can sit at the top of the page. Its figures come from the same stored values as the
+ * Performance section's history, so they're hidden while that's being rebuilt.
+ */
+function MonthPage({
+  month, historyUpdating, thisMonth, currency,
 }: {
-  data: FullHistoryDashboard; historyUpdating: boolean; portfolioUuid: string;
-  selected: { year: number; month: number } | null;
-  monthCache: Record<number, PeriodDashboard[]>;
-  monthLoading: boolean;
-  monthError: string | null;
-  onSelectMonth: (year: number, month: number) => void;
-  selectedYearStale: boolean;
-  monthStaleTimedOut: boolean;
-  // "All portfolios": Composition and Risk then also show how the portfolios make it up.
-  isAggregate: boolean;
+  month: { data: PeriodDashboard | null; error: unknown; loading: boolean };
+  historyUpdating: boolean;
+  // How the market moved the portfolio day by day, for the month in progress.
+  thisMonth: ModuleSlot<InsightsThisMonthModule>;
+  currency: string;
 }) {
-
-  // Composition (current holdings/currency breakdown plus sector/region exposure) used to live
-  // on Insights' own Today page, fetched from the today dashboard's own `summary` field —
-  // that endpoint no longer carries it (see GET /v1/portfolio/summary), so this fetches it
-  // directly instead. Cached in this component's own state, so opening a month's detail and
-  // coming back doesn't fetch it again.
-  const [composition, setComposition] = useState<PortfolioComposition | null>(null);
-  const [compositionError, setCompositionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (composition !== null) return;
-    let cancelled = false;
-    const loadComposition = async () => {
-      setCompositionError(null);
-      try {
-        const [summary, positions, sector, region] = await Promise.all([
-          portfolioService.getPortfolioSummary(portfolioUuid),
-          portfolioService.getHoldings(portfolioUuid),
-          portfolioService.getSectorExposure(portfolioUuid),
-          portfolioService.getRegionExposure(portfolioUuid),
-        ]);
-        if (cancelled) return;
-        setComposition({ summary, positions, sector: sector?.entries ?? null, region: region?.entries ?? null });
-      } catch (err) {
-        if (!cancelled) setCompositionError(err instanceof Error ? err.message : "Failed to load portfolio composition");
-      }
-    };
-    loadComposition();
-    return () => { cancelled = true; };
-  }, [composition, portfolioUuid]);
-
-  if (selected) {
-    const yearData = monthCache[selected.year];
-    const period = yearData?.find(p => new Date(p.periodStart).getUTCMonth() + 1 === selected.month);
-    const monthUpdating = selectedYearStale && !monthStaleTimedOut;
+  if (month.loading) {
     return (
-      <div className="space-y-6">
-        {monthLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-          </div>
-        ) : monthError ? (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <p className="text-sm font-bold">{monthError}</p>
-          </div>
-        ) : monthUpdating ? (
-          <Module><StaleUpdatingState /></Module>
-        ) : period ? (
-          <>
-            {period.isStale && <UpdatingNote />}
-            <MonthDetail period={period} />
-          </>
-        ) : (
-          <EmptyPeriodState message="No detail available for this month." />
-        )}
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
       </div>
     );
   }
+  if (month.data === null) {
+    return month.error instanceof ApiError && month.error.status === 404 ? (
+      <EmptyPeriodState message="No detail available for this month." />
+    ) : (
+      <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
+        <AlertCircle className="h-5 w-5 shrink-0" />
+        <p className="text-sm font-bold">Failed to load that month&apos;s detail</p>
+      </div>
+    );
+  }
+  if (historyUpdating && month.data.isStale) return <Module><StaleUpdatingState /></Module>;
+  return (
+    <div className="space-y-6">
+      {month.data.isStale && <UpdatingNote />}
+      <MonthDetail period={month.data} />
+      {month.data.inProgress && <MonthToDateModule slot={thisMonth} currency={currency} />}
+    </div>
+  );
+}
 
-  if (isHistoryEmpty(data)) {
+/**
+ * HISTORY PAGE — the Insights page itself (see PerformanceSection above): one module per
+ * question, each opening a detail view with everything else about it. Holdings (what it holds),
+ * Profit & Loss (what selling locked in, and what the holdings paid, the latter not opening
+ * anything of its own), Costs (what trading cost), Performance (the value over time: returns,
+ * the monthly returns and the benchmark behind it), Risk (the volatility: its turbulent periods
+ * and drawdowns) and the Risk Model (the efficient frontier: the mixes, the weight gaps and the
+ * correlations behind it). A month opens from Performance's detail (see PerformanceSection).
+ */
+function HistoryPage({
+  insights, performance, value, portfolioUuid, onSelectMonth, isAggregate,
+}: {
+  insights: Insights;
+  // The Performance section, already loaded, and its value (PerformanceSection checks both).
+  performance: InsightsPerformanceResponse;
+  value: InsightsValueModule;
+  portfolioUuid: string;
+  onSelectMonth: (year: number, month: number) => void;
+  // "All portfolios": Holdings and Risk then also show how the portfolios make it up.
+  isAggregate: boolean;
+}) {
+  const { composition, incomeCosts, risk, timedOut } = insights;
+  const currency = performance.currency;
+  const own = <S, M extends { isStale: boolean }>(section: SectionState<S>, pick: (data: S) => M | null) =>
+    slotOf(section, timedOut, pick, ownStale);
+
+  if (isHistoryEmpty(value)) {
     return (
       <div className="space-y-6">
         <EmptyPeriodState message="Add or upload transactions to build your full portfolio history." />
@@ -4071,90 +3830,119 @@ function HistoryPage({
     );
   }
 
-  // The /history figures (lifetime totals, chart, heatmap) all come from the one document, so
-  // one isStale check covers them: each hidden behind a StaleUpdatingState while
-  // historyUpdating, with one hint at the top of the page once that window times out. The
-  // analytics modules in each section are their own fetches with their own isStale.
-  const historyTile = (content: React.ReactNode) => historyUpdating ? <Module><StaleUpdatingState /></Module> : content;
+  // The value, this month and the monthly returns come from the stored daily and month-end
+  // values, so one historyIsStale covers them: hidden behind a StaleUpdatingState while it's
+  // being rebuilt, with a hint once useInsights stops waiting.
+  const historyUpdating = performance.historyIsStale && !timedOut;
+  const aggregate = isAggregate
+    ? { portfolios: own(composition, (d) => d.portfolios), comovement: own(composition, (d) => d.comovement) }
+    : null;
+
+  const performanceDetail = (
+    <PerformanceDetail
+      heatmap={performance.heatmap?.entries ?? []}
+      historyUpdating={historyUpdating}
+      currency={currency}
+      portfolioUuid={portfolioUuid}
+      revision={insights.performance.revision}
+      onSelectMonth={onSelectMonth}
+    />
+  );
 
   return (
-    // The timeline's column and gap add up to --timeline-gutter (set in PerformanceSection).
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_2rem] gap-6">
-      <div className="space-y-6 min-w-0">
-        <HistorySection id="composition">
-          {compositionError ? (
-            <Tile>
-              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
-                <AlertCircle className="h-5 w-5 shrink-0" />
-                <p className="text-sm font-bold">{compositionError}</p>
-              </div>
-            </Tile>
-          ) : composition ? (
-            <>
-              {isAggregate && <Tile><PortfoliosMixModule portfolioUuid={portfolioUuid} /></Tile>}
-              <Tile><HoldingsExplorer holdings={composition.summary.holdings} byCurrency={composition.summary.byCurrency} positions={composition.positions} /></Tile>
-              <Tile><SectorRegionModule sector={composition.sector} region={composition.region} /></Tile>
-            </>
-          ) : (
-            <Tile>
-              <div className="flex h-64 items-center justify-center">
-                <Loader2 className="animate-spin h-8 w-8 text-[#C49A3C]" />
-              </div>
-            </Tile>
-          )}
-        </HistorySection>
-        <HistorySection id="income">
-          <Tile span="half"><DividendsModule portfolioUuid={portfolioUuid} /></Tile>
-          <Tile span="half"><TradingCostsModule portfolioUuid={portfolioUuid} /></Tile>
-          {/* What selling has locked in, next to what the holdings paid and what trading cost.
-              Its own row: the list grows with every closed position. */}
-          <Tile>{historyTile(<RealizedPnLCard trades={data.realizedTradesByAsset} />)}</Tile>
-        </HistorySection>
-        <HistorySection id="performance">
-          {!historyUpdating && data.isStale && <Tile><UpdatingNote /></Tile>}
-          <Tile>
-            {historyTile(
-              <ChartCard
-                chart={data.chart}
-                currency={data.currency}
-                title="Portfolio Value"
-                desc="Market value at each month end since inception, and today."
-                right={
-                  <div className="sm:text-right shrink-0">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Value today</p>
-                    <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                      {formatCurrency(data.currentValue, data.currency, 0)}
-                    </p>
-                  </div>
-                }
-              />,
-            )}
-          </Tile>
-          {/* Under the value, the short term (today and this month, market moves only), then the
-              rest of the history. */}
-          <Tile><MonthToDateModule portfolioUuid={portfolioUuid} /></Tile>
-          <Tile><ReturnsModule portfolioUuid={portfolioUuid} /></Tile>
-          <Tile>
-            {historyTile(
-              <Module>
-                <ModuleHead
-                  eyebrow={data.currency}
-                  title="Monthly Returns"
-                  desc="Time-weighted return by month, since inception. Click a month for its full detail."
-                />
-                <MonthlyReturnsHeatmap entries={data.monthlyMarketEffect} onSelectMonth={onSelectMonth} />
-              </Module>,
-            )}
-          </Tile>
-          <BenchmarkTile portfolioUuid={portfolioUuid} />
-        </HistorySection>
-        <HistorySection id="risk">
-          <Tile><VolatilityModule portfolioUuid={portfolioUuid} /></Tile>
-          {isAggregate && <Tile><PortfolioCorrelationModule portfolioUuid={portfolioUuid} /></Tile>}
-          <RiskModelTab portfolioUuid={portfolioUuid} />
-        </HistorySection>
-      </div>
-      <SectionNav />
+    <div className="grid grid-cols-2 lg:grid-cols-12 gap-6">
+      <Tile>
+        <HoldingsExplorer
+          slot={own(composition, (d) => d.holdings)}
+          sector={composition.data?.sectorExposure ?? null}
+          region={composition.data?.regionExposure ?? null}
+          aggregate={aggregate}
+          currency={currency}
+          portfolioUuid={portfolioUuid}
+        />
+      </Tile>
+      <Tile><RealizedPnlModule slot={own(incomeCosts, (d) => d.realizedPnl)} currency={currency} portfolioUuid={portfolioUuid} /></Tile>
+      <Tile span="half"><DividendsModule slot={own(incomeCosts, (d) => d.dividends)} currency={currency} /></Tile>
+      <Tile span="half"><TradingCostsModule slot={own(incomeCosts, (d) => d.tradingCosts)} currency={currency} portfolioUuid={portfolioUuid} /></Tile>
+      {!historyUpdating && performance.historyIsStale && <Tile><UpdatingNote /></Tile>}
+      <Tile>
+        {historyUpdating ? <Module><StaleUpdatingState /></Module> : (
+          <ValueModule value={value} currency={currency}>{performanceDetail}</ValueModule>
+        )}
+      </Tile>
+      <Tile>
+        <VolatilityModule
+          slot={own(risk, (d) => d.volatility)}
+          portfolioUuid={portfolioUuid}
+          returnsRevision={insights.performance.revision}
+          aggregate={aggregate}
+        />
+      </Tile>
+      <Tile><RiskModelModule slot={own(risk, (d) => d.frontier)} portfolioUuid={portfolioUuid} /></Tile>
     </div>
+  );
+}
+
+/**
+ * VALUE MODULE — Performance on the page: the portfolio's value at each month end since
+ * inception and today. Its detail (`children`, PerformanceDetail) holds the rest of Performance.
+ */
+function ValueModule({ value, currency, children }: { value: InsightsValueModule; currency: string; children: React.ReactNode }) {
+  const [exploring, setExploring] = useState(false);
+  return (
+    <>
+      <ChartCard
+        chart={value.chart}
+        currency={currency}
+        title="Portfolio Value"
+        desc="Market value at each month end since inception, and today. Open it for this month, the returns and the benchmark."
+        onExplore={() => setExploring(true)}
+        right={
+          <div className="sm:text-right shrink-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Value today</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+              {formatCurrency(value.currentValue, currency, 0)}
+            </p>
+          </div>
+        }
+      />
+      {exploring && (
+        <ExploreView title="Performance" onClose={() => setExploring(false)}>
+          {children}
+        </ExploreView>
+      )}
+    </>
+  );
+}
+
+/**
+ * PERFORMANCE DETAIL — everything behind the value: the time-weighted returns
+ * (/insights/returns), the monthly returns (a month opens one level further down, the month in
+ * progress with how the market moved it day by day) and the benchmark comparison
+ * (/insights/benchmark).
+ */
+function PerformanceDetail({
+  heatmap, historyUpdating, currency, portfolioUuid, revision, onSelectMonth,
+}: {
+  heatmap: MonthlyMarketEffectEntry[];
+  historyUpdating: boolean;
+  currency: string;
+  portfolioUuid: string;
+  revision: number;
+  onSelectMonth: (year: number, month: number) => void;
+}) {
+  return (
+    <>
+      <ReturnsExplore portfolioUuid={portfolioUuid} revision={revision} />
+      <Module>
+        <ModuleHead
+          eyebrow={currency}
+          title="Monthly Returns"
+          desc="Time-weighted return by month, since inception. Click a month for its full detail."
+        />
+        {historyUpdating ? <StaleUpdatingState /> : <MonthlyReturnsHeatmap entries={heatmap} onSelectMonth={onSelectMonth} />}
+      </Module>
+      <BenchmarkExplore portfolioUuid={portfolioUuid} revision={revision} />
+    </>
   );
 }

@@ -5,8 +5,8 @@ import { createContext, useContext, useState } from "react";
 /**
  * SECTION TRAIL — where the user is inside a section that has pages of its own (Portfolios:
  * "Portfolios / Main portfolio / Dividends"), shared between the page that knows it (through
- * Breadcrumb, which publishes it) and the Sidebar, which draws it as indented rows under the
- * section's own entry. `labels` are the pages above the current one, the section itself first;
+ * Breadcrumb, which publishes it) and the Sidebar, which draws the page right under the section
+ * as a row under the section's own entry. `labels` are the pages above the current one, the section itself first;
  * `go(i)` goes back to `labels[i]`. null on a section's first page, where there's nothing to show.
  */
 export interface SectionTrail {

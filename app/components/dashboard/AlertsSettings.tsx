@@ -56,10 +56,10 @@ export function AlertsSettings({ portfolioUuid, clientName }: { portfolioUuid: s
   useEffect(() => {
     if (form === null || assetOptions !== null) return;
     let cancelled = false;
-    portfolioService.getHoldings(portfolioUuid)
+    portfolioService.getInsightsComposition(portfolioUuid)
       .then((res) => {
         if (cancelled) return;
-        setAssetOptions((res?.holdings ?? []).map((h) => ({
+        setAssetOptions((res.holdings?.holdings ?? []).map((h) => ({
           assetId: h.assetId,
           label: h.ticker ? `${h.ticker} — ${h.name}` : h.name,
         })));
