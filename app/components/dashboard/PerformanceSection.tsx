@@ -1984,7 +1984,7 @@ function PeriodHero({
 /**
  * MONTH DETAIL — a single month's full breakdown, opened by clicking a cell in the returns
  * heatmap: a Performance card led by End Value as the headline figure (Total Change as a
- * badge next to it) with Start Value / Return / Market Effect / Dividends as supporting figures, plus
+ * badge next to it) with Start Value / Return / Market Effect / Dividends (when there were any) as supporting figures, plus
  * a separate Risk card for Volatility / Max Drawdown — kept apart from Performance since
  * these are risk figures, not performance, and mixing them read as one undifferentiated wall
  * of tiles (see the Monthly/Annual detail view this replaces). The month in progress is
@@ -1995,6 +1995,8 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
   const twr = period.timeWeightedReturnPct;
+  // A month without dividends leaves their tile out.
+  const hasDividends = period.dividendsInPeriod !== 0;
 
   return (
     <div className="space-y-6">
@@ -2017,7 +2019,7 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
               hasBaseline={hasBaseline}
               label={period.inProgress ? "Value Today" : undefined}
             />
-            <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 sm:divide-x">
+            <div className={`grid grid-cols-2 ${hasDividends ? "sm:grid-cols-4" : "sm:grid-cols-3"} divide-y divide-slate-100 sm:divide-y-0 sm:divide-x`}>
               <StatContent
                 title="Start Value"
                 value={formatCurrency(period.t0Value, period.currency, 0)}
@@ -2039,13 +2041,15 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
                 info="Price movement alone, capital flows excluded."
                 color={marketIsGain ? "emerald" : "red"}
               />
-              <StatContent
-                title="Dividends"
-                value={formatCurrency(period.dividendsInPeriod, period.currency, 0)}
-                icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
-                info={period.inProgress ? "Received so far this month." : "Received this month."}
-                color="blue"
-              />
+              {hasDividends && (
+                <StatContent
+                  title="Dividends"
+                  value={formatCurrency(period.dividendsInPeriod, period.currency, 0)}
+                  icon={<CircleDollarSign className="h-4 w-4 text-blue-600" />}
+                  info={period.inProgress ? "Received so far this month." : "Received this month."}
+                  color="blue"
+                />
+              )}
             </div>
           </Module>
           <Module>
@@ -2245,7 +2249,8 @@ function RealizedFigure({ label, info, value, note, tone, emphasis = false }: {
 /**
  * REALIZED P&L MODULE — the Income & Costs section's realized P&L: what selling has locked in
  * since inception, in the reference currency (each sale converted at its own date, the PDF
- * report's figures). A band of three figures (the total, from sales, from dividends), then the
+ * report's figures). A band of three figures (the total, from sales, from dividends; just the one
+ * from sales when no dividend was ever received), then the
  * five assets whose sales made or lost the most, one row each (RealizedRows). Its detail is
  * Profit & Loss's (ProfitLossExplore): the realized and dividend figures, then every asset in one
  * table.
@@ -2256,13 +2261,15 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
   const hasAny = data !== null && (data.topAssets.length > 0 || data.totalRealizedPnl !== 0);
   const canExplore = hasAny && !slot.updating;
   const toneOf = (v: number): "gain" | "loss" => (v >= 0 ? "gain" : "loss");
+  // No dividend ever: the total is the sales', so the band is just that one figure.
+  const hasDividends = data !== null && data.totalDividendIncome !== 0;
 
   return (
     <Module>
       <ModuleHead
         eyebrow={currency}
         title="Realized P&L"
-        desc="What selling has locked in since inception, plus the dividends received."
+        desc={hasDividends || data === null ? "What selling has locked in since inception, plus the dividends received." : "What selling has locked in since inception."}
         onExplore={canExplore ? () => setExploring(true) : undefined}
       />
       <SlotPlaceholder slot={slot} preparingMessage={PREPARING_TICK} />
@@ -2273,28 +2280,33 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
             <ModuleMessage>No closed positions yet.</ModuleMessage>
           ) : (
             <>
-              <div className="grid grid-cols-1 @xl:grid-cols-3 divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/40">
-                <RealizedFigure
-                  label="Total"
-                  info="From sales plus dividends, since inception."
-                  value={formatSignedCurrency(data.totalRealizedPnl, currency)}
-                  note="Sales and dividends together"
-                  tone={toneOf(data.totalRealizedPnl)}
-                  emphasis
-                />
+              <div className={`grid grid-cols-1 ${hasDividends ? "@xl:grid-cols-3" : ""} divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/40`}>
+                {hasDividends && (
+                  <RealizedFigure
+                    label="Total"
+                    info="From sales plus dividends, since inception."
+                    value={formatSignedCurrency(data.totalRealizedPnl, currency)}
+                    note="Sales and dividends together"
+                    tone={toneOf(data.totalRealizedPnl)}
+                    emphasis
+                  />
+                )}
                 <RealizedFigure
                   label="From sales"
                   info="Sale proceeds minus what those units cost, each sale converted at its own date."
                   value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)}
                   note="Proceeds minus what the units cost"
                   tone={toneOf(data.totalRealizedTradingPnl)}
+                  emphasis={!hasDividends}
                 />
-                <RealizedFigure
-                  label="From dividends"
-                  info="Dividends received since inception, from the holdings you still have and the ones you sold."
-                  value={formatCurrency(data.totalDividendIncome, currency, 0)}
-                  note="Received, held or sold since"
-                />
+                {hasDividends && (
+                  <RealizedFigure
+                    label="From dividends"
+                    info="Dividends received since inception, from the holdings you still have and the ones you sold."
+                    value={formatCurrency(data.totalDividendIncome, currency, 0)}
+                    note="Received, held or sold since"
+                  />
+                )}
               </div>
               <div className="px-6 md:px-7 pt-5 pb-3">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Biggest gains and losses from sales</p>
@@ -2321,17 +2333,20 @@ function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot
  * PROFIT & LOSS EXPLORE — the Realized P&L module's detail: what selling has locked in
  * (/insights/realized-pnl) and every dividend figure (/insights/dividends), then every asset in one
  * table (AssetPnlTable). The two load on their own, and the table shows as soon as either has.
+ * Without any dividend ever received, the dividends' panel and columns are left out.
  */
 function ProfitLossExplore({ portfolioUuid, revision }: { portfolioUuid: string; revision: number }) {
   const realized = useDetail(() => portfolioService.getRealizedPnl(portfolioUuid), portfolioUuid, revision);
   const dividends = useDetail(() => portfolioService.getDividends(portfolioUuid), portfolioUuid, revision);
   const loading = realized.loading || dividends.loading;
+  // No dividend ever received: nothing about them, here or in the table.
+  const noDividends = dividends.data !== null && dividends.data.totalLifetimeIncome === 0 && !dividends.data.byAsset.some((a) => a.lifetimeIncome > 0);
   return (
     <>
       <DetailBody detail={realized}>{(data) => <RealizedPnlFigures data={data} />}</DetailBody>
-      <DetailBody detail={dividends}>{(data) => <DividendsFigures data={data} />}</DetailBody>
+      {!noDividends && <DetailBody detail={dividends}>{(data) => <DividendsFigures data={data} />}</DetailBody>}
       {!loading && (realized.data || dividends.data) && (
-        <AssetPnlTable realized={realized.data} dividends={dividends.data} />
+        <AssetPnlTable realized={realized.data} dividends={dividends.data} withDividends={!noDividends} />
       )}
     </>
   );
@@ -2339,14 +2354,19 @@ function ProfitLossExplore({ portfolioUuid, revision }: { portfolioUuid: string;
 
 function RealizedPnlFigures({ data }: { data: RealizedPnlResponse }) {
   const { currency } = data;
+  const hasDividends = data.totalDividendIncome !== 0;
   return (
-      <ExplorePanel eyebrow={currency} title="Realized P&L" desc="What selling has locked in since inception, each sale converted at its own date, plus the dividends received.">
-        {/* The same band of three figures as the module on the page. */}
+      <ExplorePanel
+        eyebrow={currency}
+        title="Realized P&L"
+        desc={`What selling has locked in since inception, each sale converted at its own date${hasDividends ? ", plus the dividends received" : ""}.`}
+      >
+        {/* The same band of figures as the module on the page. */}
         <div className="@container">
-          <div className="grid grid-cols-1 @xl:grid-cols-3 divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100">
-            <RealizedFigure label="Total" info="From sales plus dividends, since inception." value={formatSignedCurrency(data.totalRealizedPnl, currency)} note="Sales and dividends together" tone={data.totalRealizedPnl >= 0 ? "gain" : "loss"} emphasis />
-            <RealizedFigure label="From sales" info="Sale proceeds minus what those units cost, each sale converted at its own date." value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)} note="Proceeds minus what the units cost" tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"} />
-            <RealizedFigure label="From dividends" info="Dividends received since inception, from the holdings you still have and the ones you sold." value={formatCurrency(data.totalDividendIncome, currency, 0)} note="Received, held or sold since" />
+          <div className={`grid grid-cols-1 ${hasDividends ? "@xl:grid-cols-3" : ""} divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100`}>
+            {hasDividends && <RealizedFigure label="Total" info="From sales plus dividends, since inception." value={formatSignedCurrency(data.totalRealizedPnl, currency)} note="Sales and dividends together" tone={data.totalRealizedPnl >= 0 ? "gain" : "loss"} emphasis />}
+            <RealizedFigure label="From sales" info="Sale proceeds minus what those units cost, each sale converted at its own date." value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)} note="Proceeds minus what the units cost" tone={data.totalRealizedTradingPnl >= 0 ? "gain" : "loss"} emphasis={!hasDividends} />
+            {hasDividends && <RealizedFigure label="From dividends" info="Dividends received since inception, from the holdings you still have and the ones you sold." value={formatCurrency(data.totalDividendIncome, currency, 0)} note="Received, held or sold since" />}
           </div>
         </div>
       </ExplorePanel>
@@ -2414,7 +2434,12 @@ function joinAssetPnl(realized: RealizedPnlResponse | null, dividends: Dividends
  * locked in, what it has paid, the total, then its dividends over the last two years and its
  * yields. Every column sorts; it scrolls sideways when it doesn't fit.
  */
-function AssetPnlTable({ realized, dividends }: { realized: RealizedPnlResponse | null; dividends: DividendsResponse | null }) {
+function AssetPnlTable({ realized, dividends, withDividends }: {
+  realized: RealizedPnlResponse | null;
+  dividends: DividendsResponse | null;
+  // false: no dividend was ever received, so the table is just what selling locked in.
+  withDividends: boolean;
+}) {
   const currency = realized?.currency ?? dividends?.currency ?? "EUR";
   const rows = useMemo(() => joinAssetPnl(realized, dividends), [realized, dividends]);
   const money = (v: number | null) => (v === null ? <span className="text-slate-300">—</span> : formatCurrency(v, currency, 0));
@@ -2422,22 +2447,26 @@ function AssetPnlTable({ realized, dividends }: { realized: RealizedPnlResponse 
   const columns = useMemo((): DataColumn<AssetPnlRow>[] => [
     { key: "asset", label: "Asset", sortValue: (a) => a.ticker ?? a.name, render: (a) => <AssetCell ticker={a.ticker} name={a.name} sub={a.isHeld === null ? undefined : a.isHeld ? "Still partly held" : "Closed"} /> },
     { key: "sales", label: "From sales", align: "right", sortValue: (a) => a.fromSales, render: (a) => signed(a.fromSales) },
-    { key: "dividends", label: "Dividends", align: "right", sortValue: (a) => a.dividends, render: (a) => money(a.dividends) },
-    { key: "total", label: "Total", align: "right", sortValue: (a) => a.total, render: (a) => signed(a.total) },
-    { key: "t12m", label: "Div. last 12m", align: "right", sortValue: (a) => a.trailing12M, render: (a) => money(a.trailing12M) },
-    { key: "p12m", label: "Div. prior 12m", align: "right", sortValue: (a) => a.prior12M, render: (a) => money(a.prior12M) },
-    { key: "yoy", label: "Change", align: "right", sortValue: (a) => a.growthYoyPct, render: (a) => <SignedPct pct={a.growthYoyPct} /> },
-    { key: "yield", label: "Yield", align: "right", sortValue: (a) => a.yieldPct, render: (a) => plainPctOrDash(a.yieldPct) },
-    { key: "yoc", label: "On cost", align: "right", sortValue: (a) => a.yieldOnCostPct, render: (a) => plainPctOrDash(a.yieldOnCostPct) },
+    ...(withDividends ? ([
+      { key: "dividends", label: "Dividends", align: "right", sortValue: (a) => a.dividends, render: (a) => money(a.dividends) },
+      { key: "total", label: "Total", align: "right", sortValue: (a) => a.total, render: (a) => signed(a.total) },
+      { key: "t12m", label: "Div. last 12m", align: "right", sortValue: (a) => a.trailing12M, render: (a) => money(a.trailing12M) },
+      { key: "p12m", label: "Div. prior 12m", align: "right", sortValue: (a) => a.prior12M, render: (a) => money(a.prior12M) },
+      { key: "yoy", label: "Change", align: "right", sortValue: (a) => a.growthYoyPct, render: (a) => <SignedPct pct={a.growthYoyPct} /> },
+      { key: "yield", label: "Yield", align: "right", sortValue: (a) => a.yieldPct, render: (a) => plainPctOrDash(a.yieldPct) },
+      { key: "yoc", label: "On cost", align: "right", sortValue: (a) => a.yieldOnCostPct, render: (a) => plainPctOrDash(a.yieldOnCostPct) },
+    ] satisfies DataColumn<AssetPnlRow>[]) : []),
   // money and signed only read currency.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [currency]);
+  ], [currency, withDividends]);
 
   return (
     <ExplorePanel
       eyebrow={currency}
       title="By Asset"
-      desc="Every asset sold or that has paid dividends: what selling it locked in, what it has paid, and its dividends over the last two years. The largest gains and losses from sales first."
+      desc={withDividends
+        ? "Every asset sold or that has paid dividends: what selling it locked in, what it has paid, and its dividends over the last two years. The largest gains and losses from sales first."
+        : "Every asset sold: what selling it locked in. The largest gains and losses first."}
     >
       <DataTable columns={columns} rows={rows} rowKey={(a) => a.assetId} />
     </ExplorePanel>
@@ -3216,7 +3245,8 @@ function RankedBars({
  * headline, the yields behind it, and the biggest payers over the last 12 months (the section
  * sends the top TOP_ROWS). wholePortfolioYieldPct is the portfolio's yield as a whole (not just
  * the holdings that pay), which is what "what does my portfolio yield" means. No detail of its
- * own: every dividend figure and asset is in Profit & Loss's (ProfitLossExplore).
+ * own: every dividend figure and asset is in Profit & Loss's (ProfitLossExplore). With no dividend
+ * ever received it keeps only the since-inception figure, at zero.
  */
 function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividendsModule>; currency: string }) {
   const data = slot.module;
@@ -3234,7 +3264,15 @@ function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividend
         <>
           {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
           {!hasIncome ? (
-            <ModuleMessage>No dividends received yet.</ModuleMessage>
+            // Nothing else to show without any: just the total, and why it's zero.
+            <FigureList>
+              <FigureRow
+                label="Since inception"
+                info="None of your holdings has paid a dividend yet."
+                value={formatCurrency(0, currency, 0)}
+                emphasis
+              />
+            </FigureList>
           ) : (
             <>
               <FigureList>
