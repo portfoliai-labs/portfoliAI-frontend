@@ -26,7 +26,8 @@ const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6
 /**
  * INVESTMENTS HUB — Manage / Investments: every portfolio on one row, in three columns. First the
  * real portfolio with the most money invested, on a big card as tall as the row
- * (FeaturedPortfolioCard); then the other real ones (the default first) and, for a demo account,
+ * (FeaturedPortfolioCard), two columns wide when it's the only one (no holder then; New portfolio
+ * is under Manage portfolios); then the other real ones (the default first) and, for a demo account,
  * the sample real estate (a preview), gathered in a card holder (PortfolioHolder), which pulls
  * each one out on hover to show its return and the curve behind it, with at its front the card that
  * creates a portfolio (NewPortfolioDialog); then the virtual ones ("All portfolios", every real portfolio
@@ -97,6 +98,8 @@ export function InsightsHub({
     },
   ];
   const portfolioCount = others.length;
+  // One real portfolio and nothing else to hold: no holder, its card takes the room instead.
+  const holdsAny = realItems.some((i) => !i.add);
   const virtualItems = portfolios.filter((p) => p.isVirtual).map((p, i) =>
     portfolioHolderItem(p, VIRTUAL_SHADES[i % VIRTUAL_SHADES.length], entryOf(p.uuid), () => onOpenPortfolio(p.uuid)));
 
@@ -112,9 +115,10 @@ export function InsightsHub({
             color={colorOf(featured.uuid)}
             entry={entryOf(featured.uuid)}
             onOpen={() => onOpenPortfolio(featured.uuid)}
+            alone={!holdsAny}
           />
         )}
-        <PortfolioHolder items={realItems} label={portfolioCount > 0 ? `${portfolioCount} more` : "Portfolios"} />
+        {holdsAny && <PortfolioHolder items={realItems} label={portfolioCount > 0 ? `${portfolioCount} more` : "Portfolios"} />}
         {virtualItems.length > 0 ? (
           <PortfolioHolder items={virtualItems} label={`${virtualItems.length} virtual`} tone="virtual" />
         ) : (
@@ -189,11 +193,13 @@ const formatSigned = (amount: number, currency: string) => `${amount >= 0 ? "+" 
  * FeaturedCard: its value, return since inception and a year, what went in and the gain on what's
  * still held, and the return curve. `entry` undefined while loading, null when there's nothing yet.
  */
-function FeaturedPortfolioCard({ portfolio, color, entry, onOpen }: {
+function FeaturedPortfolioCard({ portfolio, color, entry, onOpen, alone = false }: {
   portfolio: Portfolio;
   color: string;
   entry: PortfolioComparisonEntry | null | undefined;
   onOpen: () => void;
+  // The only real portfolio: two columns wide, where the holder would be.
+  alone?: boolean;
 }) {
   const value = entry?.value ?? null;
   const performance = entry?.performance ?? null;
@@ -202,7 +208,8 @@ function FeaturedPortfolioCard({ portfolio, color, entry, onOpen }: {
 
   return (
     <FeaturedCard
-      eyebrow="Largest portfolio"
+      className={alone ? "sm:col-span-2" : ""}
+      eyebrow={alone ? "Your portfolio" : "Largest portfolio"}
       name={portfolio.name}
       badge={portfolio.isDefault ? (
         <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
