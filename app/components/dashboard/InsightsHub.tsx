@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BellRing, Columns3, FileText, History, MoreHorizontal, Pencil, Receipt, Telescope, Trash2, Wand2 } from "lucide-react";
+import { ArrowUpRight, BellRing, Columns3, FileText, History, MoreHorizontal, Pencil, Receipt, Settings2, Telescope, Trash2, Wand2 } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
 import { portfolioColorMap } from "../../lib/chartColors";
@@ -33,8 +33,9 @@ const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6
  * together, there with two or more, and the strategies backtested with Strategy, see
  * models/Strategy) in a holder of their own, in their blue (BacktestMarks), or the way to
  * backtest one while there are none. The sleeves sit on one line, each stack rising from it. A
- * card opens its portfolio's Insights, where it's renamed or deleted. Under them, Transactions,
- * Reports and Alerts (each picking a portfolio at its top), then Compare, Strategy and Discovery
+ * card opens its portfolio's Insights, where it's renamed or deleted. Under them, Manage portfolios
+ * (every portfolio in one list, to rename, delete or add: ManagePortfolios), Transactions, Reports
+ * and Alerts (each picking a portfolio at its top), then Compare, Strategy and Discovery
  * (searching for new assets; coming soon). A demo
  * account (see lib/demo) can't create anything. The figures for every card come from one call
  * (GET /v1/portfolios/comparison with no portfolio listed returns all of them), refetched when a
@@ -131,6 +132,12 @@ export function InsightsHub({
 
       {/* The ways on from here, in a row of their own under the portfolios: same columns as above. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        <ActionCard
+          icon={<Settings2 className="h-5 w-5" />}
+          title="Manage portfolios"
+          text="Rename, delete or add portfolios, all in one list."
+          onClick={() => onOpenPage("portfolios")}
+        />
         <ActionCard
           icon={<Receipt className="h-5 w-5" />}
           title="Transactions"

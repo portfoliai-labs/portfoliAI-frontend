@@ -13,6 +13,7 @@ import type { Crumb } from "./Breadcrumb";
 import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
 import { WalletView, WalletsHub, isWalletId, type WalletPage } from "../preview/WalletPages";
 import { StrategyBuilder } from "./StrategyBuilder";
+import { ManagePortfolios } from "./ManagePortfolios";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 import { isBacktest } from "../../models/Portfolio";
 
@@ -33,8 +34,9 @@ type PortfoliosView =
   // A portfolio: its Insights.
   | { kind: "portfolio"; uuid: string };
 
-// The pages under Investments that pick a portfolio at their top.
-export type InvestmentsPage = "transactions" | "reports" | "alerts";
+// The pages under Investments across every portfolio: Transactions, Reports and Alerts, which
+// pick a portfolio at their top, and Manage portfolios (rename, delete, create).
+export type InvestmentsPage = "transactions" | "reports" | "alerts" | "portfolios";
 
 // The dashboard's section id for this one (see the dashboard page).
 const SECTION = "performance";
@@ -192,6 +194,7 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   if (view.kind === "transactions") return <PortfolioTransactionsSection trail={investmentsTrail} />;
   if (view.kind === "reports") return <PortfolioReportsSection trail={investmentsTrail} />;
   if (view.kind === "alerts") return <PortfolioAlertsSection trail={investmentsTrail} />;
+  if (view.kind === "portfolios") return <ManagePortfolios trail={investmentsTrail} onOpenPortfolio={openPortfolio} />;
   if (view.kind === "strategy") return <StrategyBuilder trail={investmentsTrail} onCreated={openPortfolio} />;
 
   if (view.kind === "compare") {
