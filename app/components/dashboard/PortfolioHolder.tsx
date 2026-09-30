@@ -236,7 +236,7 @@ export interface FeaturedFigure {
  * nothing yet (`empty` says why).
  */
 export function FeaturedCard({
-  eyebrow, name, badge, color, value, line, figures, points, empty, onOpen,
+  eyebrow, name, badge, color, value, line, figures, points, empty, onOpen, className = "",
 }: {
   eyebrow: string;
   name: string;
@@ -248,15 +248,18 @@ export function FeaturedCard({
   points: { value: number }[];
   empty: string;
   onOpen: () => void;
+  // Its place in the row (a wider span, when it stands alone).
+  className?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group self-stretch min-h-80 w-full text-left bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden transition-all hover:border-[#C49A3C]/50 hover:shadow-md outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+      className={`${className} group self-stretch min-h-80 w-full text-left bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden transition-all hover:border-[#C49A3C]/50 hover:shadow-md outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40`}
     >
       <span className="h-1.5 w-full shrink-0" style={{ background: color }} />
-      <span className="p-5 md:p-6 flex flex-col gap-5 flex-1 w-full">
+      {/* Little room under the curve: it runs close to the card's bottom edge. */}
+      <span className="px-5 pt-5 pb-2 md:px-6 md:pt-6 md:pb-3 flex flex-col gap-5 flex-1 w-full">
         <span className="flex items-start justify-between gap-3">
           <span className="min-w-0">
             <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1">{eyebrow}</span>
