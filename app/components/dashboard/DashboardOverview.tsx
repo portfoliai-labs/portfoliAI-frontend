@@ -452,7 +452,7 @@ function useRecentMoves(portfolioUuid: string) {
 // Most urgent first: a triggered alert leads, a switched-off one comes last. Rules of the same
 // state keep the backend's order (portfolio by portfolio, oldest first).
 const ALERT_ORDER: Record<AlertState["kind"], number> = {
-  triggered: 0, reached: 1, approaching: 2, ok: 3, pending: 4, unavailable: 5, off: 6,
+  triggered: 0, reached: 1, approaching: 2, ok: 3, notReached: 4, pending: 5, unavailable: 6, off: 7,
 };
 
 // A user can have up to 20 alerts per portfolio, far too many dials to show at once. The most

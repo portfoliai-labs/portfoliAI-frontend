@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2, Clock, Bell, BellRing } from "lucide-react";
 import type { NotificationResponse } from "../../services/notificationService";
-import { formatAlertPct, WINDOW_LABEL } from "../../lib/alerts";
+import { formatAlertPct, formatRange, WINDOW_LABEL } from "../../lib/alerts";
+import { categoryLabel } from "../../models/Policy";
 import type { AlertWindow } from "../../models/Alert";
 
 interface NotificationListProps {
@@ -77,7 +78,8 @@ function getReportName(n: NotificationResponse): string | undefined {
 
 // An alert firing (type ALERT_TRIGGERED). Its payload is snake_case with numbers already in %:
 // rule_type, threshold_pct, and either asset_id / asset_name / ticker / weight_pct (asset_weight)
-// or direction / window / change_pct (portfolio_change), plus portfolio_uuid / portfolio_name.
+// or direction / window / change_pct (portfolio_change), or label / min_pct / max_pct / bound /
+// weight_pct / assets (group_weight, a portfolio policy's), plus portfolio_uuid / portfolio_name.
 // On an advisor's rule it also carries client_uuid / client_name, the client whose portfolio fired.
 const ALERT_CONFIG = {
   label: "Alert",
@@ -91,6 +93,17 @@ function getAlertSummary(n: NotificationResponse): { title: string; detail: stri
   const client = typeof p.client_name === "string" ? p.client_name : null;
   const portfolioName = typeof p.portfolio_name === "string" ? p.portfolio_name : null;
   const portfolio = client ? `${client}'s ${portfolioName ?? "portfolio"}` : portfolioName ?? "your portfolio";
+
+  if (p.rule_type === "group_weight") {
+    const group = typeof p.label === "string" ? categoryLabel(p.label) : "A group of assets";
+    const side = p.bound === "min" ? "below" : "above";
+    return {
+      title: threshold ? `${group} ${side} ${threshold} of ${portfolio}` : `${group} left its range`,
+      detail: typeof p.weight_pct === "number"
+        ? `Now ${formatAlertPct(p.weight_pct)}, your range ${formatRange(p.min_pct as number | null, p.max_pct as number | null)}`
+        : "",
+    };
+  }
 
   if (p.rule_type === "asset_weight") {
     const asset = (p.ticker as string | null) ?? (p.asset_name as string | null) ?? "An asset";

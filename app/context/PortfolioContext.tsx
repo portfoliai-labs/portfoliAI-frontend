@@ -30,6 +30,9 @@ interface PortfolioContextType {
   createPortfolio: (name: string) => Promise<Portfolio>;
   // A strategy's backtest (see models/Strategy): joins the list, selected, like a new portfolio.
   createStrategyPortfolio: (payload: StrategyPortfolioPayload) => Promise<Portfolio>;
+  // A new, empty portfolio carrying a backtest's strategy as its policy (see models/Policy):
+  // joins the list, selected, like a new portfolio.
+  adoptStrategy: (strategyPortfolioUuid: string, name: string) => Promise<Portfolio>;
   renamePortfolio: (uuid: string, name: string) => Promise<Portfolio>;
   // Throws (with the backend's own message) on the default portfolio's 409 — callers show it.
   deletePortfolio: (uuid: string) => Promise<void>;
@@ -93,6 +96,13 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     return created;
   }, [selectPortfolio, fetchPortfolios]);
 
+  const adoptStrategy = useCallback(async (strategyPortfolioUuid: string, name: string) => {
+    const created = await portfoliosService.adoptStrategy(strategyPortfolioUuid, name);
+    await fetchPortfolios();
+    selectPortfolio(created.uuid);
+    return created;
+  }, [selectPortfolio, fetchPortfolios]);
+
   const renamePortfolio = useCallback(async (uuid: string, name: string) => {
     const updated = await portfoliosService.rename(uuid, name);
     setPortfolios((prev) => prev.map((p) => (p.uuid === uuid ? updated : p)));
@@ -113,8 +123,8 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
 
   const contextValue: PortfolioContextType = useMemo(() => ({
     portfolios, current, loading, selectPortfolio,
-    refreshPortfolios: fetchPortfolios, createPortfolio, createStrategyPortfolio, renamePortfolio, deletePortfolio,
-  }), [portfolios, current, loading, selectPortfolio, fetchPortfolios, createPortfolio, createStrategyPortfolio, renamePortfolio, deletePortfolio]);
+    refreshPortfolios: fetchPortfolios, createPortfolio, createStrategyPortfolio, adoptStrategy, renamePortfolio, deletePortfolio,
+  }), [portfolios, current, loading, selectPortfolio, fetchPortfolios, createPortfolio, createStrategyPortfolio, adoptStrategy, renamePortfolio, deletePortfolio]);
 
   return <PortfolioContext.Provider value={contextValue}>{children}</PortfolioContext.Provider>;
 }

@@ -17,7 +17,7 @@ import {
   alertFigures, alertState, describeAlert, describeParams, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL, type AlertTone,
 } from "../../lib/alerts";
 import type {
-  AlertParams, AlertRuleUpdateRequest, AlertDirection, AlertWindow,
+  AlertParams, AlertRuleUpdateRequest, AlertDirection, AlertWindow, GroupWeightParams,
 } from "../../models/Alert";
 
 interface AssetOption {
@@ -65,10 +65,12 @@ const formatDate = (iso: string) =>
  * (read only) also sees sample rules on two of its portfolios that have none (lib/mock/alerts),
  * to show what the page looks like with some.
  */
-export function AlertsSettings({ portfolios, clientName }: { portfolios: AlertPortfolio[]; clientName?: string }) {
+// `grouped`: the per-portfolio card even for a single portfolio, so it's named (one portfolio's
+// alerts, opened from Manage portfolios).
+export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }: { portfolios: AlertPortfolio[]; clientName?: string; grouped?: boolean }) {
   const uuids = portfolios.map((p) => p.uuid);
   const { rules, setRules, loading, error, reload } = usePortfoliosAlertRules(uuids);
-  const grouped = portfolios.length > 1;
+  const grouped = forceGrouped ?? portfolios.length > 1;
   // A demo account (see lib/demo) sees its rules but can't create, change or delete them.
   const { isDemo } = useUser();
   // null = form closed; { rule: null } = creating on `portfolioUuid`; { rule } = editing that rule.
@@ -181,6 +183,7 @@ export function AlertsSettings({ portfolios, clientName }: { portfolios: AlertPo
             {rule.notifyEmail && <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</span>}
             {rule.notifyInApp && <span className="flex items-center gap-1.5"><Bell className="w-3.5 h-3.5" /> In-app</span>}
             {!rule.notifyEmail && !rule.notifyInApp && <span>Dashboard only</span>}
+            {rule.policyConstraintId && <span>Kept by the portfolio&apos;s policy</span>}
           </div>
         </div>
 
@@ -203,7 +206,8 @@ export function AlertsSettings({ portfolios, clientName }: { portfolios: AlertPo
           </p>
         </div>
 
-        {!isDemo ? (
+        {/* A policy's rule changes with the policy (PATCH / DELETE on it are a 409). */}
+        {!isDemo && !rule.policyConstraintId ? (
           <div className="flex items-center gap-1.5 md:justify-end">
             <div className={busy ? "pointer-events-none opacity-60" : ""}>
               <Toggle
@@ -394,6 +398,8 @@ export function AlertsSettings({ portfolios, clientName }: { portfolios: AlertPo
  * are shown as the backend words them. It's always on one portfolio (`portfolio`); `named` words
  * it by that portfolio's name, when the user has several.
  */
+type FormParams = Exclude<AlertParams, GroupWeightParams>;
+
 function AlertForm({
   rule, portfolio: target, named, clientName, holdings, onSaved, onCancel,
 }: {
@@ -407,11 +413,13 @@ function AlertForm({
   onCancel: () => void;
 }) {
   const editing = rule !== null;
-  const initial = rule?.params;
+  // A policy's group-weight rules are never edited here (see renderRule), so the form only knows
+  // the two kinds it creates.
+  const initial = rule?.params.type === "group_weight" ? undefined : rule?.params;
   const portfolioUuid = target.uuid;
   const portfolio = clientName ? `${clientName}'s portfolio` : named ? target.name : "your portfolio";
 
-  const [type, setType] = useState<AlertParams["type"]>(initial?.type ?? "portfolio_change");
+  const [type, setType] = useState<FormParams["type"]>(initial?.type ?? "portfolio_change");
   const [direction, setDirection] = useState<AlertDirection>(initial?.type === "portfolio_change" ? initial.direction : "down");
   const [span, setSpan] = useState<AlertWindow>(initial?.type === "portfolio_change" ? initial.window : "day");
   const [threshold, setThreshold] = useState(initial ? String(initial.thresholdPct) : "");
@@ -433,7 +441,7 @@ function AlertForm({
   }
   const assetLabel = options.find((o) => o.assetId === assetId)?.label;
 
-  const params: AlertParams | null = !thresholdValid
+  const params: FormParams | null = !thresholdValid
     ? null
     : type === "portfolio_change"
       ? { type, direction, thresholdPct: thresholdNumber, window: span }

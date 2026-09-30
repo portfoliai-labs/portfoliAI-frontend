@@ -1,4 +1,5 @@
 import type { AlertParams, AlertRuleResponse, AlertWindow } from "../models/Alert";
+import { categoryLabel } from "../models/Policy";
 
 // The backend caps a user at 20 rules (a 409 beyond that).
 export const ALERT_RULE_LIMIT = 20;
@@ -21,7 +22,7 @@ export function formatAlertPct(value: number, signed = false): string {
 export type AlertTone = "ok" | "warn" | "danger" | "muted";
 
 export interface AlertState {
-  kind: "off" | "pending" | "unavailable" | "triggered" | "reached" | "approaching" | "ok";
+  kind: "off" | "pending" | "unavailable" | "triggered" | "reached" | "notReached" | "approaching" | "ok";
   label: string;
   tone: AlertTone;
   // The gauge position, null when there's nothing to draw (off, waiting, not measurable).
@@ -34,7 +35,9 @@ export interface AlertState {
  * The state of a rule, worked out from what the backend sends: a disabled rule is "off" (its
  * reading is stale, so it's ignored); no reading yet is "pending"; an unmeasurable one is
  * "unavailable"; isTriggered means it fired and still holds; `breached` alone means the condition
- * holds but hasn't yet held for two checks; otherwise it's "approaching" from
+ * holds but hasn't yet held for two checks, except on a policy's rule that has never fired: a range
+ * the portfolio hasn't reached yet (an adopted strategy being built), which never notifies, so it's
+ * "notReached" rather than red; otherwise it's "approaching" from
  * APPROACHING_FROM_PCT of the way to the threshold, and "ok" below that.
  */
 export function alertState(rule: AlertRuleResponse): AlertState {
@@ -47,11 +50,21 @@ export function alertState(rule: AlertRuleResponse): AlertState {
 
   const progressPct = reading.progressPct;
   if (rule.isTriggered) return { kind: "triggered", label: "Triggered", tone: "danger", progressPct, breached: true };
+  if (reading.breached && rule.policyConstraintId && !rule.lastTriggeredAt) {
+    return { kind: "notReached", label: "Not reached yet", tone: "muted", progressPct, breached: false };
+  }
   if (reading.breached) return { kind: "reached", label: "Threshold reached", tone: "danger", progressPct, breached: true };
   if (progressPct !== null && progressPct >= APPROACHING_FROM_PCT) {
     return { kind: "approaching", label: "Approaching", tone: "warn", progressPct, breached: false };
   }
   return { kind: "ok", label: "Within range", tone: "ok", progressPct, breached: false };
+}
+
+/** A group-weight range in words: "35–45%", "at least 5%", "at most 40%". */
+export function formatRange(minPct: number | null | undefined, maxPct: number | null | undefined): string {
+  if (minPct != null && maxPct != null) return `${Number(minPct.toFixed(2))}–${formatAlertPct(maxPct)}`;
+  if (minPct != null) return `at least ${formatAlertPct(minPct)}`;
+  return maxPct != null ? `at most ${formatAlertPct(maxPct)}` : "";
 }
 
 /**
@@ -65,6 +78,14 @@ export function describeAlert(rule: AlertRuleResponse, clientName?: string): { t
     return {
       title: `Portfolio ${params.direction === "down" ? "down" : "up"} ${formatAlertPct(params.thresholdPct)}`,
       subtitle: `Over ${WINDOW_LABEL[params.window]}`,
+    };
+  }
+
+  if (params.type === "group_weight") {
+    const assets = params.assetIds.length === 1 ? "1 asset" : `${params.assetIds.length} assets`;
+    return {
+      title: `${params.label ? categoryLabel(params.label) : "Group"} ${formatRange(params.minPct, params.maxPct)}`,
+      subtitle: `${assets}, combined share of ${clientName ? `${clientName}'s` : "your"} portfolio`,
     };
   }
 
@@ -102,6 +123,9 @@ export function describeParams(params: AlertParams, assetLabel?: string, clientN
     const verb = params.direction === "down" ? "falls" : "rises";
     return `Notify me when the result of ${portfolio} ${verb} by ${formatAlertPct(params.thresholdPct)} or more over ${WINDOW_LABEL[params.window]}.`;
   }
+  if (params.type === "group_weight") {
+    return `Notify me when ${params.label ? categoryLabel(params.label) : "the group"} is outside ${formatRange(params.minPct, params.maxPct)} of ${portfolio}.`;
+  }
   const subject = params.assetId === null ? "any single holding" : assetLabel ?? "the selected asset";
   return `Notify me when ${subject} is above ${formatAlertPct(params.thresholdPct)} of ${portfolio}.`;
 }
@@ -119,6 +143,7 @@ export function alertUrgency(rule: AlertRuleResponse): number {
     case "reached": return 300 + progress;
     case "approaching": return 200 + progress;
     case "ok": return 100 + progress;
+    case "notReached": return 3;
     case "pending": return 2;
     case "unavailable": return 1;
     default: return 0;

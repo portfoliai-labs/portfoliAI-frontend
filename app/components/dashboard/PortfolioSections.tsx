@@ -38,17 +38,20 @@ export function PortfolioReportsSection({ trail }: { trail: Crumb[] }) {
  * own "New alert" (see AlertsSettings). The virtual ones ("All portfolios", the backtests) take no
  * alerts for now.
  */
-export function PortfolioAlertsSection({ trail }: { trail: Crumb[] }) {
+// `portfolioUuid`: only that portfolio's alerts (from its row in Manage portfolios); every real
+// portfolio's without it, or when it's gone.
+export function PortfolioAlertsSection({ trail, portfolioUuid }: { trail: Crumb[]; portfolioUuid?: string }) {
   const { portfolios } = usePortfolio();
   // Each card in its portfolio's colour.
   const real = useMemo(() => {
     const colorOf = portfolioColorMap(portfolios);
     return portfolios.filter((p) => !p.isVirtual).map((p) => ({ uuid: p.uuid, name: p.name, color: colorOf(p.uuid) }));
   }, [portfolios]);
+  const focused = portfolioUuid ? real.find((p) => p.uuid === portfolioUuid) : undefined;
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current="Alerts" />
-      <AlertsSettings portfolios={real} />
+      <Breadcrumb trail={trail} current={focused ? `${focused.name} alerts` : "Alerts"} />
+      <AlertsSettings portfolios={focused ? [focused] : real} grouped={focused ? true : undefined} />
     </div>
   );
 }

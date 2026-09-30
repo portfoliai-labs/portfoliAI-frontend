@@ -31,6 +31,19 @@ export const portfoliosService = {
     });
   },
 
+  // POST /v1/portfolios/{p}/strategy/adopt {name} — 201 with a new, empty standard portfolio
+  // carrying the policy the strategy implies (models/Policy; on the backtest's own ETFs, linked back
+  // through its adoptedFrom). 404 for a
+  // portfolio that isn't a strategy's, 409 if the name is taken, 403 for an advisor, 422 for a
+  // strategy with nothing to check. Like POST /v1/portfolios, the 2nd standard portfolio also
+  // brings the aggregate.
+  async adoptStrategy(strategyPortfolioUuid: string, name: string): Promise<Portfolio> {
+    return apiFetch<Portfolio>(`/v1/portfolios/${strategyPortfolioUuid}/strategy/adopt`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+
   // GET /v1/portfolios/{p}/strategy — the strategy a backtest was made from; 404 for a
   // portfolio that isn't one.
   async getStrategy(portfolioUuid: string): Promise<StrategyParams> {

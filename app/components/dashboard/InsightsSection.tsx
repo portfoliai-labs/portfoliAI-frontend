@@ -8,12 +8,12 @@ import { PerformanceSection } from "./PerformanceSection";
 import { ComparisonView, MAX_COMPARED, initialCompareSelection, rememberCompareSelection } from "./ComparisonView";
 import { InsightsHub } from "./InsightsHub";
 import { ManageHub } from "./ManageHub";
-import { PortfolioActions } from "./PortfolioActions";
 import { PortfolioAlertsSection, PortfolioReportsSection, PortfolioTransactionsSection } from "./PortfolioSections";
 import type { Crumb } from "./Breadcrumb";
 import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
 import { WalletView, WalletsHub, isWalletId, type WalletPage } from "../preview/WalletPages";
 import { StrategyBuilder } from "./StrategyBuilder";
+import { ExploreCommunity } from "../preview/ExploreCommunity";
 import { ManagePortfolios } from "./ManagePortfolios";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 import { isBacktest } from "../../models/Portfolio";
@@ -25,8 +25,11 @@ type PortfoliosView =
   | { kind: "investments" }
   | { kind: "compare" }
   | { kind: "strategy" }
-  // Every portfolio's transactions, reports and alerts, on one page each (PortfolioSections).
-  | { kind: InvestmentsPage }
+  // Portfolios other investors share (a demo account's preview, see ExploreCommunity).
+  | { kind: "explore" }
+  // Every portfolio's transactions, reports and alerts, on one page each (PortfolioSections); the
+  // alerts of one portfolio with `portfolioUuid` (from Manage portfolios).
+  | { kind: InvestmentsPage; portfolioUuid?: string }
   // Previews of what's coming, on sample data (components/preview).
   | { kind: "realEstate"; page: RealEstatePage }
   // Manage / Wallets, and its pages: a wallet's Insights, and Transactions, Budgets… on one or all.
@@ -94,12 +97,12 @@ export function openWalletPage(onNavigate: (section: string) => void, walletId: 
 const viewFromHistory = (): PortfoliosView => {
   const entry = readDashboardEntry();
   const view = entry?.section === SECTION ? (entry.view as PortfoliosView | undefined) : undefined;
-  // An entry from before Manage had a hub of its own: "hub" was the portfolios'. Explore was a page
-  // here before it got a section of its own; a wallet's id can outlive the sample data.
+  // An entry from before Manage had a hub of its own: "hub" was the portfolios'. A wallet's id can
+  // outlive the sample data.
   const kind = view?.kind as string | undefined;
   if (kind === "hub") return { kind: "investments" };
   // Manage was called Assets, then Vault.
-  if (!view || kind === "assets" || kind === "vault" || kind === "explore" || (view.kind === "wallet" && !isWalletId(view.id))) return { kind: "manage" };
+  if (!view || kind === "assets" || kind === "vault" || (view.kind === "wallet" && !isWalletId(view.id))) return { kind: "manage" };
   // A wallet had a page of its own before its card opened on Insights.
   if (view.kind === "wallet" && (view.page as string) === "home") return { ...view, page: "insights" };
   // A portfolio had pages of its own (home, transactions…) before its cards opened on Insights.
@@ -113,15 +116,16 @@ const viewFromHistory = (): PortfoliosView => {
  * its hub. Investments (InsightsHub): a card per portfolio, plus Combined, Compare and Strategy.
  * Wallets (WalletsHub, a preview on sample data for a demo account, see WalletPages): a card per
  * wallet opening on its Insights, and Transactions, Budgets, Reports and Alerts on the hub. A
- * portfolio's card opens straight on its Insights, with its Rename and Delete in the corner
- * (PortfolioActions). Transactions, Reports and Alerts sit on Investments with Compare and
+ * portfolio's card opens straight on its Insights; it's renamed or deleted under Manage portfolios
+ * (ManagePortfolios). Transactions, Reports and Alerts sit on Investments with Compare and
  * Strategy, each on every portfolio at once (PortfolioSections). Opening a portfolio also makes it the selected one
  * (PortfolioContext), which the rest of the dashboard follows. Which page is open is local to
  * this section: leaving and coming back lands on Manage's hub again (unless openPortfolioInsights asked
  * for another), while Compare's picked portfolios are remembered for next time. Every page is a
  * browser history entry, so back and forward move between them (see lib/dashboardHistory).
  * Investments also leads to Strategy, which backtests a strategy into a virtual portfolio and then
- * opens it, and, for a demo account, to a sample real estate portfolio (mock data from lib/mock).
+ * opens it, and, for a demo account, to a sample real estate portfolio and to Explore, the
+ * portfolios other investors share (both mock data from lib/mock).
  */
 export function InsightsSection({ onNavigate }: { onNavigate: (section: string) => void }) {
   const { portfolios, current, selectPortfolio } = usePortfolio();
@@ -169,6 +173,8 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   const manageTrail: Crumb[] = [{ label: "Manage", onClick: toManage }];
   const investmentsTrail: Crumb[] = [...manageTrail, { label: "Investments", onClick: toInvestments }];
   const walletsTrail: Crumb[] = [...manageTrail, { label: "Wallets", onClick: toWallets }];
+  // One portfolio's alerts sit under Manage portfolios, where they're opened from.
+  const portfoliosTrail: Crumb[] = [...investmentsTrail, { label: "Manage portfolios", onClick: () => go({ kind: "portfolios" }) }];
 
   const investmentsHub = (
     <InsightsHub
@@ -180,6 +186,7 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
       }}
       onOpenRealEstate={() => go({ kind: "realEstate", page: "home" })}
       onStrategy={() => go({ kind: "strategy" })}
+      onExplore={() => go({ kind: "explore" })}
       onOpenPage={(page) => go({ kind: page })}
     />
   );
@@ -195,11 +202,20 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
   }
   if (view.kind === "transactions") return <PortfolioTransactionsSection trail={investmentsTrail} />;
   if (view.kind === "reports") return <PortfolioReportsSection trail={investmentsTrail} />;
-  if (view.kind === "alerts") return <PortfolioAlertsSection trail={investmentsTrail} />;
-  if (view.kind === "portfolios") return <ManagePortfolios trail={investmentsTrail} onOpenPortfolio={openPortfolio} />;
-  // Strategy is a demo account's preview for now: anyone else landing on it (an old history entry)
-  // gets the portfolios.
-  if (view.kind === "strategy") return isDemo ? <StrategyBuilder trail={investmentsTrail} onCreated={openPortfolio} /> : investmentsHub;
+  if (view.kind === "alerts") return <PortfolioAlertsSection trail={view.portfolioUuid ? portfoliosTrail : investmentsTrail} portfolioUuid={view.portfolioUuid} />;
+  if (view.kind === "portfolios") {
+    return (
+      <ManagePortfolios
+        trail={investmentsTrail}
+        onOpenPortfolio={openPortfolio}
+        onOpenAlerts={(uuid) => go({ kind: "alerts", portfolioUuid: uuid })}
+      />
+    );
+  }
+  if (view.kind === "strategy") return <StrategyBuilder trail={investmentsTrail} onCreated={openPortfolio} />;
+  // Explore is a demo account's preview: anyone else landing on it (an old history entry) gets the
+  // portfolios.
+  if (view.kind === "explore") return isDemo ? <ExploreCommunity trail={investmentsTrail} /> : investmentsHub;
 
   if (view.kind === "compare") {
     return <ComparisonView selection={selection} onToggle={toggle} trail={investmentsTrail} onOpen={openPortfolio} />;
@@ -228,7 +244,6 @@ export function InsightsSection({ onNavigate }: { onNavigate: (section: string) 
         isAggregate={portfolio.isAggregate}
         backtest={isBacktest(portfolio)}
         trail={[...investmentsTrail, { label: portfolio.name, onClick: backToInsights }]}
-        action={<PortfolioActions portfolio={portfolio} onDeleted={toInvestments} />}
         onNavigate={onNavigate}
       />
     );

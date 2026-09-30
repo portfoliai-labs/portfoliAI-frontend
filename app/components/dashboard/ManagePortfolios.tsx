@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Bell, Check, Loader2, Pencil, Plus, Target, Trash2, X } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useUser } from "../../context/UserContext";
 import { portfoliosService } from "../../services/portfoliosService";
@@ -12,6 +12,8 @@ import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { VIRTUAL_COLOR, VirtualBadge } from "./BacktestMarks";
+import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
+import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
@@ -26,10 +28,17 @@ const createdLabel = (iso: string) =>
  * create one. The real portfolios first, the default leading (it can't be deleted: the backend
  * answers 409), then the strategies' backtests. "All portfolios" isn't listed: it's built from the
  * others and can be neither renamed nor deleted, which a line under the list says. Values come
- * from GET /v1/portfolios/comparison, like the hub's. A demo account sees the list but can't change
- * anything.
+ * from GET /v1/portfolios/comparison, like the hub's. A backtest can be adopted: a new, empty
+ * portfolio carrying its strategy as a policy (AdoptStrategyDialog), whose ranges are alerts of
+ * its own. A real portfolio's row counts its alerts (a policy's included) and leads to them
+ * (`onOpenAlerts`). A demo account sees the list but can't change anything.
  */
-export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; onOpenPortfolio: (uuid: string) => void }) {
+export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
+  trail: Crumb[];
+  onOpenPortfolio: (uuid: string) => void;
+  // That portfolio's alerts page.
+  onOpenAlerts: (uuid: string) => void;
+}) {
   const { portfolios, deletePortfolio } = usePortfolio();
   const { isDemo } = useUser();
   const [creating, setCreating] = useState(false);
@@ -52,6 +61,8 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
   const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
   const backtests = portfolios.filter((p) => p.isVirtual && !p.isAggregate);
   const hasAggregate = portfolios.some((p) => p.isAggregate);
+  const { rules } = usePortfoliosAlertRules(real.map((p) => p.uuid));
+  const [adopting, setAdopting] = useState<Portfolio | null>(null);
 
   const handleDelete = async () => {
     if (!toDelete) return;
@@ -74,7 +85,11 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
       color={color}
       entry={loaded ? entries.byUuid.get(p.uuid) ?? null : undefined}
       readOnly={isDemo}
+      // Backtests take no alerts; undefined while they load.
+      alertCount={p.isVirtual || rules === null ? undefined : rules.filter((r) => r.portfolioUuid === p.uuid).length}
+      onOpenAlerts={() => onOpenAlerts(p.uuid)}
       onOpen={() => onOpenPortfolio(p.uuid)}
+      onAdopt={p.isVirtual ? () => setAdopting(p) : undefined}
       onDelete={() => setToDelete(p)}
     />
   );
@@ -118,6 +133,14 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
       )}
 
       {creating && <NewPortfolioDialog onClose={() => setCreating(false)} />}
+      {adopting && (
+        <AdoptStrategyDialog
+          strategyUuid={adopting.uuid}
+          strategyName={adopting.name}
+          onClose={() => setAdopting(null)}
+          onAdopted={() => setAdopting(null)}
+        />
+      )}
       {toDelete && (
         <ConfirmDialog
           title={`Delete "${toDelete.name}"?`}
@@ -141,7 +164,7 @@ function ManageGroup({ title, note, tone, children }: { title: string; note?: st
         {note && <p className="text-xs text-slate-500 mt-0.5">{note}</p>}
       </div>
       {/* Column heads, from medium screens up: a row reads as one line there. */}
-      <div className="hidden md:grid grid-cols-[minmax(0,1fr)_8rem_7rem_9rem] gap-4 px-6 md:px-7 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+      <div className="hidden md:grid grid-cols-[minmax(0,1fr)_8rem_7rem_11rem] gap-4 px-6 md:px-7 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
         <span>Name</span>
         <span className="text-right">Value</span>
         <span className="text-right">Created</span>
@@ -154,18 +177,23 @@ function ManageGroup({ title, note, tone, children }: { title: string; note?: st
 
 /**
  * One portfolio in the list: its colour and name (which Rename turns into a field, saved on Enter
- * or the tick), its value and when it was created, then Open, Rename and Delete. The default
- * portfolio's Delete is disabled, with why.
+ * or the tick), its alerts (a pill leading to them), its value and when it was created,
+ * then Open, Adopt (a backtest's), Rename and Delete. The default portfolio's Delete is disabled,
+ * with why.
  */
 function ManageRow({
-  portfolio, color, entry, readOnly, onOpen, onDelete,
+  portfolio, color, entry, readOnly, alertCount, onOpenAlerts, onOpen, onAdopt, onDelete,
 }: {
   portfolio: Portfolio;
   color: string;
   // undefined while loading, null when there are no figures yet.
   entry: PortfolioComparisonEntry | null | undefined;
   readOnly: boolean;
+  alertCount?: number;
+  onOpenAlerts: () => void;
   onOpen: () => void;
+  // A backtest's: adopt its strategy into a new portfolio.
+  onAdopt?: () => void;
   onDelete: () => void;
 }) {
   const { renamePortfolio } = usePortfolio();
@@ -202,7 +230,7 @@ function ManageRow({
 
   return (
     <li className="px-6 md:px-7 py-3.5">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_8rem_7rem_9rem] items-center gap-x-4 gap-y-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_8rem_7rem_11rem] items-center gap-x-4 gap-y-1">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
           {renaming ? (
@@ -225,6 +253,17 @@ function ManageRow({
                 <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
               )}
               {portfolio.isVirtual && <VirtualBadge portfolio={portfolio} />}
+              {alertCount !== undefined && (
+                <button
+                  type="button"
+                  onClick={onOpenAlerts}
+                  title={`${portfolio.name}'s alerts`}
+                  className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-500 hover:border-[#C49A3C]/60 hover:text-[#C49A3C] transition-colors"
+                >
+                  <Bell className="h-2.5 w-2.5" />
+                  {alertCount === 0 ? "No alerts" : `${alertCount} ${alertCount === 1 ? "alert" : "alerts"}`}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -249,6 +288,18 @@ function ManageRow({
               <button type="button" onClick={onOpen} aria-label={`Open ${portfolio.name}`} title="Open" className={`${iconButton} text-slate-400 hover:text-slate-900 hover:bg-slate-100`}>
                 <ArrowUpRight className="h-4 w-4" />
               </button>
+              {onAdopt && (
+                <button
+                  type="button"
+                  onClick={onAdopt}
+                  disabled={readOnly}
+                  aria-label={`Adopt ${portfolio.name}`}
+                  title={readOnly ? DEMO_DISABLED_TITLE : "Adopt this strategy: a new, empty portfolio with its weights as ranges"}
+                  className={`${iconButton} text-sky-600 hover:bg-sky-50`}
+                >
+                  <Target className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={startRename}

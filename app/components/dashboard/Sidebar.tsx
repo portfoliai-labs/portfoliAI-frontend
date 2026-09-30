@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, SlidersHorizontal, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass } from "lucide-react";
+import { LayoutDashboard, SlidersHorizontal, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, BookOpen } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
 import { UserRole, SubscriptionTier } from "../../models/User";
@@ -19,7 +19,7 @@ type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; previe
 
 export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
-  // The previews of what's coming (Explore…) are for demo accounts only (see lib/demo).
+  // The previews of what's coming (Journal…) are for demo accounts only (see lib/demo).
   const { isDemo } = useUser();
 
   // Investor: "which page" only. Which portfolio or wallet is picked on the pages themselves:
@@ -28,7 +28,7 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'performance', label: 'Manage', icon: SlidersHorizontal },
-    ...(isDemo ? [{ id: 'explore', label: 'Explore', icon: Compass, preview: true }] : []),
+    ...(isDemo ? [{ id: 'blog', label: 'Journal', icon: BookOpen, preview: true }] : []),
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

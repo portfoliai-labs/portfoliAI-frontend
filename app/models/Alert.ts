@@ -28,7 +28,23 @@ interface AssetWeightParams {
   assetId: string | null;
 }
 
-type AlertParams = PortfolioChangeParams | AssetWeightParams;
+// The combined weight of assetIds (1–50 holdings assetIds) is below minPct or above maxPct; at
+// least one of the two is set, and min < max. Assets of the group that aren't held count as 0.
+// `label` is the user's own name for the group ("Equity"). For now only a portfolio policy's rules
+// are of this type (see models/Policy).
+interface GroupWeightParams {
+  type: "group_weight";
+  assetIds: string[];
+  minPct: number | null;
+  maxPct: number | null;
+  label: string | null;
+}
+
+type AlertParams = PortfolioChangeParams | AssetWeightParams | GroupWeightParams;
+
+// group_weight: which end of the range a reading's thresholdValue is. For "min", progressPct grows
+// as the weight falls toward the floor.
+type WeightBound = "min" | "max";
 
 type AlertReadingStatus = "ok" | "unavailable";
 
@@ -52,6 +68,8 @@ interface AlertRuleReading {
   assetId: string | null;
   assetName: string | null;
   ticker: string | null;
+  // group_weight only (absent before feature/portfolio-policy).
+  bound?: WeightBound | null;
   // portfolio_change: the P&L move in `currency`, and the day it is measured against.
   pnlChange: number | null;
   currency: string | null;
@@ -71,6 +89,10 @@ interface AlertRuleResponse {
   // null = just created / changed / re-enabled, waiting for its first check (within ~5 min).
   // A disabled rule isn't re-checked, so its reading goes stale: ignore it while enabled is false.
   reading: AlertRuleReading | null;
+  // Non-null: the rule is kept by the portfolio's policy (models/Policy), one per constraint, and
+  // PATCH / DELETE on it are a 409: it changes with the policy. Absent before
+  // feature/portfolio-policy.
+  policyConstraintId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,7 +121,7 @@ interface AlertRuleUpdateRequest {
 }
 
 export type {
-  AlertDirection, AlertWindow, PortfolioChangeParams, AssetWeightParams, AlertParams,
+  AlertDirection, AlertWindow, PortfolioChangeParams, AssetWeightParams, GroupWeightParams, AlertParams, WeightBound,
   AlertReadingStatus, AlertUnavailableReason, AlertRuleReading, AlertRuleResponse,
   ClientAlertRuleResponse, AlertRuleCreateRequest, AlertRuleUpdateRequest,
 };

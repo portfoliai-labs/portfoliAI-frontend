@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { Heart, Search, Share2, Users } from "lucide-react";
 import { MACRO_CATEGORIES, MACRO_COLORS, SHARED_PORTFOLIOS, type SharedPortfolio } from "../../lib/mock/community";
+import { Breadcrumb, type Crumb } from "../dashboard/Breadcrumb";
 import { ComingSoonButton, Pills, PreviewBanner, formatPct, serif } from "./PreviewKit";
 
 type Sort = "trending" | "likes" | "return" | "newest";
@@ -17,13 +18,13 @@ const RISK_STYLE: Record<SharedPortfolio["risk"], string> = {
 };
 
 /**
- * EXPLORE (preview) — portfolios other users have chosen to share, a section of its own in the
- * Sidebar: each card shows its author, what it's made of, how it did and how many people liked or
+ * EXPLORE (preview) — portfolios other users have chosen to share, a page under Manage /
+ * Investments: each card shows its author, what it's made of, how it did and how many people liked or
  * copied it. Liking works on the page (it's local state, forgotten on leaving); sharing yours is
  * shown as coming soon. Every entry is invented
  * (lib/mock/community).
  */
-export function ExploreCommunity() {
+export function ExploreCommunity({ trail }: { trail: Crumb[] }) {
   const [sort, setSort] = useState<Sort>("trending");
   const [risk, setRisk] = useState<RiskFilter>("all");
   const [query, setQuery] = useState("");
@@ -53,10 +54,11 @@ export function ExploreCommunity() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* A section's first page: no trail to publish, so the action is drawn here directly. */}
-      <div className="flex justify-end">
-        <ComingSoonButton icon={<Share2 className="h-3.5 w-3.5" />}>Share a portfolio</ComingSoonButton>
-      </div>
+      <Breadcrumb
+        trail={trail}
+        current="Explore"
+        right={<ComingSoonButton icon={<Share2 className="h-3.5 w-3.5" />}>Share a portfolio</ComingSoonButton>}
+      />
       <PreviewBanner feature="Explore">
         A glimpse of the community: portfolios other investors could share, to browse and like. The people and
         figures below are invented; likes are kept only while you&apos;re on this page.

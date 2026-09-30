@@ -1,20 +1,18 @@
 // components/dashboard/InsightsHub.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BellRing, Columns3, FileText, History, MoreHorizontal, Pencil, Receipt, Settings2, Telescope, Trash2, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, BellRing, Columns3, Compass, FileText, History, Receipt, Settings2, Telescope, Wand2 } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { portfoliosService } from "../../services/portfoliosService";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { formatCurrency } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
-import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { realEstateHolderItem } from "../preview/RealEstateCard";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { useUser } from "../../context/UserContext";
-import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { PreviewBadge } from "../preview/PreviewKit";
-import { VIRTUAL_COLOR } from "./BacktestMarks";
+import { VIRTUAL_COLOR, VirtualBadge } from "./BacktestMarks";
 import { FeaturedCard, PortfolioHolder, portfolioHolderItem, type HolderItem } from "./PortfolioHolder";
 import type { Portfolio } from "../../models/Portfolio";
 import type { InvestmentsPage } from "./InsightsSection";
@@ -24,26 +22,24 @@ import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 const VIRTUAL_SHADES = [VIRTUAL_COLOR, "#0e7490", "#1d4ed8", "#0891b2", "#3b82f6", "#0369a1"];
 
 /**
- * INVESTMENTS HUB — Manage / Investments: every portfolio on one row, in three columns. First the
- * real portfolio with the most money invested, on a big card as tall as the row
- * (FeaturedPortfolioCard), two columns wide when it's the only one (no holder then; New portfolio
- * is under Manage portfolios); then the other real ones (the default first) and, for a demo account,
- * the sample real estate (a preview), gathered in a card holder (PortfolioHolder), which pulls
- * each one out on hover to show its return and the curve behind it, with at its front the card that
- * creates a portfolio (NewPortfolioDialog); then the virtual ones ("All portfolios", every real portfolio
- * together, there with two or more, and the strategies backtested with Strategy, see
- * models/Strategy) in a holder of their own, in their blue (BacktestMarks), or the way to
- * backtest one while there are none. The sleeves sit on one line, each stack rising from it. A
- * card opens its portfolio's Insights, where it's renamed or deleted. Under them, Manage portfolios
- * (every portfolio in one list, to rename, delete or add: ManagePortfolios), Transactions, Reports
- * and Alerts (each picking a portfolio at its top), then Compare, Strategy and Discovery
- * (searching for new assets; coming soon). A demo
- * account (see lib/demo) can't create anything. The figures for every card come from one call
- * (GET /v1/portfolios/comparison with no portfolio listed returns all of them), refetched when a
- * portfolio is added or removed.
+ * INVESTMENTS HUB — Manage / Investments: every portfolio on one row, in three columns. First
+ * "All portfolios" (the aggregate: every real portfolio together, there with two or more) on a big
+ * card as tall as the row (FeaturedPortfolioCard), or the only real portfolio while there's just
+ * one, two columns wide when there's nothing else to hold; then the real portfolios (the default
+ * first) and, for a demo account, the sample real estate (a preview), gathered in a card holder
+ * (PortfolioHolder), which pulls each one out on hover to show its return and the curve behind it;
+ * then the strategies backtested with Strategy (models/Strategy) in a holder of their own, in their
+ * blue (BacktestMarks), or the way to backtest one while there are none. The sleeves sit on one
+ * line, each stack rising from it. A card opens its portfolio's Insights. Portfolios are added
+ * only under Manage portfolios (every portfolio in one list, to rename, delete or add:
+ * ManagePortfolios), the first of the cards under them; then Transactions, Reports and Alerts (each
+ * picking a portfolio at its top), Compare, Strategy, Explore (portfolios other investors share; a
+ * demo account's preview) and Discovery (searching for new assets; coming soon). The figures for
+ * every card come from one call (GET /v1/portfolios/comparison with no portfolio listed returns all
+ * of them), refetched when a portfolio is added or removed.
  */
 export function InsightsHub({
-  trail, onOpenPortfolio, onCompare, onOpenRealEstate, onStrategy, onOpenPage,
+  trail, onOpenPortfolio, onCompare, onOpenRealEstate, onStrategy, onExplore, onOpenPage,
 }: {
   // The pages above it ("Manage").
   trail: Crumb[];
@@ -51,11 +47,11 @@ export function InsightsHub({
   onCompare: () => void;
   onOpenRealEstate: () => void;
   onStrategy: () => void;
+  onExplore: () => void;
   onOpenPage: (page: InvestmentsPage) => void;
 }) {
   const { portfolios } = usePortfolio();
   const { isDemo } = useUser();
-  const [creating, setCreating] = useState(false);
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
   const uuidsKey = portfolios.map((p) => p.uuid).join(",");
   const [entries, setEntries] = useState<{ key: string; byUuid: Map<string, PortfolioComparisonEntry> | null }>({ key: "", byUuid: null });
@@ -76,37 +72,23 @@ export function InsightsHub({
 
   // The default portfolio leads (the list already puts it first among the real ones).
   const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
-  // The one with the most money invested gets the big card; the default until the figures are in.
-  const invested = (uuid: string) => entries.byUuid?.get(uuid)?.value?.investedCapital ?? -1;
-  const featured = real.reduce<typeof real[number] | undefined>((best, p) => (!best || invested(p.uuid) > invested(best.uuid) ? p : best), undefined);
-  const others = real.filter((p) => p !== featured);
+  // "All portfolios" gets the big card; without it (a single real portfolio) that one does.
+  const aggregate = portfolios.find((p) => p.isAggregate);
+  const featured = aggregate ?? real[0];
+  const held = aggregate ? real : [];
   const realItems: HolderItem[] = [
-    ...others.map((p) => portfolioHolderItem(p, colorOf(p.uuid), entryOf(p.uuid), () => onOpenPortfolio(p.uuid))),
+    ...held.map((p) => portfolioHolderItem(p, colorOf(p.uuid), entryOf(p.uuid), () => onOpenPortfolio(p.uuid))),
     ...(isDemo ? [realEstateHolderItem(onOpenRealEstate)] : []),
-    // At the front, the way to add one: a dialog for its name. A demo account can't.
-    {
-      key: "new-portfolio",
-      name: "New portfolio",
-      color: "",
-      add: true,
-      value: null,
-      headline: null,
-      points: [],
-      empty: isDemo ? DEMO_DISABLED_TITLE : "Start another portfolio: its own transactions, insights, reports and alerts.",
-      cta: isDemo ? "Not available" : "Create",
-      onOpen: () => { if (!isDemo) setCreating(true); },
-    },
   ];
-  const portfolioCount = others.length;
-  // One real portfolio and nothing else to hold: no holder, its card takes the room instead.
-  const holdsAny = realItems.some((i) => !i.add);
-  const virtualItems = portfolios.filter((p) => p.isVirtual).map((p, i) =>
+  // Nothing to hold (one real portfolio, not a demo account): its card takes the room instead.
+  const holdsAny = realItems.length > 0;
+  const virtualItems = portfolios.filter((p) => p.isVirtual && !p.isAggregate).map((p, i) =>
     portfolioHolderItem(p, VIRTUAL_SHADES[i % VIRTUAL_SHADES.length], entryOf(p.uuid), () => onOpenPortfolio(p.uuid)));
 
   return (
     <div className="space-y-6 pb-12">
       <Breadcrumb trail={trail} current="Investments" />
-      {/* One row: the largest portfolio as tall as the row, then the holders, their sleeves on one
+      {/* One row: all portfolios together as tall as the row, then the holders, their sleeves on one
           line and each stack rising from it as high as its cards go. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 items-end">
         {featured && (
@@ -118,10 +100,10 @@ export function InsightsHub({
             alone={!holdsAny}
           />
         )}
-        {holdsAny && <PortfolioHolder items={realItems} label={portfolioCount > 0 ? `${portfolioCount} more` : "Portfolios"} />}
+        {holdsAny && <PortfolioHolder items={realItems} label={held.length > 0 ? `${held.length} portfolios` : "Portfolios"} />}
         {virtualItems.length > 0 ? (
           <PortfolioHolder items={virtualItems} label={`${virtualItems.length} virtual`} tone="virtual" />
-        ) : isDemo ? (
+        ) : (
           <button
             type="button"
             onClick={onStrategy}
@@ -131,13 +113,6 @@ export function InsightsHub({
             <span className="text-[13px] font-bold">No virtual portfolios yet</span>
             <span className="text-[11px] font-semibold text-sky-700/70">Backtest a strategy and it shows up here.</span>
           </button>
-        ) : (
-          // Strategy is a demo account's preview for now, so there's no way in from here yet.
-          <div className="min-h-44 w-full rounded-3xl border-2 border-dashed border-sky-200 bg-sky-50/30 flex flex-col items-center justify-center gap-2 px-6 text-center text-sky-700/70">
-            <History className="h-6 w-6" />
-            <span className="text-[13px] font-bold">No virtual portfolios yet</span>
-            <span className="text-[11px] font-semibold">Strategy backtests are coming soon.</span>
-          </div>
         )}
       </div>
 
@@ -173,14 +148,20 @@ export function InsightsHub({
           text={canCompare ? "Your portfolios side by side, up to four at once." : "Needs at least two portfolios."}
           onClick={canCompare ? onCompare : undefined}
         />
-        {/* A demo account's preview until it's been tested against the backend. */}
+        <ActionCard
+          icon={<Wand2 className="h-5 w-5" />}
+          title="Strategy"
+          text="Set target weights, rebalancing, PAC and costs, then backtest them on historical prices into a virtual portfolio."
+          onClick={onStrategy}
+        />
+        {/* A preview on sample data (components/preview): demo accounts only. */}
         {isDemo && (
           <ActionCard
-            icon={<Wand2 className="h-5 w-5" />}
-            title="Strategy"
+            icon={<Compass className="h-5 w-5" />}
+            title="Explore"
             badge={<PreviewBadge dark />}
-            text="Set target weights, rebalancing, PAC and costs, then backtest them on historical prices into a virtual portfolio."
-            onClick={onStrategy}
+            text="Browse portfolios other investors share: what they hold, how they did, how many copied them."
+            onClick={onExplore}
           />
         )}
         {/* Not built yet: there's no asset search to back it (only GET /v1/assets/{ticker}). */}
@@ -191,7 +172,6 @@ export function InsightsHub({
           text="Search and explore new assets — stocks, ETFs, bonds, crypto — before adding them to a portfolio."
         />
       </div>
-      {creating && <NewPortfolioDialog onClose={() => setCreating(false)} />}
     </div>
   );
 }
@@ -200,7 +180,7 @@ const formatPct = (pct: number) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 const formatSigned = (amount: number, currency: string) => `${amount >= 0 ? "+" : ""}${formatCurrency(amount, currency, 0)}`;
 
 /**
- * FEATURED PORTFOLIO CARD — the hub's largest real portfolio (by money invested) on the row's
+ * FEATURED PORTFOLIO CARD — the hub's "All portfolios" (or its only real portfolio) on the row's
  * FeaturedCard: its value, return since inception and a year, what went in and the gain on what's
  * still held, and the return curve. `entry` undefined while loading, null when there's nothing yet.
  */
@@ -220,9 +200,9 @@ function FeaturedPortfolioCard({ portfolio, color, entry, onOpen, alone = false 
   return (
     <FeaturedCard
       className={alone ? "sm:col-span-2" : ""}
-      eyebrow={alone ? "Your portfolio" : "Largest portfolio"}
+      eyebrow={portfolio.isAggregate ? "Every portfolio together" : "Your portfolio"}
       name={portfolio.name}
-      badge={portfolio.isDefault ? (
+      badge={portfolio.isAggregate ? <VirtualBadge portfolio={portfolio} /> : portfolio.isDefault ? (
         <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
       ) : undefined}
       color={color}
@@ -244,69 +224,6 @@ function FeaturedPortfolioCard({ portfolio, color, entry, onOpen, alone = false 
       empty="No figures yet — add transactions to get started."
       onOpen={onOpen}
     />
-  );
-}
-
-/**
- * PORTFOLIO CARD MENU — the "…" with Rename and Delete, at the top right of a portfolio's Insights (PortfolioActions). Its clicks stop at the menu, so they never open the portfolio underneath. Closes on a pick, a click outside or Escape.
- */
-export function PortfolioCardMenu({ canDelete, onRename, onDelete }: { canDelete: boolean; onRename: () => void; onDelete: () => void }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const pick = (action: () => void) => () => {
-    setOpen(false);
-    action();
-  };
-  const itemClass =
-    "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-[13px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-
-  return (
-    <div ref={rootRef} className="relative" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Portfolio actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-          open ? "bg-slate-100 text-slate-700" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-        }`}
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full mt-2 z-30 w-48 p-1.5 bg-white rounded-xl border border-slate-200 shadow-xl">
-          <button role="menuitem" type="button" onClick={pick(onRename)} className={`${itemClass} text-slate-700 hover:bg-slate-50 hover:text-slate-900`}>
-            <Pencil className="h-4 w-4 text-slate-400" /> Rename
-          </button>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={pick(onDelete)}
-            disabled={!canDelete}
-            title={canDelete ? undefined : "The default portfolio can't be deleted"}
-            className={`${itemClass} text-rose-600 hover:bg-rose-50 disabled:hover:bg-transparent`}
-          >
-            <Trash2 className="h-4 w-4" /> Delete
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
 

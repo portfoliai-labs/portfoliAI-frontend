@@ -22,7 +22,7 @@ import { NotificationsSection } from "../../components/dashboard/NotificationsSe
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { InsightsSection, openInvestmentsPage } from "../../components/dashboard/InsightsSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
-import { ExploreCommunity } from "../../components/preview/ExploreCommunity";
+import { JournalSection } from "../../components/dashboard/JournalSection";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
@@ -31,10 +31,11 @@ import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHisto
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'explore', 'news', 'settings', 'notifications'];
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'blog', 'news', 'settings', 'notifications'];
 // Sections that became part of another: Wallets now sits under Manage ("performance"), next to
-// the portfolios. A link or a history entry to the old one lands on the new.
-const MOVED_SECTIONS: Record<string, string> = { wallets: 'performance' };
+// the portfolios, and Explore under its Investments. A link or a history entry to the old one
+// lands on the new.
+const MOVED_SECTIONS: Record<string, string> = { wallets: 'performance', explore: 'performance' };
 const resolveSection = (section: string | null | undefined) => (section ? MOVED_SECTIONS[section] ?? section : section);
 
 /**
@@ -130,10 +131,10 @@ function DashboardPageContent() {
         return isAdvisor
           ? <AdvisorPerformanceSection />
           : <InsightsSection key={sectionVisit} onNavigate={navigate} />;
-      case 'explore':
-        // A preview on sample data (components/preview): demo investors only.
+      case 'blog':
+        // Not backed by the backend yet (lib/journal): demo investors only.
         if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
-        return isDemo ? <ExploreCommunity /> : <DashboardOverview onNavigate={navigate} />;
+        return isDemo ? <JournalSection key={sectionVisit} /> : <DashboardOverview onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
