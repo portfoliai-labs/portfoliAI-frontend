@@ -28,7 +28,7 @@ import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { RenamePortfolioDialog } from "./RenamePortfolioDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
-import { VirtualBadge } from "./BacktestMarks";
+import { BacktestBanner } from "./BacktestMarks";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { walletsSummary } from "../preview/WalletsOverview";
@@ -375,14 +375,23 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
     ? ((value.marketValue - value.netContributed + value.dividendIncome) / value.netContributed) * 100
     : null;
   const unrealized = value?.unrealizedPnl ?? null;
+  // A backtest's value and unrealized P&L are a simulation's end point, not anything held: its
+  // header keeps what went in and what that made.
+  // How long the simulation runs, back from its last valuation: what gives its return a scale.
+  const days = entry?.performance?.lifespanDays ?? null;
+  const period: PageFigure | null = backtest && days !== null && days > 0 ? {
+    label: "Period",
+    value: days >= 365 ? `${(days / 365.25).toFixed(1)} years` : `${Math.round(days / 30.44)} months`,
+  } : null;
   const figures: PageFigure[] = entry === undefined ? [] : [
-    { label: "Value", value: money(value?.marketValue) },
+    ...(period ? [period] : []),
+    ...(backtest ? [] : [{ label: "Value", value: money(value?.marketValue) }]),
     { label: "Invested", value: money(value?.netContributed) },
-    {
+    ...(backtest ? [] : [{
       label: "Unrealized P&L",
       value: unrealized === null ? "—" : `${unrealized >= 0 ? "+" : ""}${money(unrealized)}`,
       tone: toneOf(unrealized),
-    },
+    }]),
     { label: "ROI", value: roi === null ? "—" : pct(roi), tone: toneOf(roi) },
   ];
 
@@ -391,7 +400,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   const header = (
     <PageHeader
       eyebrow={backtest ? "Backtest" : portfolio.isAggregate || isInvestments ? "Investments" : "Portfolio"}
-      badge={portfolio.isVirtual && !portfolio.isAggregate ? <VirtualBadge portfolio={portfolio} /> : undefined}
+      notice={backtest ? <BacktestBanner portfolioUuid={portfolio.uuid} /> : undefined}
       title={portfolio.name}
       note={note}
       counters={counters}

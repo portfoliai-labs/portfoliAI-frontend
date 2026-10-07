@@ -13,6 +13,8 @@ import {
   type TreemapNode,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
+import { portfoliosService } from "../../services/portfoliosService";
+import { STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, type StrategyFrequency, type StrategyParams } from "../../models/Strategy";
 import { ApiError } from "../../services/apiClient";
 import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
@@ -21,7 +23,6 @@ import { usePortfolio } from "../../context/PortfolioContext";
 import { useDetail, useInsights, type Insights, type SectionState } from "../../hooks/useInsights";
 import { pushDashboardEntry, readDashboardEntry, type DashboardOverlay } from "../../lib/dashboardHistory";
 import { NoDataEmptyState } from "./NoDataEmptyState";
-import { BacktestBanner } from "./BacktestMarks";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { PageHeader } from "./PageHeader";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
@@ -69,7 +70,7 @@ export function PerformanceSection({
   portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail, pageLabel = "Insights", top, onOpenPortfolio, comparison = null,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
-  // A strategy's backtest (a virtual portfolio): the page opens under BacktestBanner, and before
+  // A strategy's backtest (a virtual portfolio): its header carries BacktestBanner, and before
   // its job has run it says so rather than asking for transactions.
   backtest?: boolean;
   // The pages above this one in the investor's Portfolios ("Portfolios / Main portfolio"), where
@@ -202,7 +203,6 @@ export function PerformanceSection({
         <Breadcrumb trail={trail} current={pageLabel} />
       ) : null}
       {!selected && !explore && top}
-      {backtest && !selected && !explore && <BacktestBanner portfolioUuid={portfolioUuid} />}
 
       {performance.failed ? (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700">
@@ -3812,6 +3812,84 @@ function GainsLossesList({ title, holdings, currency }: { title: string; holding
   );
 }
 
+const STRATEGY_EVERY: Record<StrategyFrequency, string> = {
+  monthly: "month",
+  quarterly: "quarter",
+  semiannual: "6 months",
+  annual: "year",
+};
+
+const STRATEGY_REBALANCE_EVERY: Record<StrategyFrequency, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  semiannual: "Every 6 months",
+  annual: "Yearly",
+};
+
+/**
+ * STRATEGY MODULES — on a backtest's page, the strategy it was made from (GET
+ * /v1/portfolios/{p}/strategy), as three modules side by side: the target mix, the rules it played
+ * and the costs set for it. The only place they can be read again once the backtest is made.
+ * Returns the three tiles, for the page's grid.
+ */
+function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; currency: string }) {
+  const detail = useDetail(() => portfoliosService.getStrategy(portfolioUuid), portfolioUuid, 0);
+  const s: StrategyParams | null = detail.data;
+
+  const flow = (f: StrategyParams["contributions"] | StrategyParams["withdrawals"]) =>
+    `${f.amountType === "percent_of_value" ? `${f.amount}% of value` : formatCurrency(f.amount, currency, 0)} / ${STRATEGY_EVERY[f.frequency]}`;
+  const rebalancing = (r: StrategyParams["rebalancing"]) => {
+    const band = [r.thresholdPct != null ? `±${r.thresholdPct} pts` : null, r.relativeThresholdPct != null ? `±${r.relativeThresholdPct}%` : null].filter(Boolean).join(" or ");
+    return r.mode === "none" ? "Never"
+      : r.mode === "calendar" ? STRATEGY_REBALANCE_EVERY[r.frequency]
+        : r.mode === "threshold" ? `Past ${band}`
+          : `${STRATEGY_REBALANCE_EVERY[r.frequency]} or past ${band}`;
+  };
+  // While it loads, or if it can't, the one module that says so.
+  const body = (rows: (s: StrategyParams) => React.ComponentProps<typeof FigRows>["rows"]) =>
+    detail.loading ? <ModuleMessage>Loading the strategy…</ModuleMessage>
+      : !s ? <ModuleMessage>The strategy couldn&apos;t be loaded.</ModuleMessage>
+        : <div className={MODULE_BODY}><FigRows rows={rows(s)} /></div>;
+
+  return (
+    <>
+      <Tile span="narrow">
+        <Module>
+          <ModuleHead title="Target Mix" desc="The weights the backtest aimed for, by category." />
+          {body((s) => STRATEGY_CATEGORIES.filter((c) => (s.weights[c] ?? 0) > 0).map((c) => ({ key: c, label: STRATEGY_CATEGORY_LABELS[c], value: `${s.weights[c]}%` })))}
+        </Module>
+      </Tile>
+      <Tile span="narrow">
+        <Module>
+          <ModuleHead title="Rules" desc="When it started, what went in and out, and when it rebalanced." />
+          {body((s) => [
+            { key: "start", label: "Start", value: `Jan ${s.startYear}` },
+            { key: "initial", label: "Initial amount", value: formatCurrency(s.initialAmount, currency, 0) },
+            { key: "add", label: "Contributions", value: s.contributions.enabled ? flow(s.contributions) : "None" },
+            {
+              key: "take",
+              label: "Withdrawals",
+              value: s.withdrawals.enabled ? flow(s.withdrawals) : "None",
+              info: s.withdrawals.enabled && s.withdrawals.startAfterYears > 0 ? `From year ${s.withdrawals.startAfterYears + 1} of the run.` : undefined,
+            },
+            { key: "rebalance", label: "Rebalancing", value: rebalancing(s.rebalancing) },
+          ])}
+        </Module>
+      </Tile>
+      <Tile span="narrow">
+        <Module>
+          <ModuleHead title="Cost Settings" desc="The costs set for the backtest's trades; what they came to is under Trading Costs." />
+          {body((s) => [
+            { key: "commission", label: "Commission", value: `${s.costs.commissionPct}%` },
+            { key: "fee", label: "Fixed fee", value: formatCurrency(s.costs.fixedFee, currency, 2) },
+            { key: "spread", label: "Spread", value: `${s.costs.spreadPct}%` },
+          ])}
+        </Module>
+      </Tile>
+    </>
+  );
+}
+
 /**
  * THIS MONTH CARD — the month so far, beside the Value chart near the top of a portfolio's page:
  * how the market moved the portfolio since last month's close, in percent and in money, the
@@ -4087,12 +4165,14 @@ function HistoryPage({
 
   const tradingCosts = <TradingCostsModule slot={own(incomeCosts, (d) => d.tradingCosts)} currency={currency} portfolioUuid={portfolioUuid} />;
 
-  // A backtest leads with how the strategy did, then its mix beside what trading cost it (the
-  // costs the user set for it, totted up over the run), then its risk.
+  // A backtest leads with the strategy itself (what it was set to do, which nothing else on the
+  // page says), then how it did, then its mix beside what trading cost it (the costs the
+  // user set for it, totted up over the run), then its risk.
   if (backtest) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-12 gap-[22px]">
         {updatingNote}
+        <StrategyModules portfolioUuid={portfolioUuid} currency={currency} />
         <Tile id={moduleAnchor("value")}>{valueModule}</Tile>
         <Tile span="wide" id={moduleAnchor("composition")}>{compositionModule}</Tile>
         <Tile span="narrow" id={moduleAnchor("costs")}>{tradingCosts}</Tile>

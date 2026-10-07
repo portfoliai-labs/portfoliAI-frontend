@@ -48,10 +48,12 @@ const VISIBLE_ACTIONS = 3;
  * portfolio, so nothing on the pages under it asks which one.
  */
 export function PageHeader({
-  eyebrow, badge, title, value, change, note, counters = [], actions = [], figures = [],
+  eyebrow, badge, notice, title, value, change, note, counters = [], actions = [], figures = [],
 }: {
   eyebrow: string;
   badge?: React.ReactNode;
+  // Above it all, across the page: what the page is, when it needs saying (a backtest's banner).
+  notice?: React.ReactNode;
   title: string;
   // null while loading; undefined to leave it out.
   value?: string | null;
@@ -66,6 +68,7 @@ export function PageHeader({
 
   return (
     <div className="space-y-[22px]">
+      {notice}
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div className="min-w-0 flex flex-col gap-2">
           <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C]">
