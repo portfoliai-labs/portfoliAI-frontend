@@ -18,8 +18,8 @@ const RISK_STYLE: Record<SharedPortfolio["risk"], string> = {
 };
 
 /**
- * EXPLORE (preview) — portfolios other users have chosen to share, a page under Manage /
- * Investments: each card shows its author, what it's made of, how it did and how many people liked or
+ * EXPLORE (preview) — portfolios other users have chosen to share, Discover / Explore
+ * (DiscoverSection): each card shows its author, what it's made of, how it did and how many people liked or
  * copied it. Liking works on the page (it's local state, forgotten on leaving); sharing yours is
  * shown as coming soon. Every entry is invented
  * (lib/mock/community).

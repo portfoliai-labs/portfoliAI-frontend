@@ -57,8 +57,9 @@ const formatDate = (iso: string) =>
  * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
  *
  * Every alert-rule route is nested under a portfolio, so the rules are those of `portfolios`.
- * Without `clientName` they're the investor's own (Manage / Investments / Alerts, passed every
- * portfolio): with two or more, each portfolio gets a card of its own, with its rules and its own
+ * Without `clientName` they're the investor's own (a portfolio's Alerts page in Wealth, All
+ * portfolios' passing itself and every portfolio): with two or more, each portfolio gets a card
+ * of its own, with its rules and its own
  * "New alert", whose form opens in that card. With `clientName` it's an advisor's
  * rules on that client's portfolio (the Clients section, passed that client's default one): the
  * asset picker lists the client's holdings, and the advisor is the one notified. A demo account

@@ -24,20 +24,18 @@ const fullDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US",
 /** One of Compare's white modules; `className` sizes it within a grid (h-full, flex-1…). */
 export function Module({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden ${className}`}>
+    <section className={`bg-white rounded-[1.75rem] border border-[#EEE9DD] overflow-hidden ${className}`}>
       {children}
     </section>
   );
 }
 
-export function ModuleHead({ eyebrow, title, desc }: { eyebrow: string; title: string; desc?: string }) {
+// The same small heading as the portfolio page's modules (see ModuleHead in PerformanceSection):
+// the title in small capitals, what it shows on hovering it. (`eyebrow` is no longer drawn.)
+export function ModuleHead({ title, desc }: { eyebrow?: string; title: string; desc?: string }) {
   return (
-    <div className="p-6 md:p-7 pb-5 border-b border-slate-100">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-      <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-        {title}
-      </h2>
-      {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
+    <div className="px-6 md:px-7 pt-5 md:pt-6 pb-3">
+      <h2 title={desc} className="text-[10px] font-black uppercase tracking-[0.14em] text-[#78716c]">{title}</h2>
     </div>
   );
 }

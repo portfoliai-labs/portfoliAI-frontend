@@ -1,5 +1,8 @@
 export function formatCurrency(value: number, currency: string = "EUR", decimals: number = 2): string {
-  return `${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ${currency}`.trim();
+  // useGrouping "always": some locales (Italian, Spanish…) leave four-digit numbers ungrouped by
+  // default, which put "7723 EUR" beside "19.975 EUR" in the same list.
+  const options = { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: "always" } as Intl.NumberFormatOptions;
+  return `${value.toLocaleString(undefined, options)} ${currency}`.trim();
 }
 
 // Quantities come from the backend as arbitrary-precision decimal strings (e.g. "0.001710320000000000"),

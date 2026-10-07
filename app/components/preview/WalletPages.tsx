@@ -6,7 +6,7 @@ import {
   Bar, Line, LineChart, BarChart, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import {
-  BellRing, FileText, Lightbulb, Plus, Receipt, Search, Target, Upload,
+  FileText, Lightbulb, Plus, Search, Upload,
 } from "lucide-react";
 import { Breadcrumb, type Crumb } from "../dashboard/Breadcrumb";
 import { PortfolioGroupCard } from "../dashboard/PortfolioGroupCard";
@@ -15,7 +15,6 @@ import { GenerateReportDialog } from "../dashboard/GenerateReportDialog";
 import { TONE_STYLES } from "../dashboard/AlertGauge";
 import { FeaturedCard, PortfolioHolder, type HolderItem } from "../dashboard/PortfolioHolder";
 import { VIRTUAL_COLOR } from "../dashboard/BacktestMarks";
-import { ActionCard } from "../dashboard/InsightsHub";
 import { DataTable, type DataColumn } from "../dashboard/ExploreView";
 import { Toggle } from "../dashboard/Toggle";
 import { formatCompact, formatCurrency } from "../../lib/format";
@@ -46,38 +45,40 @@ const PAGE_LABELS: Record<WalletPage, string> = {
   transactions: "Transactions", insights: "Insights", reports: "Reports", budgets: "Budgets", alerts: "Alerts",
 };
 
+/** A wallet's name ("All wallets" for all of them). */
+export const walletName = nameOf;
+
+/** The wallets, all of them together first, as the Wallets section's switcher lists them. */
+export const WALLET_OPTIONS = [{ id: ALL, name: nameOf(ALL), color: VIRTUAL_COLOR }, ...WALLETS.map((w) => ({ id: w.id, name: w.name, color: w.color }))];
+
+export const WALLET_PAGE_LABELS = PAGE_LABELS;
+
 /**
- * WALLET PAGES (preview) — everyday money, next to the investments under Manage (see
- * InsightsSection), from Manage / Wallets (WalletsHub): current accounts, cards, savings and cash,
- * with what comes in and goes out. Built like Investments: a wallet's card opens straight on its
- * Insights, and Transactions, Budgets, Reports and Alerts sit on the hub, each on every wallet at
- * once — Transactions filtered by wallet in its list, Reports as files (each saying its wallet),
- * Alerts a card per wallet. All figures come from lib/mock/wallets.
+ * WALLET PAGES (preview) — everyday money, the Wallets in Wealth (see WealthSection): current accounts,
+ * cards, savings and cash, with what comes in and goes out. Built like Investments: the hub
+ * (WalletsHub) has a card per wallet, and a wallet (or all of them together) opens on its page,
+ * whose tabs are these: Insights, Transactions and Budgets on that wallet (Transactions can widen
+ * its filter), Reports as files and Alerts a card per wallet, on every wallet. All figures come
+ * from lib/mock/wallets.
  */
-export function WalletView({ id, page, trail }: {
-  // The wallet, for its Insights (the other pages are on every wallet).
+export function WalletView({ id, page, trail, pageLabel, header }: {
   id: string;
   page: WalletPage;
-  // The pages above ("Manage / Wallets").
+  // The pages above ("Wealth / Wallets").
   trail: Crumb[];
+  // This page's step in the trail, when it isn't the page's own name (a wallet's name on its Insights).
+  pageLabel?: string;
+  // Drawn under the trail: the wallet's page header (see WealthSection).
+  header?: React.ReactNode;
 }) {
   const scope = scopeOf(id);
-
-  if (page === "insights") {
-    return (
-      <div className="space-y-6 pb-12">
-        {/* Its row in the Sidebar leads back to the top of its Insights. */}
-        <Breadcrumb trail={[...trail, { label: nameOf(id), onClick: () => window.scrollTo({ top: 0 }) }]} current="Insights" />
-        <WalletInsights scope={scope} />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current={PAGE_LABELS[page]} right={pageAction(page)} />
-      {page === "transactions" && <WalletTransactions />}
-      {page === "budgets" && <WalletBudgets scope={null} />}
+      <Breadcrumb trail={trail} current={pageLabel ?? PAGE_LABELS[page]} right={pageAction(page)} />
+      {header}
+      {page === "insights" && <WalletInsights scope={scope} />}
+      {page === "transactions" && <WalletTransactions initial={id} />}
+      {page === "budgets" && <WalletBudgets scope={scope} />}
       {page === "reports" && <WalletReports />}
       {page === "alerts" && <WalletAlerts />}
     </div>
@@ -105,12 +106,11 @@ function pageAction(page: WalletPage) {
 const signed = (v: number) => `${v >= 0 ? "+" : "−"}${eur(Math.abs(v))}`;
 
 /**
- * WALLETS HUB — Manage / Wallets, laid out like Investments: the wallet with the largest balance on
+ * WALLETS HUB — the Wallets section's first page: the wallet with the largest balance on
  * a big card (FeaturedCard) as tall as the row; the other wallets in a card holder (PortfolioHolder)
  * that pulls each one out on hover, with at its front the (not yet available) way to add one; and
  * all wallets together in a holder of their own, in the virtual blue, like "All portfolios". Every
- * card opens its wallet's Insights. Under them, Transactions, Budgets, Reports and Alerts, opening
- * on all wallets.
+ * card opens its wallet's page, on Insights.
  */
 export function WalletsHub({ trail, onOpen }: { trail: Crumb[]; onOpen: (id: string, page: WalletPage) => void }) {
   const wallets = useMemo(() => WALLETS.map((w) => {
@@ -192,13 +192,6 @@ export function WalletsHub({ trail, onOpen }: { trail: Crumb[]; onOpen: (id: str
         <PortfolioHolder items={combined} label="Combined" tone="virtual" />
       </div>
 
-      {/* The ways on from here, under the wallets: the same grid and cards as Investments'. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        <ActionCard icon={<Receipt className="h-5 w-5" />} title="Transactions" text="Every payment and deposit, searchable and filterable by category." onClick={() => onOpen(ALL, "transactions")} />
-        <ActionCard icon={<Target className="h-5 w-5" />} title="Budgets" text="A monthly limit per category, and how this month is tracking." onClick={() => onOpen(ALL, "budgets")} />
-        <ActionCard icon={<FileText className="h-5 w-5" />} title="Reports" text="Monthly statements and a yearly summary, as PDF." onClick={() => onOpen(ALL, "reports")} />
-        <ActionCard icon={<BellRing className="h-5 w-5" />} title="Alerts" text="Low balance, budgets running out, large or unexpected payments." onClick={() => onOpen(ALL, "alerts")} />
-      </div>
     </div>
   );
 }
@@ -215,8 +208,8 @@ function CategoryChip({ category }: { category: Category }) {
 }
 
 // Every wallet's transactions, filtered by wallet in the list itself.
-function WalletTransactions() {
-  const [wallet, setWallet] = useState<string>(ALL);
+function WalletTransactions({ initial }: { initial: string }) {
+  const [wallet, setWallet] = useState<string>(initial);
   const scope = scopeOf(wallet);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | "in" | "out">("all");

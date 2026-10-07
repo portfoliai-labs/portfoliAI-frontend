@@ -1,4 +1,4 @@
-// SAMPLE DATA for a demo account's Alerts (Manage / Investments / Alerts, see AlertsSettings): a
+// SAMPLE DATA for a demo account's Alerts (a portfolio's Alerts tab, see AlertsSettings): a
 // demo account is read only, so it can't create rules of its own, and this shows what the page
 // looks like with some, grouped by portfolio. Made-up rules in every state (triggered,
 // approaching, within range, off), put on up to two of its portfolios that have none. Never sent

@@ -5,12 +5,13 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Clock } from "lucide-react";
 import { JOURNAL_ARTICLES, findJournalArticle, type JournalArticle, type JournalCategory } from "../../lib/journal";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
+import { DISCOVER_SECTION } from "../../lib/dashboardNav";
 import { Pills, serif } from "../preview/PreviewKit";
 
-// The dashboard's section id for this one (see the dashboard page).
-const SECTION = "blog";
+// Discover's page this is (see DiscoverSection); an open article adds its slug to the view.
+const SECTION = DISCOVER_SECTION;
 
-type JournalView = { slug: string } | undefined;
+type JournalView = { page: "journal"; slug?: string } | undefined;
 type Filter = "all" | JournalCategory;
 
 const CATEGORIES: JournalCategory[] = ["Performance", "Risk", "Strategy", "Costs"];
@@ -22,12 +23,11 @@ const dateLabel = (iso: string) =>
 const articleFromHistory = (): JournalArticle | undefined => {
   const entry = readDashboardEntry();
   const view = entry?.section === SECTION ? (entry.view as JournalView) : undefined;
-  return view ? findJournalArticle(view.slug) : undefined;
+  return view?.page === "journal" && view.slug ? findJournalArticle(view.slug) : undefined;
 };
 
 /**
- * JOURNAL SECTION ("blog" in the sidebar's ids, labelled Journal; a demo account's
- * preview for now, see the dashboard page) — PortfoliAI's own
+ * JOURNAL (Discover / Journal; a demo account's preview for now, see DiscoverSection) — PortfoliAI's own
  * articles on investing (lib/journal): the newest on a large card, the rest in a grid that can be
  * narrowed to one category, each opening on the article itself. Opening one is a history entry,
  * so the browser's back button returns to the list (see lib/dashboardHistory).
@@ -45,7 +45,7 @@ export function JournalSection() {
   }, []);
 
   const open = (next: JournalArticle | undefined) => {
-    pushDashboardEntry({ section: SECTION, view: next ? { slug: next.slug } : undefined });
+    pushDashboardEntry({ section: SECTION, view: { page: "journal", ...(next ? { slug: next.slug } : {}) } });
     setArticle(next);
     window.scrollTo({ top: 0 });
   };

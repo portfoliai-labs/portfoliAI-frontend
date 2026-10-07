@@ -1,35 +1,94 @@
 "use client";
 
-import { LayoutDashboard, SlidersHorizontal, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, BookOpen } from "lucide-react";
+import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass, Map as MapIcon, PieChart } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
+import { usePortfolio } from "../../context/PortfolioContext";
+import { useDashboardEntry } from "../../lib/dashboardHistory";
+import { DISCOVER_SECTION, PLAN_SECTION, WEALTH_SECTION } from "../../lib/dashboardNav";
+import { portfolioColorMap } from "../../lib/chartColors";
+import { ALL_WALLETS, WALLET_OPTIONS } from "../preview/WalletPages";
+import { PLAN_PAGE_LABELS, planPages } from "./PlanSection";
+import { DISCOVER_PAGE_LABELS, discoverPages } from "./DiscoverSection";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
   activeSection: string;
   setActiveSection: (section: string) => void;
+  // Opens a section on one of its pages (a row under it: a portfolio, Plan's Goals…).
+  onOpenPage?: (section: string, view: unknown) => void;
   isOpen?: boolean;
   onClose?: () => void;
   role?: UserRole;
   subscriptionTier?: SubscriptionTier | null;
 }
 
+// A row under a section: one of its pages. `active`: the page open now. `depth`: 1 for a row
+// under another (a portfolio under All portfolios), with `color` its dot.
+type SubItem = { key: string; label: string; view: unknown; active: boolean; preview?: boolean; depth?: number; color?: string };
 // `preview`: a feature shown on sample data, not available yet (see components/preview).
-type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; preview?: boolean };
+type NavItem = { id: string; label: string; icon: typeof LayoutDashboard; preview?: boolean; subs?: SubItem[] };
 
-export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
+export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = false, onClose, role, subscriptionTier }: SidebarProps) {
   const isAdvisor = role === 'ADVISOR';
-  // The previews of what's coming (Journal…) are for demo accounts only (see lib/demo).
+  // The previews of what's coming (Wallets, Plan's profile…) are for demo accounts only (see lib/demo).
   const { isDemo } = useUser();
+  const { portfolios } = usePortfolio();
+  // Which page the open section is on, to mark its row.
+  const entry = useDashboardEntry();
+  const view = (entry?.section === activeSection ? entry.view : undefined) as
+    { kind?: string; uuid?: string; id?: string; page?: string } | undefined;
 
-  // Investor: "which page" only. Which portfolio or wallet is picked on the pages themselves:
-  // Manage opens on a hub of them, each card on its Insights, and their Transactions, Reports and
-  // Alerts on the hub, picking one at the top.
+  // Investor: the sections, and under the open one its pages. Under Wealth, what it's made of:
+  // All portfolios and each real portfolio under it (only the portfolios while Wealth opens on
+  // All portfolios itself), then for a demo account the wallets and the real estate (previews).
+  const colorOf = portfolioColorMap(portfolios);
+  const aggregate = portfolios.find((p) => p.isAggregate);
+  const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  const portfolioRow = (p: (typeof portfolios)[number], depth: number): SubItem => ({
+    key: p.uuid,
+    label: p.name,
+    view: { kind: 'portfolio', uuid: p.uuid, page: 'overview' },
+    active: view?.kind === 'portfolio' && view.uuid === p.uuid,
+    depth,
+    color: p.isAggregate ? undefined : colorOf(p.uuid),
+  });
+  const walletRows: SubItem[] = isDemo ? [
+    { key: ALL_WALLETS, label: 'Wallets', view: { kind: 'wallet', id: ALL_WALLETS, page: 'insights' }, active: view?.kind === 'wallet' && view.id === ALL_WALLETS, preview: true },
+    ...WALLET_OPTIONS.filter((w) => w.id !== ALL_WALLETS).map((w) => ({
+      key: w.id,
+      label: w.name,
+      view: { kind: 'wallet', id: w.id, page: 'insights' },
+      active: view?.kind === 'wallet' && view.id === w.id,
+      depth: 1,
+      color: w.color,
+    })),
+    { key: 'real-estate', label: 'Real estate', view: { kind: 'realEstate', page: 'home' }, active: view?.kind === 'realEstate', preview: true },
+  ] : [];
+  const wealthRows: SubItem[] = isDemo
+    ? [...(aggregate ? [portfolioRow(aggregate, 0)] : []), ...real.map((p) => portfolioRow(p, aggregate ? 1 : 0)), ...walletRows]
+    : real.length > 1 ? real.map((p) => portfolioRow(p, 0)) : [];
+  const planRows: SubItem[] = planPages(isDemo).map((page) => ({
+    key: page,
+    label: PLAN_PAGE_LABELS[page],
+    view: { page },
+    // Strategy's form for a new backtest, and each backtest, are under Strategy.
+    active: view?.page === page || (page === 'strategy' && (view?.page === 'builder' || view?.page === 'backtest')),
+    preview: page !== 'strategy',
+  }));
+  const discoverRows: SubItem[] = discoverPages(isDemo).map((page) => ({
+    key: page,
+    label: DISCOVER_PAGE_LABELS[page],
+    view: { page },
+    active: view?.page === page,
+    preview: page !== 'news',
+  }));
+
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'performance', label: 'Manage', icon: SlidersHorizontal },
-    ...(isDemo ? [{ id: 'blog', label: 'Journal', icon: BookOpen, preview: true }] : []),
-    { id: 'news', label: 'News', icon: Newspaper },
+    { id: WEALTH_SECTION, label: 'Wealth', icon: PieChart, subs: wealthRows },
+    { id: PLAN_SECTION, label: 'Plan', icon: MapIcon, subs: planRows },
+    { id: DISCOVER_SECTION, label: 'Discover', icon: Compass, subs: discoverRows },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -48,8 +107,14 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
     if (onClose) onClose();
   };
 
+  const handleSubClick = (section: string, sub: SubItem) => {
+    onOpenPage?.(section, sub.view);
+    if (onClose) onClose();
+  };
+
   const renderItem = (item: NavItem) => {
     const isActive = activeSection === item.id;
+    const subs = isActive && onOpenPage ? item.subs ?? [] : [];
     return (
       <div key={item.id} className="flex flex-col">
         <button
@@ -67,6 +132,25 @@ export function Sidebar({ activeSection, setActiveSection, isOpen = false, onClo
           </div>
           {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
         </button>
+        {subs.length > 0 && (
+          <div className="flex flex-col gap-0.5 mt-1 mb-2 ml-6 pl-3 border-l border-white/10">
+            {subs.map((sub) => (
+              <button
+                key={sub.key}
+                type="button"
+                onClick={() => handleSubClick(item.id, sub)}
+                aria-current={sub.active ? "page" : undefined}
+                className={`flex items-center gap-2 min-h-9 px-3 rounded-lg text-left text-[13px] transition-colors ${sub.depth ? "pl-6 text-[12.5px]" : ""} ${
+                  sub.active ? "bg-white/10 text-white font-bold" : "text-[#a8a29e] font-medium hover:text-white hover:bg-white/5"
+                }`}
+              >
+                {sub.color && <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: sub.color }} />}
+                <span className="truncate">{sub.label}</span>
+                {sub.preview && <PreviewBadge dark />}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   };

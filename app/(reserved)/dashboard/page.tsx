@@ -20,22 +20,25 @@ import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboar
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
 import { NotificationsSection } from "../../components/dashboard/NotificationsSection";
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
-import { InsightsSection, openInvestmentsPage } from "../../components/dashboard/InsightsSection";
+import { WealthSection } from "../../components/dashboard/WealthSection";
+import { PlanSection } from "../../components/dashboard/PlanSection";
+import { DiscoverSection } from "../../components/dashboard/DiscoverSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
-import { JournalSection } from "../../components/dashboard/JournalSection";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
+import { DISCOVER_SECTION, WEALTH_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'blog', 'news', 'settings', 'notifications'];
-// Sections that became part of another: Wallets now sits under Manage ("performance"), next to
-// the portfolios, and Explore under its Investments. A link or a history entry to the old one
-// lands on the new.
-const MOVED_SECTIONS: Record<string, string> = { wallets: 'performance', explore: 'performance' };
+// 'performance' is the investor's Wealth (an advisor's Insights).
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'plan', 'discover', 'news', 'settings', 'notifications'];
+// Sections that became part of another: the Journal and Explore are Discover's pages now, the
+// Wallets Wealth's. A link or a history entry to the old one lands on the new. (An investor's News
+// is Discover's too, see below: an advisor keeps a News section of their own.)
+const MOVED_SECTIONS: Record<string, string> = { blog: DISCOVER_SECTION, explore: DISCOVER_SECTION, wallets: WEALTH_SECTION };
 const resolveSection = (section: string | null | undefined) => (section ? MOVED_SECTIONS[section] ?? section : section);
 
 /**
@@ -47,7 +50,7 @@ function DashboardPageContent() {
   const { user, loading, logout, isDemo } = useUser();
   // Only meaningful for role USER (see PortfolioContext) — advisor sections resolve a
   // client's portfolio locally instead, so `current` stays null for an advisor and that's fine.
-  const { current: portfolio, loading: portfolioLoading } = usePortfolio();
+  const { current: portfolio, portfolios, loading: portfolioLoading } = usePortfolio();
   const searchParams = useSearchParams();
   // Lets links into the dashboard land on a specific tab via `?section=...` instead of
   // always resetting to overview.
@@ -67,7 +70,7 @@ function DashboardPageContent() {
 
   // The browser's back and forward buttons move between sections too: each section opened is a
   // history entry, and landing on one shows its section (the section's own pages follow the
-  // same entry, see InsightsSection).
+  // same entry, see WealthSection).
   useEffect(() => {
     if (readDashboardEntry()?.section !== activeSection) pushDashboardEntry({ section: activeSection }, true);
     const onPopState = () => {
@@ -96,16 +99,33 @@ function DashboardPageContent() {
     setSectionVisit((n) => n + 1);
   };
 
+  // A section on one of its pages, from its row in the Sidebar: a new entry holding the page,
+  // which the section reads as it mounts afresh.
+  const openPage = (section: string, view: unknown) => {
+    pushDashboardEntry({ section, view });
+    setActiveSection(section);
+    setSectionVisit((n) => n + 1);
+  };
+
   const isAdvisor = user?.role === 'ADVISOR';
 
-  // An investor's transactions live under Manage / Investments now, so a link to the old
-  // Transactions section (an "add transactions" empty state) opens them there, on the selected
-  // portfolio.
+  // An investor's News is Discover's first page: an old link or history entry to it lands there.
+  useEffect(() => {
+    if (!user || isAdvisor || activeSection !== 'news') return;
+    pushDashboardEntry({ section: DISCOVER_SECTION, view: { page: 'news' } }, true);
+    setActiveSection(DISCOVER_SECTION);
+  }, [user, isAdvisor, activeSection]);
+
+  // An investor's transactions live in each portfolio's page now, so a link to the old
+  // Transactions section (an "add transactions" empty state) opens the selected portfolio's (the
+  // default's while a backtest or All portfolios is selected, where nothing can be added).
   const navigate = (section: string) => {
     if (section === 'upload' && !isAdvisor) {
-      openInvestmentsPage(openSection, 'transactions');
+      const target = portfolio && !portfolio.isVirtual ? portfolio : portfolios.find((p) => p.isDefault);
+      if (target) openPortfolioPage(openSection, target.uuid, 'transactions');
       return;
     }
+    if (section === 'news' && !isAdvisor) section = DISCOVER_SECTION;
     showSection(resolveSection(section) ?? section);
   };
 
@@ -130,11 +150,13 @@ function DashboardPageContent() {
       case 'performance':
         return isAdvisor
           ? <AdvisorPerformanceSection />
-          : <InsightsSection key={sectionVisit} onNavigate={navigate} />;
-      case 'blog':
-        // Not backed by the backend yet (lib/journal): demo investors only.
+          : <WealthSection key={sectionVisit} onNavigate={navigate} />;
+      case 'plan':
         if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
-        return isDemo ? <JournalSection key={sectionVisit} /> : <DashboardOverview onNavigate={navigate} />;
+        return <PlanSection key={sectionVisit} onNavigate={navigate} />;
+      case 'discover':
+        if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
+        return <DiscoverSection key={sectionVisit} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
@@ -183,6 +205,7 @@ function DashboardPageContent() {
         <Sidebar
           activeSection={activeSection}
           setActiveSection={openSection}
+          onOpenPage={openPage}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           role={user?.role}

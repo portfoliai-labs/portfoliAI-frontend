@@ -15,19 +15,22 @@ import { ReportFileTile } from "./ReportFileTile";
 import type { Document } from "../../models/Report";
 
 /**
- * REPORTS BROWSER — Manage / Investments / Reports: every real portfolio's reports as files, in one
- * grid, newest first. Each shows its kind's cover (ReportKinds), its name, the portfolio it
+ * REPORTS BROWSER — a portfolio's Reports tab (PortfolioPage, with `portfolioUuid`), or every real
+ * portfolio's reports without it: as files, in one grid, newest first. Each shows its kind's cover (ReportKinds), its name, the portfolio it
  * belongs to (in its colour), when it was generated and its tags, which can be added and removed
  * there. Clicking a file opens it; its button downloads it. One search filters by file, portfolio,
  * kind or tag. "Generate report" opens GenerateReportDialog (which kind, which portfolio). The
  * backend makes no reports for the virtual portfolios ("All portfolios", the backtests), so
  * they aren't here.
  */
-export function ReportsBrowser() {
+export function ReportsBrowser({ portfolioUuid }: { portfolioUuid?: string } = {}) {
   const { portfolios } = usePortfolio();
   const { isDemo } = useUser();
   const { generate, sending, toast } = useGenerateReport();
-  const real = useMemo(() => portfolios.filter((p) => !p.isVirtual), [portfolios]);
+  const real = useMemo(
+    () => portfolios.filter((p) => !p.isVirtual && (!portfolioUuid || p.uuid === portfolioUuid)),
+    [portfolios, portfolioUuid],
+  );
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
   const byUuid = useMemo(() => new Map(real.map((p) => [p.uuid, p])), [real]);
 

@@ -59,7 +59,7 @@ export function initialCompareSelection(portfolios: Portfolio[], currentUuid: st
 }
 
 /**
- * COMPARISON VIEW — "Manage / Investments / Compare" (see InsightsSection): every portfolio as a
+ * COMPARISON VIEW — "All portfolios / Compare" (see WealthSection): every portfolio as a
  * card on top (CompareCards), picked or not with a click, up to MAX_COMPARED; the picked ones side
  * by side under them (GET /v1/portfolios/comparison): a module per subject (CompareMetrics), the cumulative
  * returns and the allocation (CompareCharts), all following the cards. Each portfolio keeps its colour
@@ -72,7 +72,7 @@ export function ComparisonView({
   selection: string[];
   // Adds a portfolio to the comparison, or takes it out.
   onToggle: (uuid: string) => void;
-  // The pages above Compare ("Manage / Investments").
+  // The pages above Compare ("Investments").
   trail: Crumb[];
   // Opens one portfolio's own Insights, from its column head.
   onOpen: (uuid: string) => void;

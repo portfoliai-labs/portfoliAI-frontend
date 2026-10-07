@@ -54,22 +54,16 @@ export function ExploreView({ title, onClose, children }: { title: string; onClo
 
 /**
  * EXPLORE PANEL — one block of a detail view, in the same card and heading as the modules on
- * the page (see Module and ModuleHead in PerformanceSection): a gold eyebrow, the title, and a
- * line saying what it shows; `right` sits beside the heading (a headline figure).
+ * the page (see Module and ModuleHead in PerformanceSection): the title in small capitals, what it
+ * shows on hovering it, and `right` beside it (a headline figure). (`eyebrow` is no longer drawn.)
  */
 export function ExplorePanel({
-  eyebrow, title, desc, right, children,
-}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; children: React.ReactNode }) {
+  title, desc, right, children,
+}: { eyebrow?: string; title: string; desc?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="@container bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-          <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-            {title}
-          </h2>
-          {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
-        </div>
+    <section className="group/module @container relative bg-white rounded-[1.75rem] border border-[#EEE9DD] overflow-hidden">
+      <div className="px-6 pt-[22px] pb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2.5">
+        <h2 title={desc} className="text-[10px] font-black uppercase tracking-[0.14em] text-[#78716c]">{title}</h2>
         {right}
       </div>
       {children}
@@ -84,6 +78,8 @@ export interface DataColumn<T> {
   sortValue?: (row: T) => number | string | null;
   render: (row: T) => React.ReactNode;
   align?: "left" | "right";
+  // Takes the width the other columns leave, its content cut short at the table's edge.
+  grow?: boolean;
 }
 
 /**
@@ -147,7 +143,7 @@ export function DataTable<T>({
                   key={c.key}
                   scope="col"
                   aria-sort={active ? (sort!.desc ? "descending" : "ascending") : undefined}
-                  className={`px-4 first:pl-6 md:first:pl-7 last:pr-6 md:last:pr-7 py-3 whitespace-nowrap ${right ? "text-right" : "text-left"}`}
+                  className={`px-4 first:pl-6 last:pr-6 py-3 whitespace-nowrap ${right ? "text-right" : "text-left"} ${c.grow ? "w-full" : ""}`}
                 >
                   {c.sortValue ? (
                     <button
@@ -176,9 +172,9 @@ export function DataTable<T>({
                 {columns.map((c) => (
                   <td
                     key={c.key}
-                    className={`px-4 first:pl-6 md:first:pl-7 last:pr-6 md:last:pr-7 py-3 ${
+                    className={`px-4 first:pl-6 last:pr-6 py-3 ${
                       c.align === "right" ? "text-right tabular-nums whitespace-nowrap" : "text-left"
-                    }`}
+                    } ${c.grow ? "w-full max-w-0 min-w-32" : ""}`}
                   >
                     {c.render(row)}
                   </td>

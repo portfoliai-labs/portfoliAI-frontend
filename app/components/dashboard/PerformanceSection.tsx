@@ -6,10 +6,11 @@ import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink,
-  Search, ChevronDown, ChevronLeft, ChevronRight, Info, ArrowUpRight,
+  ChevronRight, Info, Maximize2,
 } from "lucide-react";
 import {
-  AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Treemap,
+  type TreemapNode,
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { ApiError } from "../../services/apiClient";
@@ -22,15 +23,16 @@ import { pushDashboardEntry, readDashboardEntry, type DashboardOverlay } from ".
 import { NoDataEmptyState } from "./NoDataEmptyState";
 import { BacktestBanner } from "./BacktestMarks";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
+import { PageHeader } from "./PageHeader";
 import { ExploreView, ExploreHostContext, ExplorePanel, DataTable, type DataColumn, type ExploreHeader } from "./ExploreView";
 import type {
   ExposureEntryResponse, RiskModelResponse, RiskPointResponse, RiskPortfolioEntry, RiskModelUnavailableReason, WeightGapEntry,
   BenchmarkResponse, BenchmarkComponentEntry, TimeSeries, HorizonEntry, DividendsResponse, TradingCostsResponse,
   AssetDetailResponse, AssetChartRange, PeriodDashboard, MonthlyMarketEffectEntry, ValuePoint, PortfolioHoldingResponse,
-  CurrencyDetail, RealizedPnlEntryResponse, RealizedPnlResponse, ReturnsResponse, VolatilityDetailResponse,
+  RealizedPnlResponse, RiskEventEntry, ReturnsResponse, VolatilityDetailResponse,
   PositionResponse, InsightsHoldingsModule, InsightsExposureModule, InsightsPortfoliosModule, InsightsComovementModule,
-  InsightsDividendsModule, InsightsTradingCostsModule, InsightsRealizedPnlModule, InsightsThisMonthModule,
-  InsightsValueModule, InsightsVolatilityModule, InsightsFrontierModule, InsightsPerformanceResponse,
+  InsightsTradingCostsModule, InsightsRealizedPnlModule, InsightsThisMonthModule,
+  InsightsValueModule, InsightsVolatilityModule, InsightsFrontierModule, InsightsPerformanceResponse, PortfolioComparisonEntry,
 } from "../../models/PortfolioData";
 
 const chartDateLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -45,7 +47,7 @@ const BENCHMARK_COLOR = "#64748b";
 
 // Axis tick labels (months, dates, values) on every chart in this file — slate-500, since the
 // lighter slate-400 they used to have washed out against the white card.
-const AXIS_TICK_COLOR = "#64748b";
+const AXIS_TICK_COLOR = "#57534e";
 
 // Shared recharts tooltip box. The text colour is set explicitly: recharts leaves the date
 // label uncoloured, so it inherits the page's text colour — near-white in dark mode (see
@@ -64,7 +66,7 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * in as they arrive. Stale modules are followed through /insights/status (see useInsights).
  */
 export function PerformanceSection({
-  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail,
+  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail, pageLabel = "Insights", top, onOpenPortfolio, comparison = null,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
   // A strategy's backtest (a virtual portfolio): the page opens under BacktestBanner, and before
@@ -75,6 +77,17 @@ export function PerformanceSection({
   // (see Breadcrumb). Without it (an advisor's view of a client, which has its own header) the
   // trail starts at "Insights".
   trail?: Crumb[];
+  // This page's own step in the trail: the portfolio's name on its page in Wealth.
+  pageLabel?: string;
+  // Drawn above the modules (the portfolio page's header, see WealthSection), and hidden with
+  // them while a detail view or a month is open.
+  top?: React.ReactNode;
+  // Opens one of the aggregate's portfolios, from its Composition.
+  onOpenPortfolio?: (uuid: string) => void;
+  // The portfolio's side-by-side figures (GET /v1/portfolios/comparison), which the page's header
+  // already loads: the returns, the drawdown and the benchmark's excess the modules show next to
+  // their own. null while loading or without one; those figures are then left out.
+  comparison?: PortfolioComparisonEntry | null;
 }) {
   const insights = useInsights(portfolioUuid);
   const performance = insights.performance;
@@ -170,13 +183,13 @@ export function PerformanceSection({
   }, []);
 
   const above = trail ?? [];
-  const insightsCrumb = (back: () => void): Crumb => ({ label: "Insights", onClick: back });
+  const insightsCrumb = (back: () => void): Crumb => ({ label: pageLabel, onClick: back });
   const monthTitle = selected
     ? new Date(Date.UTC(selected.year, selected.month - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
     : "";
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-[22px] pb-12">
       {selected ? (
         <Breadcrumb
           trail={[...above, insightsCrumb(() => setSelected(null)), ...(explore ? [{ label: explore.title, onClick: () => setSelected(null) }] : [])]}
@@ -186,8 +199,9 @@ export function PerformanceSection({
       ) : explore ? (
         <Breadcrumb trail={[...above, insightsCrumb(explore.onClose)]} current={explore.title} />
       ) : trail ? (
-        <Breadcrumb trail={trail} current="Insights" />
+        <Breadcrumb trail={trail} current={pageLabel} />
       ) : null}
+      {!selected && !explore && top}
       {backtest && !selected && !explore && <BacktestBanner portfolioUuid={portfolioUuid} />}
 
       {performance.failed ? (
@@ -242,6 +256,9 @@ export function PerformanceSection({
               portfolioUuid={portfolioUuid}
               onSelectMonth={openMonth}
               isAggregate={isAggregate}
+              onOpenPortfolio={onOpenPortfolio}
+              comparison={comparison}
+              backtest={backtest}
             />
           </div>
         </ExploreHostContext.Provider>
@@ -256,17 +273,135 @@ export function PerformanceSection({
  * MODULE — the card shell every page's content lives in, matching the Dashboard
  * Overview's visual language (rounded-4xl white card, Playfair headers, gold eyebrow).
  */
-function Module({ children }: { children: React.ReactNode }) {
+export function Module({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className="h-full bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+    <section className={`group/module relative h-full bg-white rounded-[1.75rem] border border-[#EEE9DD] overflow-hidden transition-colors has-[[data-explore]]:hover:border-[#C49A3C]/60 ${className}`}>
       {children}
     </section>
   );
 }
 
+// A module's content under its ModuleHead: the card's own padding, the header's gap above it.
+export const MODULE_BODY = "px-6 pb-[22px]";
+
+// Figures read as good or bad news.
+const TONE_CLASS = { gain: "text-[#047857]", loss: "text-[#e11d48]" } as const;
+const toneClass = (tone?: "gain" | "loss") => (tone ? TONE_CLASS[tone] : "text-[#1c1917]");
+const toneOfValue = (v: number | null | undefined): "gain" | "loss" | undefined => (v == null || v === 0 ? undefined : v > 0 ? "gain" : "loss");
+
+/**
+ * FIGS — a module's figures, as a grid of label-over-value cells with a hairline above each (as
+ * many to a row as fit, 120px at least). `strong` is the headline one, a size up; `sub` a faint
+ * line under the value; `info`, a tooltip on the label.
+ */
+export function Figs({ children, className = "", pairs = false }: { children: React.ReactNode; className?: string; pairs?: boolean }) {
+  // `pairs`: two to a row whatever the width, for a half-width module that lines up with its neighbour.
+  return <div className={`grid ${pairs ? "grid-cols-2" : "grid-cols-[repeat(auto-fit,minmax(120px,1fr))]"} gap-x-5 gap-y-3.5 ${className}`}>{children}</div>;
+}
+
+export function Fig({ label, value, sub, tone, strong = false, info, badge }: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "gain" | "loss";
+  strong?: boolean;
+  info?: string;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <span className="flex flex-col gap-[3px] min-w-0 border-t border-[#EEE9DD] pt-2.5 text-left">
+      <span className="flex items-center gap-1 min-w-0 text-[11px] text-[#78716c]">
+        <span className="truncate">{label}</span>
+        {info && (
+          <InfoTip text={info}>
+            <Info className="h-3 w-3 shrink-0 text-[#a8a29e] hover:text-[#78716c] cursor-help transition-colors" />
+          </InfoTip>
+        )}
+      </span>
+      <span className="flex items-center gap-2 min-w-0">
+        <span className={`font-bold tabular-nums truncate tracking-[-0.01em] ${strong ? "text-[22px]" : "text-[17px]"} ${toneClass(tone)}`}>{value}</span>
+        {badge}
+      </span>
+      {sub && <span className="text-[11px] text-[#a8a29e] truncate">{sub}</span>}
+    </span>
+  );
+}
+
+/**
+ * FIG ROWS — a handful of figures as a list, a row each: the name on the left, the figure on the
+ * right, all one size. For a narrow module whose figures would otherwise stack in a grid.
+ */
+export function FigRows({ rows }: {
+  rows: ({ key: string; label: string; value: string; tone?: "gain" | "loss"; info?: string } | false | null)[];
+}) {
+  return (
+    <dl>
+      {rows.filter((r) => !!r).map((r) => (
+        <div key={r.key} className="flex items-baseline justify-between gap-3 py-3 border-b border-[#EEE9DD] last:border-b-0 first:pt-0">
+          <dt className="flex items-center gap-1 min-w-0 text-[13px] text-[#78716c]">
+            <span className="truncate">{r.label}</span>
+            {r.info && (
+              <InfoTip text={r.info}>
+                <Info className="h-3 w-3 shrink-0 text-[#a8a29e] hover:text-[#78716c] cursor-help transition-colors" />
+              </InfoTip>
+            )}
+          </dt>
+          <dd className={`shrink-0 text-[15px] font-bold tabular-nums ${r.tone ? toneClass(r.tone) : "text-[#1c1917]"}`}>{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * H BARS — a short ranking as horizontal bars: a label, a track with the bar (scaled to `max`,
+ * the largest row by default) and, with `mark`, a thin line at a second value on the same
+ * scale, then the figure. With `onSelect` each row opens something.
+ */
+export function HBars({ rows, max, onSelect }: {
+  rows: { key: string; label: string; value: number; figure: string; color?: string; mark?: number | null; tone?: "gain" | "loss"; title?: string }[];
+  max?: number;
+  onSelect?: (key: string) => void;
+}) {
+  const top = max ?? Math.max(...rows.map((r) => Math.max(r.value, r.mark ?? 0)), 0.01);
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map((r) => {
+        const body = (
+          <>
+            <span className="truncate font-semibold text-[#1c1917]" title={r.title ?? r.label}>{r.label}</span>
+            <span className="relative h-2 rounded-full bg-[#F7F5EF] overflow-hidden">
+              <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (r.value / top) * 100))}%`, background: r.color ?? "#C49A3C" }} />
+              {r.mark != null && (
+                <span className="absolute -inset-y-[3px] w-0.5 bg-[#1c1917]" style={{ left: `${Math.max(0, Math.min(99, (r.mark / top) * 100))}%` }} />
+              )}
+            </span>
+            <span className={`text-right font-bold tabular-nums ${toneClass(r.tone)}`}>{r.figure}</span>
+          </>
+        );
+        const grid = "grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_minmax(3.6rem,auto)] gap-2.5 items-center text-[12.5px]";
+        return onSelect ? (
+          <button key={r.key} type="button" onClick={() => onSelect(r.key)} className={`${grid} text-left -mx-1.5 px-1.5 py-0.5 rounded-lg hover:bg-[#F7F5EF] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40`}>
+            {body}
+          </button>
+        ) : (
+          <div key={r.key} className={grid}>{body}</div>
+        );
+      })}
+    </div>
+  );
+}
+
+// A line of small print under a module's figures.
+export function NoteS({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-xs text-[#78716c] leading-normal ${className}`}>{children}</p>;
+}
+
 const TILE_SPAN = {
   full: "col-span-2 lg:col-span-12",
   half: "col-span-2 lg:col-span-6",
+  wide: "col-span-2 lg:col-span-8",
+  narrow: "col-span-2 lg:col-span-4",
 } as const;
 
 /**
@@ -276,52 +411,57 @@ const TILE_SPAN = {
  * container, so what's inside lays itself out by the tile's width (@md:, @3xl:…) rather than
  * the viewport's. Collapses when its module renders nothing.
  */
-function Tile({ span = "full", children }: { span?: keyof typeof TILE_SPAN; children: React.ReactNode }) {
-  return <div className={`@container min-w-0 empty:hidden ${TILE_SPAN[span]}`}>{children}</div>;
+// `id`: an anchor the page's header figures scroll to (see moduleAnchor).
+function Tile({ span = "full", id, children }: { span?: keyof typeof TILE_SPAN; id?: string; children: React.ReactNode }) {
+  return <div id={id} className={`@container min-w-0 empty:hidden scroll-mt-24 ${TILE_SPAN[span]}`}>{children}</div>;
 }
 
-// `onExplore` makes the whole header a way into the module's detail view (ExploreView): clickable, with an
-// arrow beside the title that lights up on hover. The title itself is the button, so it can be
-// reached from the keyboard; a click anywhere else on the header bubbles to the same handler.
-function ModuleHead({
-  eyebrow, title, desc, right, icon, onExplore,
-}: { eyebrow: string; title: string; desc?: string; right?: React.ReactNode; icon?: React.ReactNode; onExplore?: () => void }) {
-  const titleText = (
-    <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-      {title}
-    </h2>
-  );
-  const heading = onExplore ? (
-    <button type="button" className="flex items-center gap-2 text-left rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40">
-      {titleText}
-      <ExploreArrow />
-    </button>
-  ) : titleText;
+/** The anchor of one of a portfolio page's modules, for a figure above it to scroll down to. */
+export type ModuleAnchor = "composition" | "value" | "volatility" | "realized" | "costs" | "risk";
+export const moduleAnchor = (m: ModuleAnchor) => `module-${m}`;
 
+// The heading every module shares, as small as a label so the figures lead: its title in small
+// capitals, with `right` (a toggle, a headline figure) on the right. With `onExplore`, the module
+// has a detail view (ExploreView): the header opens it, and so does a round "expand" button pinned
+// to the card's top right corner (ExpandButton), always in the same place whatever the header
+// holds; the whole card lights up on hover. Clicks on `right` stay its own (a breakdown's chips
+// switch the breakdown, they don't open the detail). `desc` says what the module shows, on hovering
+// the title.
+// (`eyebrow` was a gold line above the title; it's no longer drawn.)
+export function ModuleHead({
+  title, desc, right, icon, onExplore,
+}: { eyebrow?: string; title: string; desc?: string; right?: React.ReactNode; icon?: React.ReactNode; onExplore?: () => void }) {
   return (
-    <div
-      onClick={onExplore}
-      className={`p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6 ${
-        onExplore ? "group/explore cursor-pointer hover:bg-slate-50/70 transition-colors" : ""
-      }`}
-    >
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{eyebrow}</p>
-        {icon ? <div className="flex items-center gap-2.5">{icon}{heading}</div> : heading}
-        {desc && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{desc}</p>}
+    <>
+      <div
+        onClick={onExplore}
+        className={`px-6 pt-[22px] pb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2.5 ${onExplore ? "cursor-pointer pr-14" : ""}`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <h2 title={desc} className="text-[10px] font-black uppercase tracking-[0.14em] text-[#78716c]">{title}</h2>
+        </div>
+        {right && (onExplore ? <div onClick={(e) => e.stopPropagation()} className="cursor-auto">{right}</div> : right)}
       </div>
-      {right}
-    </div>
+      {onExplore && <ExpandButton title={title} onClick={onExplore} />}
+    </>
   );
 }
 
-// The "there's more behind this" cue, shown next to an explorable module's title (ModuleHead).
-// Lights up while its group is hovered.
-function ExploreArrow() {
+// The way into a module's detail view: a round gold button in the card's top right corner,
+// the same on every card.
+function ExpandButton({ title, onClick }: { title: string; onClick: () => void }) {
   return (
-    <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 bg-slate-100 text-slate-400 group-hover/explore:bg-[#C49A3C] group-hover/explore:text-white transition-colors">
-      <ArrowUpRight className="h-3.5 w-3.5" />
-    </span>
+    <button
+      type="button"
+      data-explore
+      onClick={onClick}
+      aria-label={`Open ${title} in detail`}
+      title="Open in detail"
+      className="absolute top-4 right-4 md:top-[18px] md:right-[18px] h-6 w-6 rounded-full flex items-center justify-center bg-[#C49A3C] text-white transition-colors hover:bg-[#A8822F] outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+    >
+      <Maximize2 className="h-3 w-3" />
+    </button>
   );
 }
 
@@ -433,18 +573,18 @@ function StatContent({ title, value, icon, color, info }: StatProps) {
  * Module (see below). The stat cards in the page's other Module already carry the deltas
  * and breakdowns, so this stays a plain, uncluttered trend line.
  */
-function SnapshotChart({ chart, currency }: { chart: ValuePoint[]; currency: string }) {
+function SnapshotChart({ chart, currency, className = "h-64" }: { chart: ValuePoint[]; currency: string; className?: string }) {
   // A single point has nothing to draw a line/area between — recharts still plots its dot,
   // which reads as a broken/empty chart rather than "not enough history yet".
   if (chart.length < 2) {
-    return <p className="text-sm text-slate-400 p-6 md:p-7">Not enough history yet to chart.</p>;
+    return <p className="text-[12.5px] text-[#a8a29e]">Not enough history yet to chart.</p>;
   }
 
   const sorted = [...chart].sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
   const data = sorted.map(s => ({ date: s.snapshotAt, value: s.totalMarketValue }));
 
   return (
-    <div className="p-6 md:p-7 h-64">
+    <div className={className}>
       {/* initialDimension seeds a real size before the first ResizeObserver callback fires —
           without it, ResponsiveContainer's first render measures width/height as -1 and logs
           a "should be greater than 0" warning even though the chart renders fine a moment later. */}
@@ -475,7 +615,7 @@ function SnapshotChart({ chart, currency }: { chart: ValuePoint[]; currency: str
             axisLine={false}
             tickLine={false}
             tickMargin={8}
-            width={56}
+            width={66}
           />
           <Tooltip
             labelFormatter={(label) => fullDateLabel(label as string)}
@@ -486,22 +626,6 @@ function SnapshotChart({ chart, currency }: { chart: ValuePoint[]; currency: str
         </AreaChart>
       </ResponsiveContainer>
     </div>
-  );
-}
-
-/**
- * CHART CARD — the history chart's own Module, separate from the stats Module above it.
- * Keeping it in its own card gives it visual room to breathe and makes clear it's a
- * different kind of information — a trend over time vs. point-in-time figures.
- */
-function ChartCard({
-  chart, currency, title, desc, right, onExplore,
-}: { chart: ValuePoint[]; currency: string; title: string; desc: string; right?: React.ReactNode; onExplore?: () => void }) {
-  return (
-    <Module>
-      <ModuleHead eyebrow={currency} title={title} desc={desc} right={right} onExplore={onExplore} />
-      <SnapshotChart chart={chart} currency={currency} />
-    </Module>
   );
 }
 
@@ -576,7 +700,7 @@ function StaleUpdatingState() {
 
 /** Placeholder line for a module whose analytics can't be drawn (yet). */
 function ModuleMessage({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-slate-400 p-6 md:p-7">{children}</p>;
+  return <p className={`text-[12.5px] text-[#a8a29e] ${MODULE_BODY}`}>{children}</p>;
 }
 
 const isPeriodEmpty = (data: PeriodDashboard) =>
@@ -627,146 +751,10 @@ function AmountWithDelta({ amount, pct, hasBaseline = true }: { amount: string; 
 const isHistoryEmpty = (value: InsightsValueModule) =>
   value.currentValue === 0 && value.chart.length === 0;
 
-function AllocPanel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return (
-    <div className="p-6 md:p-7">
-      <h3 className="text-sm font-black text-slate-900">{title}</h3>
-      <p className="text-xs text-slate-500 mt-1 mb-5">{subtitle}</p>
-      {children}
-    </div>
-  );
-}
-
-// Shades of the brand gold, ordered for adjacent-slice contrast; long tails collapse into
-// a single muted "Other" slice rather than a 9th near-indistinguishable color.
-const DONUT_COLORS = ["#C49A3C", "#E8C97A", "#8A6A28", "#D4B96A", "#B8935A", "#A67C3D"];
-const DONUT_OTHER_COLOR = "#CBD5E1";
-const DONUT_MAX_SLICES = 5;
-
-/**
- * COMPOSITION DONUT — percentage-first composition view: a donut + compact legend reads at a
- * glance regardless of item count; anything past DONUT_MAX_SLICES collapses into "Other" so
- * the chart and legend both stay legible. All items must already share one currency —
- * percentages from mixed currencies would silently treat e.g. 1 EUR and 1 USD as equal weight.
- */
-function CompositionDonut({ items, currency }: { items: { label: string; value: number }[]; currency: string }) {
-  // Recomputed only when the underlying items actually change, not on every re-render
-  // this component's parent (the Holdings carousel) triggers while scrolling/snapping.
-  const { total, grouped } = useMemo(() => {
-    const total = items.reduce((sum, i) => sum + i.value, 0);
-    const sorted = [...items].sort((a, b) => b.value - a.value);
-    const grouped = sorted.length <= DONUT_MAX_SLICES
-      ? sorted
-      : [
-          ...sorted.slice(0, DONUT_MAX_SLICES),
-          { label: "Other", value: sorted.slice(DONUT_MAX_SLICES).reduce((sum, i) => sum + i.value, 0) },
-        ];
-    return { total, grouped };
-  }, [items]);
-
-  if (items.length === 0) {
-    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
-  }
-
-  return (
-    <div className="flex items-center gap-5">
-      <div className="w-24 h-24 shrink-0">
-        <PieChart width={96} height={96}>
-          <Pie data={grouped} dataKey="value" nameKey="label" innerRadius={30} outerRadius={48} paddingAngle={2} stroke="none" isAnimationActive={false}>
-            {grouped.map((entry, i) => (
-              <Cell key={entry.label} fill={entry.label === "Other" ? DONUT_OTHER_COLOR : DONUT_COLORS[i % DONUT_COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip
-            formatter={(value, name) => {
-              const num = Number(value) || 0;
-              const pct = total > 0 ? ((num / total) * 100).toFixed(1) : "0";
-              return [`${formatCurrency(num, currency, 0)} (${pct}%)`, name];
-            }}
-            contentStyle={TOOLTIP_STYLE}
-          />
-        </PieChart>
-      </div>
-      <div className="flex-1 min-w-0 space-y-1.5">
-        {grouped.map((item, i) => {
-          const pct = total > 0 ? (item.value / total) * 100 : 0;
-          return (
-            <div key={item.label} className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: item.label === "Other" ? DONUT_OTHER_COLOR : DONUT_COLORS[i % DONUT_COLORS.length] }}
-                />
-                <span className="font-bold text-slate-900 truncate">{item.label}</span>
-              </span>
-              <span className="font-bold text-slate-500 shrink-0 tabular-nums">{pct.toFixed(1)}%</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // "Unknown" collects assets with no known breakdown — a data gap, not a real sector/region —
 // so it gets a neutral bar instead of taking a slot in the gold palette.
 const UNKNOWN_EXPOSURE_COLOR = "#cbd5e1";
-
-/**
- * EXPOSURE BREAKDOWN — a ranked bar list for a percentage-weighted breakdown (sector/region
- * exposure). Simpler than CompositionDonut: these entries already carry a weightPct
- * (0-100), not a currency amount that needs a percentage computed from a total first.
- */
-function ExposureBreakdown({ entries }: { entries: ExposureEntryResponse[] }) {
-  if (entries.length === 0) {
-    return <p className="text-sm text-slate-400 py-6">No data yet.</p>;
-  }
-
-  const sorted = [...entries].sort((a, b) => b.weightPct - a.weightPct);
-  const max = Math.max(...sorted.map((e) => e.weightPct), 0.01);
-  let colorIndex = 0;
-
-  return (
-    <div className="space-y-3">
-      {sorted.map((e) => {
-        const color = e.label === "Unknown" ? UNKNOWN_EXPOSURE_COLOR : DONUT_COLORS[colorIndex++ % DONUT_COLORS.length];
-        return (
-          <div key={e.label}>
-            <div className="flex items-baseline justify-between gap-3 mb-1">
-              <span className="text-[13px] font-bold text-slate-900 truncate">{e.label}</span>
-              <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{e.weightPct.toFixed(1)}%</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${(e.weightPct / max) * 100}%`, background: color }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * EXPOSURE PANELS — part of the Holdings detail: the look-through exposure of the held positions
- * by sector and by region, as of the last snapshot tick (into funds, at today's fund composition
- * — not at any past date). Two modules of the Composition section, each null until the first
- * tick has run for this user; never stale.
- */
-function ExposurePanels({ sector, region }: { sector: InsightsExposureModule | null; region: InsightsExposureModule | null }) {
-  const panel = (title: string, subtitle: string, module: InsightsExposureModule | null) => (
-    <ExplorePanel eyebrow="Holdings" title={title} desc={subtitle}>
-      {module === null ? <ModuleMessage>{PREPARING_TICK}</ModuleMessage> : (
-        <div className="p-6 md:p-7"><ExposureBreakdown entries={module.entries} /></div>
-      )}
-    </ExplorePanel>
-  );
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {panel("By Sector", "Where your holdings' companies operate, weighted by market value.", sector)}
-      {panel("By Region", "Geographic exposure, weighted by market value.", region)}
-    </div>
-  );
-}
 
 // Correlation cells share the returns heatmap's emerald/rose scheme (positive/negative) but
 // scale intensity linearly over [-1, 1] rather than a capped magnitude — correlation is
@@ -893,35 +881,72 @@ function RiskModelModule({ slot, portfolioUuid }: { slot: ModuleSlot<InsightsFro
   const [exploring, setExploring] = useState(false);
   const data = slot.module;
   const built = data?.status === "ok";
-  const hasFrontier = data !== null && data.frontier.filter((f) => f.volatilityPct !== null && f.expectedReturnPct !== null).length >= 2;
+  const plot = useMemo(
+    () => (data ? frontierPlot(data.frontier, data.current, data.maxSharpe, data.minVolatility) : null),
+    [data],
+  );
+  const hasFrontier = plot !== null && plot.curve.length >= 2;
   const explore = ready(slot) ? () => setExploring(true) : undefined;
-  const head = <ModuleHead eyebrow="Risk" title="Risk Model" desc="How your holdings have behaved together, based on past returns." onExplore={explore} />;
+  const mixes = data ? [
+    { label: "Yours", color: MIX_COLORS.current, entry: data.current },
+    { label: "Max Sharpe", color: MIX_COLORS.maxSharpe, entry: data.maxSharpe },
+    { label: "Min volatility", color: MIX_COLORS.minVolatility, entry: data.minVolatility },
+  ] : [];
 
   return (
-    <>
-      {ready(slot) && built && hasFrontier ? (
-        <>
-          {slot.lagging && <div className="mb-6"><UpdatingNote /></div>}
-          <FrontierModule frontier={slot.module.frontier} current={slot.module.current} maxSharpe={slot.module.maxSharpe} minVolatility={slot.module.minVolatility} onExplore={explore} />
-        </>
+    <Module>
+      <ModuleHead title="Risk Model" desc="How your holdings have behaved together, based on past returns." onExplore={explore} />
+      {SlotPlaceholder({ slot }) ?? (ready(slot) && built && hasFrontier ? (
+        <div className={`${MODULE_BODY} space-y-4`}>
+          {slot.lagging && <UpdatingNote />}
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-[22px] items-stretch">
+            <FrontierChart curve={plot.curve} dots={plot.dots} className="h-[240px]" compact />
+            {/* As tall as the chart beside it, its rows spread over that height. */}
+            <div className="min-w-0 flex flex-col">
+              <div className="flex-1 overflow-x-auto">
+                {/* Coloured explicitly, like DataTable's: a cell left to inherit takes the page's text colour. */}
+                {/* Separate borders, none drawn: the highlighted row's cells can round their corners. */}
+                <table className="w-full h-full border-separate border-spacing-0 text-[14px] text-[#1c1917]">
+                  <thead>
+                    <tr className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#78716c]">
+                      <th className="text-left font-extrabold py-2 px-3" />
+                      <th className="text-right font-extrabold py-2 px-3 whitespace-nowrap">Avg. return</th>
+                      <th className="text-right font-extrabold py-2 px-3">Volatility</th>
+                      <th className="text-right font-extrabold py-2 px-3">Sharpe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixes.map((m, index) => {
+                      // The user's own allocation, set off from the two mixes it's measured against.
+                      const cell = index === 0 ? "bg-[#C49A3C]/[0.09] first:rounded-l-xl last:rounded-r-xl" : "";
+                      return (
+                        <tr key={m.label} className="font-semibold">
+                          <td className={`py-3 pl-3 pr-3 whitespace-nowrap ${cell}`}><span className="mr-1.5" style={{ color: m.color }}>●</span>{m.label}</td>
+                          <td className={`py-3 px-3 text-right tabular-nums font-bold ${cell}`}>{formatPctOrDash(m.entry?.expectedReturnPct ?? null)}</td>
+                          <td className={`py-3 px-3 text-right tabular-nums font-bold ${cell}`}>{plainPctOrDash(m.entry?.volatilityPct ?? null)}</td>
+                          <td className={`py-3 px-3 text-right tabular-nums font-bold ${cell}`}>{ratioOrDash(m.entry?.sharpeRatio ?? null)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
-        <Module>
-          {head}
-          {SlotPlaceholder({ slot }) ?? (
-            <ModuleMessage>
-              {built
-                ? "The efficient frontier can't be drawn for these holdings. Open it for the mixes and how your holdings move together."
-                : riskModelUnavailableMessage(slot.module!)}
-            </ModuleMessage>
-          )}
-        </Module>
-      )}
+        <ModuleMessage>
+          {built
+            ? "The efficient frontier can't be drawn for these holdings. Open it for the mixes and how your holdings move together."
+            : riskModelUnavailableMessage(slot.module!)}
+        </ModuleMessage>
+      ))}
       {ready(slot) && exploring && (
         <ExploreView title="Risk Model" onClose={() => setExploring(false)}>
           <RiskModelExplore portfolioUuid={portfolioUuid} revision={slot.revision} />
         </ExploreView>
       )}
-    </>
+    </Module>
   );
 }
 
@@ -1089,67 +1114,90 @@ function MixWeights({
  * Points with a null coordinate are skipped; the dots extend the axes if they fall outside the
  * curve's own range.
  */
-function FrontierModule({
-  frontier, current, maxSharpe, minVolatility, onExplore,
-}: {
-  frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[];
-  current: RiskPointResponse | null;
-  maxSharpe: RiskPointResponse | null;
-  minVolatility: RiskPointResponse | null;
-  onExplore?: () => void;
-}) {
-  const curve = useMemo(
-    () => frontier
-      .filter((f): f is { volatilityPct: number; expectedReturnPct: number } => f.volatilityPct !== null && f.expectedReturnPct !== null)
-      .sort((a, b) => a.volatilityPct - b.volatilityPct),
-    [frontier],
-  );
+type PlottedPoint = RiskPointResponse & { volatilityPct: number; expectedReturnPct: number };
+
+function frontierPlot(
+  frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[],
+  current: RiskPointResponse | null,
+  maxSharpe: RiskPointResponse | null,
+  minVolatility: RiskPointResponse | null,
+) {
+  const curve = frontier
+    .filter((f): f is { volatilityPct: number; expectedReturnPct: number } => f.volatilityPct !== null && f.expectedReturnPct !== null)
+    .sort((a, b) => a.volatilityPct - b.volatilityPct);
   const dots = [
     { label: "Your allocation", color: MIX_COLORS.current, entry: current },
     { label: "Max Sharpe", color: MIX_COLORS.maxSharpe, entry: maxSharpe },
     { label: "Min volatility", color: MIX_COLORS.minVolatility, entry: minVolatility },
-  ].filter((d): d is typeof d & { entry: RiskPointResponse & { volatilityPct: number; expectedReturnPct: number } } =>
-    d.entry?.volatilityPct != null && d.entry?.expectedReturnPct != null);
+  ].filter((d): d is typeof d & { entry: PlottedPoint } => d.entry?.volatilityPct != null && d.entry?.expectedReturnPct != null);
+  return { curve, dots };
+}
 
-  if (curve.length < 2) return null;
+/**
+ * The efficient frontier's chart, for FrontierModule and the Risk Model module. `compact` (the
+ * module on the page) leaves out the legend under it and the axes' names, the table beside it
+ * naming the dots.
+ */
+function FrontierChart({ curve, dots, className, compact = false }: {
+  curve: ReturnType<typeof frontierPlot>["curve"];
+  dots: ReturnType<typeof frontierPlot>["dots"];
+  className: string;
+  compact?: boolean;
+}) {
+  // Axes fitted to the curve and the dots, a little room around them, rather than rounded out by
+  // the chart: the three mixes spread over the whole plot instead of bunching in a corner. The
+  // values don't move; a tick shows a decimal when the range is too narrow for whole percents.
+  const xs = [...curve.map((p) => p.volatilityPct), ...dots.map((d) => d.entry.volatilityPct)];
+  const ys = [...curve.map((p) => p.expectedReturnPct), ...dots.map((d) => d.entry.expectedReturnPct)];
+  const fit = (values: number[]): [number, number] => {
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const pad = (hi - lo || Math.abs(hi) || 1) * 0.08;
+    return [lo - pad, hi + pad];
+  };
+  const xDomain = fit(xs);
+  const yDomain = fit(ys);
+  const tickLabel = (domain: [number, number]) => (v: number) => `${Number(v).toFixed(domain[1] - domain[0] < 4 ? 1 : 0)}%`;
 
   return (
-    <Module>
-      <ModuleHead
-        eyebrow="Risk Model"
-        title="Efficient Frontier"
-        desc="The highest past return available at each level of volatility, using your current holdings."
-        onExplore={onExplore}
-      />
-      <div className="p-6 md:p-7 pb-3 h-80">
+    <div>
+      <div className={className}>
         <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 320 }}>
-          <LineChart data={curve} margin={{ top: 16, right: 16, left: 0, bottom: 20 }}>
+          <LineChart data={curve} margin={{ top: 16, right: 16, left: 0, bottom: compact ? 4 : 20 }}>
             <XAxis
               type="number"
               dataKey="volatilityPct"
-              domain={["auto", "auto"]}
-              tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+              domain={xDomain}
+              tickCount={5}
+              tickFormatter={tickLabel(xDomain)}
               tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
               axisLine={false}
               tickLine={false}
-              label={{ value: "Volatility", position: "insideBottom", offset: -12, fontSize: 11, fill: AXIS_TICK_COLOR }}
+              tickMargin={6}
+              // Keeps the first tick clear of the Y axis' lowest one, in the corner they share.
+              padding={{ left: 14, right: 6 }}
+              label={compact ? undefined : { value: "Volatility", position: "insideBottom", offset: -12, fontSize: 11, fill: AXIS_TICK_COLOR }}
             />
             <YAxis
               type="number"
-              domain={["auto", "auto"]}
-              tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+              domain={yDomain}
+              tickCount={5}
+              tickFormatter={tickLabel(yDomain)}
               tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
               axisLine={false}
               tickLine={false}
-              width={64}
-              label={{ value: "Avg. annual return (past)", angle: -90, position: "insideLeft", offset: 4, fontSize: 11, fill: AXIS_TICK_COLOR }}
+              tickMargin={6}
+              // Lifts the lowest tick off the X axis' labels.
+              padding={{ bottom: 12, top: 6 }}
+              width={compact ? 44 : 64}
+              label={compact ? undefined : { value: "Avg. annual return (past)", angle: -90, position: "insideLeft", offset: 4, fontSize: 11, fill: AXIS_TICK_COLOR }}
             />
             <Tooltip
               labelFormatter={(label) => `Volatility ${Number(label).toFixed(2)}%`}
               formatter={(value) => [`${Number(value).toFixed(2)}%`, "Avg. annual return (past)"]}
               contentStyle={TOOLTIP_STYLE}
             />
-            <Line type="monotone" dataKey="expectedReturnPct" stroke={BENCHMARK_COLOR} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="expectedReturnPct" stroke={BENCHMARK_COLOR} strokeWidth={2} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
             {dots.map((d) => (
               <ReferenceDot
                 key={d.label}
@@ -1165,15 +1213,46 @@ function FrontierModule({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-6 md:px-7 pb-6 md:pb-7 text-xs font-bold text-slate-600">
-        <span className="flex items-center gap-2">
-          <span className="w-4 border-t-2" style={{ borderColor: BENCHMARK_COLOR }} /> Efficient frontier
+      {!compact && <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 pt-2 text-[11.5px] text-[#78716c]">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLOR }} /> Efficient frontier
         </span>
         {dots.map((d) => (
-          <span key={d.label} className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} /> {d.label}
+          <span key={d.label} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: d.color }} /> {d.label}
           </span>
         ))}
+      </div>}
+    </div>
+  );
+}
+
+/**
+ * FRONTIER MODULE — the efficient frontier, in the Risk Model's detail: for each level of
+ * volatility, the highest past return any long-only mix of your holdings would have had. The
+ * three mixes from MixComparisonModule are marked on it (the current allocation normally sits
+ * below the curve). Points with a null coordinate are skipped; the dots extend the axes if they
+ * fall outside the curve's own range.
+ */
+function FrontierModule({
+  frontier, current, maxSharpe, minVolatility,
+}: {
+  frontier: { volatilityPct: number | null; expectedReturnPct: number | null }[];
+  current: RiskPointResponse | null;
+  maxSharpe: RiskPointResponse | null;
+  minVolatility: RiskPointResponse | null;
+}) {
+  const { curve, dots } = useMemo(() => frontierPlot(frontier, current, maxSharpe, minVolatility), [frontier, current, maxSharpe, minVolatility]);
+  if (curve.length < 2) return null;
+
+  return (
+    <Module>
+      <ModuleHead
+        title="Efficient Frontier"
+        desc="The highest past return available at each level of volatility, using your current holdings."
+      />
+      <div className={MODULE_BODY}>
+        <FrontierChart curve={curve} dots={dots} className="h-80" />
       </div>
     </Module>
   );
@@ -1290,234 +1369,39 @@ function RiskAssetsModule({ assets }: { assets: RiskModelResponse["assets"] }) {
   );
 }
 
-interface CarouselSlide {
+type Breakdown = "holding" | "portfolio" | "class" | "sector" | "region";
+const BREAKDOWN_LABELS: Record<Breakdown, string> = {
+  holding: "By holding", portfolio: "By portfolio", class: "By asset class", sector: "By sector", region: "By region",
+};
+// Slices on the card: the largest few, then the rest as one "N more" slice that opens the
+// composition's detail (CompositionExplore), where everything is.
+const COMPOSITION_TOP = 3;
+const COMPOSITION_OTHER = "\u0000more";
+const COMPOSITION_OTHER_COLOR = "#d6d3d1";
+
+interface CompositionItem {
   key: string;
   label: string;
-  content: React.ReactNode;
+  // A line under the label: the holding's name, the portfolio's P&L.
+  sub?: string;
+  value: number;
+  // Of the whole, 0-100.
+  weightPct: number;
+  color: string;
+  // Opens it: a holding's page, a portfolio. Without it, a breakdown to read only.
+  onOpen?: () => void;
 }
 
 /**
- * HOLDINGS EXPLORE — the Holdings module's detail view: a carousel with every currency together
- * first, drawn at once from the holdings the page already has, then one slide per currency,
- * from /insights/holdings/currencies (computed from the transactions on each call, so fetched
- * only here, and again when the section is). Swipe or scroll sideways, or pick a currency from
- * the pills; the pills and arrows follow what's on screen.
- */
-function HoldingsExplore({
-  holdings, currency, portfolioUuid, revision,
-}: { holdings: PortfolioHoldingResponse[]; currency: string; portfolioUuid: string; revision: number }) {
-  const detail = useDetail(() => portfolioService.getHoldingsByCurrency(portfolioUuid), portfolioUuid, revision);
-  const slides: CarouselSlide[] = [
-    { key: "all", label: "All currencies", content: <AllCurrenciesSlide holdings={holdings} currency={currency} /> },
-    ...[...(detail.data?.currencies ?? [])]
-      .sort((a, b) => a.currency.localeCompare(b.currency))
-      .map((c) => ({ key: c.currency, label: c.currency, content: <CurrencySlide detail={c} /> })),
-  ];
-  const note = detail.loading ? (
-    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading each currency…</span>
-  ) : detail.error ? (
-    <span className="text-xs font-semibold text-slate-400">The per-currency view couldn&apos;t be loaded.</span>
-  ) : null;
-  return (
-    <Carousel
-      head={<ModuleHead eyebrow="Holdings" title="Allocation" desc={`Every currency together in ${currency}, then each currency on its own, in that currency.`} />}
-      slides={slides}
-      note={note}
-    />
-  );
-}
-
-/**
- * CAROUSEL — slides side by side in a track that scrolls sideways and snaps to one at a time.
- * The active slide is read back from the scroll position, so the pills and arrows never run
- * ahead of what's actually on screen while a smooth scroll is under way.
- */
-// `head`: the module's heading, above the pills. `note`: a line after the pills, for slides
-// still on their way.
-function Carousel({ head, slides, note }: { head?: React.ReactNode; slides: CarouselSlide[]; note?: React.ReactNode }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(0);
-
-  const scrollTo = (i: number) => {
-    const clamped = Math.max(0, Math.min(slides.length - 1, i));
-    const track = trackRef.current;
-    if (track) track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
-    else setActive(clamped);
-  };
-  const onScroll = () => {
-    const track = trackRef.current;
-    if (!track || track.clientWidth === 0) return;
-    setActive(Math.round(track.scrollLeft / track.clientWidth));
-  };
-
-  const arrow = "w-8 h-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:border-[#C49A3C] hover:text-[#C49A3C] transition-colors disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
-
-  return (
-    <section className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
-      {head}
-      <div className="px-4 md:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5 min-w-0">
-          {slides.map((slide, i) => (
-            <button
-              key={slide.key}
-              type="button"
-              onClick={() => scrollTo(i)}
-              aria-current={i === active ? "true" : undefined}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                i === active ? "bg-[#1c1917] text-white border-[#1c1917]" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-              }`}
-            >
-              {slide.label}
-            </button>
-          ))}
-          {note && <span className="self-center ml-1">{note}</span>}
-        </div>
-        {slides.length > 1 && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button type="button" onClick={() => scrollTo(active - 1)} disabled={active === 0} aria-label="Previous" className={arrow}>
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button type="button" onClick={() => scrollTo(active + 1)} disabled={active === slides.length - 1} aria-label="Next" className={arrow}>
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-      </div>
-      <div
-        ref={trackRef}
-        onScroll={onScroll}
-        className="flex overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
-        style={{ scrollbarWidth: "none" }}
-      >
-        {slides.map((slide) => (
-          <div key={slide.key} className="w-full shrink-0 snap-center">{slide.content}</div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/** A figure at the top of a slide: label over value, with an optional line under it. */
-function SlideFigure({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "gain" | "loss" }) {
-  return (
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-      <p
-        className={`text-xl md:text-2xl font-black tabular-nums mt-1 ${tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900"}`}
-        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-      >
-        {value}
-      </p>
-      {note && <p className="text-[11px] font-semibold text-slate-400 mt-0.5">{note}</p>}
-    </div>
-  );
-}
-
-type DonutItems = { label: string; value: number }[];
-
-// A slide: its key figures, then three composition donuts side by side (all in `currency`).
-function SlideBody({ figures, currency, donuts }: { figures: React.ReactNode; currency: string; donuts: { title: string; subtitle: string; items: DonutItems }[] }) {
-  return (
-    <>
-      <div className="p-6 md:p-7 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5 border-b border-slate-100">{figures}</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
-        {donuts.map((d) => (
-          <AllocPanel key={d.title} title={d.title} subtitle={d.subtitle}>
-            <CompositionDonut items={d.items} currency={currency} />
-          </AllocPanel>
-        ))}
-      </div>
-    </>
-  );
-}
-
-/**
- * Every currency together, from the holdings module, where each position is already converted
- * to the reference currency: market value, cost and unrealized P&L, then the split by asset, by
- * asset class and by the currency each holding trades in.
- */
-function AllCurrenciesSlide({ holdings, currency }: { holdings: PortfolioHoldingResponse[]; currency: string }) {
-  const byCurrency = useMemo(() => sumBy(holdings, (h) => h.currency), [holdings]);
-  const byClass = useMemo(() => sumBy(holdings, (h) => h.assetClass), [holdings]);
-
-  const marketValue = holdings.reduce((sum, h) => sum + h.marketValue, 0);
-  const cost = holdings.reduce((sum, h) => sum + h.costBasis, 0);
-  const pnl = marketValue - cost;
-
-  return (
-    <SlideBody
-      figures={
-        <>
-          <SlideFigure label="Market value" value={formatCurrency(marketValue, currency, 0)} note={`In ${currency}, every currency converted`} />
-          <SlideFigure label="Cost" value={formatCurrency(cost, currency, 0)} />
-          <SlideFigure
-            label="Unrealized P&L"
-            value={formatSignedCurrency(pnl, currency)}
-            note={cost > 0 ? `${pnl >= 0 ? "+" : ""}${((pnl / cost) * 100).toFixed(2)}%` : undefined}
-            tone={pnl >= 0 ? "gain" : "loss"}
-          />
-          <SlideFigure label="Holdings" value={String(holdings.length)} note={`In ${byCurrency.length} ${byCurrency.length === 1 ? "currency" : "currencies"}`} />
-        </>
-      }
-      currency={currency}
-      donuts={[
-        { title: "By asset", subtitle: "Individual positions", items: holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.marketValue })) },
-        { title: "By category", subtitle: "Asset class", items: byClass },
-        { title: "By currency", subtitle: "The currency each holding trades in", items: byCurrency },
-      ]}
-    />
-  );
-}
-
-// Market value summed by a label (asset class, trading currency), for a donut.
-const sumBy = (holdings: PortfolioHoldingResponse[], labelOf: (h: PortfolioHoldingResponse) => string) => {
-  const totals = new Map<string, number>();
-  for (const h of holdings) totals.set(labelOf(h), (totals.get(labelOf(h)) ?? 0) + h.marketValue);
-  return [...totals].map(([label, value]) => ({ label, value }));
-};
-
-/**
- * One currency's holdings, in that currency: inside a single currency they can be weighted by
- * what was invested in them without any conversion: what's invested, fees and realized P&L,
- * then the split by asset, by asset class and by broker.
- */
-function CurrencySlide({ detail }: { detail: CurrencyDetail }) {
-  const { currency } = detail;
-  const sales = `${detail.sellCount} ${detail.sellCount === 1 ? "sale" : "sales"}`;
-  return (
-    <SlideBody
-      figures={
-        <>
-          <SlideFigure label="Invested" value={formatCurrency(detail.totalInvested, currency, 0)} note="In holdings still open" />
-          <SlideFigure label="Holdings" value={String(detail.holdingsCount)} />
-          <SlideFigure label="Fees paid" value={formatCurrency(detail.totalFeesPaid, currency, 0)} />
-          <SlideFigure
-            label="Realized P&L"
-            value={formatSignedCurrency(detail.totalRealizedPl, currency)}
-            note={detail.sellCount > 0 ? `${sales}, ${Math.round(detail.winRate * 100)}% at a gain` : sales}
-            tone={detail.totalRealizedPl >= 0 ? "gain" : "loss"}
-          />
-        </>
-      }
-      currency={currency}
-      donuts={[
-        { title: "By asset", subtitle: "Individual positions", items: detail.holdings.map((h) => ({ label: h.ticker ?? h.isin ?? h.name, value: h.investedValue })) },
-        { title: "By category", subtitle: "Asset class", items: detail.purchasesByAssetClass.map((a) => ({ label: a.assetClass, value: a.totalInvested })) },
-        { title: "By broker", subtitle: "Where your orders were placed", items: detail.purchasesByBroker.map((b) => ({ label: b.broker, value: b.totalInvested })) },
-      ]}
-    />
-  );
-}
-
-/**
- * HOLDINGS EXPLORER — the Holdings module: every position held now, at today's price and in the
- * reference currency, searchable and filterable by asset class and by the currency it trades in.
- * A row opens that asset's own page (AssetExplore); its title opens how the holdings add up
- * (HoldingsExplore): on the aggregate how the portfolios make it up first, then across every
- * currency, then within each one, then by sector and region.
+ * COMPOSITION — the Holdings module, at the top of a portfolio's page: what it's made of, as a
+ * donut beside a list of rows, the largest COMPOSITION_TOP and the rest as one "N more", and the
+ * way down a level. By holding (by portfolio on "All portfolios"), where a slice or a row opens
+ * that holding's page (AssetExplore) or that portfolio; and, to read only, by asset class, sector
+ * and region (the look-through exposure). The module, and its "N more", open the whole of it
+ * (CompositionExplore).
  */
 function HoldingsExplorer({
-  slot, sector, region, aggregate, currency, portfolioUuid,
+  slot, sector, region, aggregate, currency, portfolioUuid, onOpenPortfolio,
 }: {
   slot: ModuleSlot<InsightsHoldingsModule>;
   sector: InsightsExposureModule | null;
@@ -1526,129 +1410,211 @@ function HoldingsExplorer({
   aggregate: AggregateSlots | null;
   currency: string;
   portfolioUuid: string;
+  // Opens one of the aggregate's portfolios, from its slice or row.
+  onOpenPortfolio?: (uuid: string) => void;
 }) {
   const holdings = useMemo(() => slot.module?.holdings ?? [], [slot.module]);
-  const [exploringCurrencies, setExploringCurrencies] = useState(false);
-  const [search, setSearch] = useState("");
-  const [assetClass, setAssetClass] = useState("all");
-  const [tradedIn, setTradedIn] = useState("all");
+  const { portfolios } = usePortfolio();
+  const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
+  const membersModule = aggregate?.portfolios.module;
+  const members = useMemo(() => membersModule?.members ?? [], [membersModule]);
+  const breakdowns: Breakdown[] = [
+    ...(aggregate && members.length > 0 ? ["portfolio" as const] : []),
+    "holding", "class",
+    ...(sector && sector.entries.length > 0 ? ["sector" as const] : []),
+    ...(region && region.entries.length > 0 ? ["region" as const] : []),
+  ];
+  const [picked, setPicked] = useState<Breakdown | null>(null);
+  const breakdown = picked && breakdowns.includes(picked) ? picked : breakdowns[0];
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [exploring, setExploring] = useState(false);
   // The holding whose detail view (AssetExplore) is open. Rows without a ticker can't open one:
   // the market-data endpoint is keyed by it.
   const [exploringAsset, setExploringAsset] = useState<PortfolioHoldingResponse | null>(null);
 
-  const assetClasses = useMemo(() => [...new Set(holdings.map(h => h.assetClass))].sort(), [holdings]);
-  const currencies = useMemo(() => [...new Set(holdings.map(h => h.currency))].sort(), [holdings]);
+  const items = useMemo((): CompositionItem[] => {
+    const total = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+    const palette = (i: number) => CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length];
+    if (breakdown === "portfolio") {
+      return [...members].sort((a, b) => b.marketValue - a.marketValue).map((m) => ({
+        key: m.portfolioUuid,
+        label: m.name,
+        sub: `${formatSignedCurrency(m.totalPnl, currency)} P&L`,
+        value: m.marketValue,
+        weightPct: m.weightPct,
+        color: colorOf(m.portfolioUuid),
+        onOpen: onOpenPortfolio ? () => onOpenPortfolio(m.portfolioUuid) : undefined,
+      }));
+    }
+    if (breakdown === "holding") {
+      return holdings.map((h, i) => ({
+        key: h.assetId,
+        label: h.name,
+        value: h.marketValue,
+        weightPct: h.weightPct,
+        color: palette(i),
+        onOpen: h.ticker ? () => setExploringAsset(h) : undefined,
+      }));
+    }
+    if (breakdown === "class") {
+      const byClass = new Map<string, number>();
+      for (const h of holdings) byClass.set(h.assetClass, (byClass.get(h.assetClass) ?? 0) + h.marketValue);
+      return [...byClass.entries()].sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({
+        key: label, label, value, weightPct: total > 0 ? (value / total) * 100 : 0, color: palette(i),
+      }));
+    }
+    const exposure = breakdown === "sector" ? sector : region;
+    let colorIndex = 0;
+    return [...(exposure?.entries ?? [])].sort((a, b) => b.weightPct - a.weightPct).map((e) => ({
+      key: e.label,
+      label: e.label,
+      value: (e.weightPct / 100) * total,
+      weightPct: e.weightPct,
+      color: e.label === "Unknown" ? UNKNOWN_EXPOSURE_COLOR : palette(colorIndex++),
+    }));
+  }, [breakdown, holdings, members, sector, region, currency, colorOf, onOpenPortfolio]);
 
-  // Kept in the backend's order, largest market value first: every figure is in one currency.
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return holdings
-      .filter(h => assetClass === "all" || h.assetClass === assetClass)
-      .filter(h => tradedIn === "all" || h.currency === tradedIn)
-      .filter(h => !q || h.ticker?.toLowerCase().includes(q) || h.name.toLowerCase().includes(q));
-  }, [holdings, search, assetClass, tradedIn]);
+  const total = items.reduce((sum, i) => sum + i.value, 0);
+  const hidden = items.slice(COMPOSITION_TOP);
+  const shown: CompositionItem[] = hidden.length > 0
+    ? [
+        ...items.slice(0, COMPOSITION_TOP),
+        {
+          key: COMPOSITION_OTHER,
+          label: `${hidden.length} more`,
+          value: hidden.reduce((sum, i) => sum + i.value, 0),
+          weightPct: hidden.reduce((sum, i) => sum + i.weightPct, 0),
+          color: COMPOSITION_OTHER_COLOR,
+          onOpen: () => setExploring(true),
+        },
+      ]
+    : items;
+  const focus = shown.find((i) => i.key === hovered) ?? null;
+  const navigable = items.some((i) => i.onOpen);
+  const isLast = (item: CompositionItem) => item === shown[shown.length - 1];
 
-  const th = "py-3 text-[10px] font-black uppercase tracking-wider text-slate-400";
+  const chips = holdings.length > 0 && breakdowns.length > 1 && (
+    <div role="group" aria-label="Breakdown" className="flex flex-wrap gap-1.5">
+      {breakdowns.map((b) => (
+        <button
+          key={b}
+          type="button"
+          aria-pressed={b === breakdown}
+          onClick={() => { setPicked(b); setHovered(null); }}
+          className={`px-2.5 py-1 rounded-full border text-[11.5px] font-semibold transition-colors ${
+            b === breakdown ? "bg-[#1c1917] border-[#1c1917] text-white" : "border-[#E0DACC] text-[#78716c] hover:text-[#1c1917]"
+          }`}
+        >
+          {BREAKDOWN_LABELS[b]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="bg-white rounded-4xl border border-slate-200 shadow-sm overflow-hidden">
+    <Module className="flex flex-col">
       <ModuleHead
-        eyebrow={currency}
-        title="Holdings"
-        desc={`Every position at today's price, in ${currency}. Open it for the allocation: overall, by currency, by sector and by region.`}
-        onExplore={ready(slot) && holdings.length > 0 ? () => setExploringCurrencies(true) : undefined}
+        title="Composition"
+        desc={navigable ? "Open a slice or a row to go down a level. Open the module for everything it's made of." : "A breakdown to read: the holdings and portfolios open from the first view. Open the module for everything it's made of."}
+        right={chips}
+        onExplore={holdings.length > 0 ? () => setExploring(true) : undefined}
       />
-      {SlotPlaceholder({ slot, preparingMessage: PREPARING_TICK }) ?? (
-        <>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-5 md:p-6 border-b border-slate-200">
-            <div className="relative flex-1 min-w-0">
-              <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by ticker or name…"
-                className="w-full h-10 pl-10 pr-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all"
-              />
-            </div>
-            <FilterSelect label="Asset class" value={assetClass} onChange={setAssetClass} options={assetClasses} />
-            <FilterSelect label="Currency" value={tradedIn} onChange={setTradedIn} options={currencies} />
+      {SlotPlaceholder({ slot, preparingMessage: PREPARING_TICK }) ?? (holdings.length === 0 ? (
+        <div className="py-14 flex flex-col items-center justify-center text-center px-6">
+          <div className="p-4 bg-slate-50 rounded-2xl mb-3">
+            <Wallet className="h-6 w-6 text-slate-300" />
           </div>
-
-          {filtered.length === 0 ? (
-            <div className="py-14 flex flex-col items-center justify-center text-center px-6">
-              <div className="p-4 bg-slate-50 rounded-2xl mb-3">
-                <Wallet className="h-6 w-6 text-slate-300" />
+          <p className="text-slate-600 font-semibold">No holdings yet</p>
+          <p className="text-slate-400 text-sm mt-1">Upload or add transactions to see your holdings here.</p>
+        </div>
+      ) : (
+        <div className={`flex-1 flex flex-col justify-center gap-3 ${MODULE_BODY}`}>
+          <div className="grid grid-cols-1 @md:grid-cols-[minmax(0,170px)_minmax(0,1fr)] @2xl:grid-cols-[210px_minmax(0,1fr)] gap-5 @2xl:gap-[26px] items-center">
+            <div className="relative w-full max-w-[210px] aspect-square mx-auto">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 210, height: 210 }}>
+                <PieChart>
+                  <Pie
+                    data={shown}
+                    dataKey="value"
+                    nameKey="label"
+                    innerRadius="67%"
+                    outerRadius="98%"
+                    paddingAngle={items.length > 1 ? 1.4 : 0}
+                    stroke="none"
+                    isAnimationActive={false}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    {shown.map((item) => (
+                      <Cell
+                        key={item.key}
+                        fill={item.color}
+                        opacity={hovered && hovered !== item.key ? 0.25 : 1}
+                        cursor={item.onOpen ? "pointer" : "default"}
+                        onMouseEnter={() => setHovered(item.key)}
+                        onClick={item.onOpen}
+                      />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-[22%] text-center">
+                <span className="text-xl font-bold text-[#1c1917] tabular-nums">
+                  {focus ? `${focus.weightPct.toFixed(1)}%` : formatCurrency(total, currency, 0)}
+                </span>
+                <span className="text-[10.5px] text-[#78716c] truncate max-w-full">{focus ? focus.label : "total"}</span>
               </div>
-              <p className="text-slate-600 font-semibold">{holdings.length === 0 ? "No holdings yet" : "No holdings match your filters"}</p>
-              <p className="text-slate-400 text-sm mt-1">
-                {holdings.length === 0 ? "Upload or add transactions to see your holdings here." : "Try a different search or filter."}
-              </p>
             </div>
-          ) : (
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse min-w-150">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className={`px-5 md:px-6 ${th}`}>Asset</th>
-                    <th className={`px-3 ${th}`}>Class</th>
-                    <th className={`px-3 ${th} text-right`}>Quantity</th>
-                    <th className={`px-3 ${th} text-right`}>Value</th>
-                    <th className={`px-3 ${th} text-right`}>Weight</th>
-                    <th className={`px-3 md:px-6 ${th} text-right`}>Unrealized P&L</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.map((h) => (
-                    <tr
-                      key={h.assetId}
-                      onClick={h.ticker ? () => setExploringAsset(h) : undefined}
-                      className={`hover:bg-slate-50/60 transition-colors ${h.ticker ? "group/explore cursor-pointer" : ""}`}
-                    >
-                      <td className="px-5 md:px-6 py-3.5">
-                        {/* Capped, the name truncated (full name on hover): a long fund name would
-                            otherwise widen this column until the figures wrap. */}
-                        <div className="flex items-baseline gap-2 min-w-0 max-w-56 md:max-w-72" title={h.name}>
-                          {h.ticker ? (
-                            <button
-                              type="button"
-                              className="text-sm font-bold text-slate-900 shrink-0 group-hover/explore:text-[#C49A3C] transition-colors rounded outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-                            >
-                              {h.ticker}
-                            </button>
-                          ) : (
-                            <span className="text-sm font-bold text-slate-900 shrink-0">{h.isin ?? "—"}</span>
-                          )}
-                          <span className="text-xs text-slate-400 truncate">{h.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3.5 whitespace-nowrap">
-                        <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                          {h.assetClass}
-                        </span>
-                        {h.currency !== currency && <span className="ml-1.5 text-[10px] font-bold text-slate-400">{h.currency}</span>}
-                      </td>
-                      <td className="px-3 py-3.5 text-sm font-semibold text-slate-600 text-right tabular-nums whitespace-nowrap">{formatQuantity(h.quantity)}</td>
-                      <td className="px-3 py-3.5 text-sm font-bold text-slate-900 text-right tabular-nums whitespace-nowrap">{formatCurrency(h.marketValue, currency, 2)}</td>
-                      <td className="px-3 py-3.5 text-sm font-semibold text-slate-500 text-right tabular-nums whitespace-nowrap">{h.weightPct.toFixed(1)}%</td>
-                      <td className="px-3 md:px-6 py-3.5 text-right tabular-nums whitespace-nowrap">
-                        <span className={`text-sm font-bold ${h.unrealizedPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatSignedCurrency(h.unrealizedPnl, currency)}</span>
-                        <span className="block text-[11px] font-semibold text-slate-400">{formatPct(h.roiPct)}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
+            <ul className="min-w-0">
+              {shown.map((item) => {
+                const content = (
+                  <>
+                    <span className="h-2.5 w-2.5 rounded-[3px] shrink-0" style={{ background: item.color }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-[#1c1917]">{item.label}</span>
+                      {item.sub && <span className="block truncate text-[11.5px] font-medium text-[#78716c]">{item.sub}</span>}
+                    </span>
+                    <span className="shrink-0 pl-4 @2xl:pl-8 text-right tabular-nums">
+                      <span className="block font-bold text-[#1c1917]">{formatCurrency(item.value, currency, 0)}</span>
+                      {/* On a narrow card the weight goes under the value, leaving the name room. */}
+                      <span className="block @2xl:hidden text-[11.5px] text-[#78716c]">{item.weightPct.toFixed(1)}%</span>
+                    </span>
+                    <span className="hidden @2xl:block shrink-0 min-w-[92px] text-right text-xs text-[#78716c] tabular-nums">
+                      {item.weightPct.toFixed(1)}%
+                    </span>
+                    <span className="w-4 @2xl:w-[18px] shrink-0">{item.onOpen && <ChevronRight className="h-4 w-4 text-[#a8a29e]" />}</span>
+                  </>
+                );
+                const rowClass = `w-full flex items-center gap-3 px-2 @2xl:px-2.5 py-[9px] @2xl:py-[11px] rounded-[14px] text-left transition-colors ${isLast(item) ? "" : "border-b border-[#EEE9DD]"} ${hovered === item.key ? "bg-[#F7F5EF]" : ""}`;
+                return (
+                  <li key={item.key} onMouseEnter={() => setHovered(item.key)} onMouseLeave={() => setHovered(null)}>
+                    {item.onOpen ? (
+                      <button type="button" onClick={item.onOpen} className={`${rowClass} hover:bg-[#F7F5EF] outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40`}>
+                        {content}
+                      </button>
+                    ) : (
+                      <div className={rowClass}>{content}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      ))}
 
-      {exploringCurrencies && (
-        <ExploreView title="Holdings" onClose={() => setExploringCurrencies(false)}>
-          {aggregate && <PortfoliosMixModule slot={aggregate.portfolios} comovement={aggregate.comovement.module} currency={currency} />}
-          <HoldingsExplore holdings={holdings} currency={currency} portfolioUuid={portfolioUuid} revision={slot.revision} />
-          <ExposurePanels sector={sector} region={region} />
+      {exploring && (
+        <ExploreView title="Composition" onClose={() => setExploring(false)}>
+          <CompositionExplore
+            holdings={holdings}
+            sector={sector?.entries ?? []}
+            region={region?.entries ?? []}
+            members={aggregate ? members : []}
+            overlapping={aggregate?.comovement.module?.overlappingAssets ?? []}
+            currency={currency}
+            colorOfPortfolio={colorOf}
+            onOpenAsset={(h) => { setExploring(false); setExploringAsset(h); }}
+            onOpenPortfolio={onOpenPortfolio}
+          />
         </ExploreView>
       )}
       {exploringAsset?.ticker && (
@@ -1656,7 +1622,228 @@ function HoldingsExplorer({
           <AssetExplore ticker={exploringAsset.ticker} assetId={exploringAsset.assetId} portfolioUuid={portfolioUuid} revision={slot.revision} />
         </ExploreView>
       )}
-    </div>
+    </Module>
+  );
+}
+
+/**
+ * COMPOSITION EXPLORE — everything the Composition card sums up, beyond its largest few: how
+ * concentrated the portfolio is, every holding as a map (area by value, colour by asset class)
+ * and as a table to sort, and each look-through breakdown (asset class, sector, region, and on
+ * "All portfolios" each portfolio and the assets held in more than one) in full, as bars. A
+ * holding opens its page (AssetExplore), a portfolio its own.
+ */
+function CompositionExplore({
+  holdings, sector, region, members, overlapping, currency, colorOfPortfolio, onOpenAsset, onOpenPortfolio,
+}: {
+  holdings: PortfolioHoldingResponse[];
+  sector: ExposureEntryResponse[];
+  region: ExposureEntryResponse[];
+  members: InsightsPortfoliosModule["members"];
+  overlapping: InsightsComovementModule["overlappingAssets"];
+  currency: string;
+  colorOfPortfolio: (uuid: string) => string;
+  onOpenAsset: (holding: PortfolioHoldingResponse) => void;
+  onOpenPortfolio?: (uuid: string) => void;
+}) {
+  const total = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+  const weightOf = (v: number) => (total > 0 ? (v / total) * 100 : 0);
+  const byValue = useMemo(() => [...holdings].sort((a, b) => b.marketValue - a.marketValue), [holdings]);
+
+  // Asset classes, largest first, each with its colour (the map's and the bars').
+  const classes = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const h of holdings) map.set(h.assetClass, (map.get(h.assetClass) ?? 0) + h.marketValue);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({
+      label, value, color: CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length],
+    }));
+  }, [holdings]);
+  const classColor = (assetClass: string) => classes.find((c) => c.label === assetClass)?.color ?? COMPOSITION_OTHER_COLOR;
+
+  // Concentration: the largest holding, the largest five, and the effective number of holdings
+  // (1 / Σw², the count of equal-sized holdings that would be as concentrated).
+  const weights = byValue.map((h) => weightOf(h.marketValue) / 100);
+  const top5 = weights.slice(0, 5).reduce((sum, w) => sum + w, 0) * 100;
+  const herfindahl = weights.reduce((sum, w) => sum + w * w, 0);
+  const effective = herfindahl > 0 ? 1 / herfindahl : null;
+  const largest = byValue[0];
+
+  const exposureBars = (entries: ExposureEntryResponse[]) => {
+    let colorIndex = 0;
+    return [...entries].sort((a, b) => b.weightPct - a.weightPct).map((e) => ({
+      key: e.label,
+      label: e.label,
+      value: e.weightPct,
+      figure: `${e.weightPct.toFixed(1)}%`,
+      color: e.label === "Unknown" ? UNKNOWN_EXPOSURE_COLOR : CATEGORICAL_PALETTE[colorIndex++ % CATEGORICAL_PALETTE.length],
+    }));
+  };
+
+  const map = byValue.filter((h) => h.marketValue > 0).map((h) => ({
+    name: h.ticker ?? h.isin ?? h.name,
+    size: h.marketValue,
+    fullName: h.name,
+    weightPct: weightOf(h.marketValue),
+    color: classColor(h.assetClass),
+    assetId: h.assetId,
+  }));
+
+  const columns: DataColumn<PortfolioHoldingResponse>[] = [
+    {
+      key: "asset",
+      label: "Asset",
+      sortValue: (h) => h.name,
+      render: (h) => h.ticker ? (
+        <button type="button" onClick={() => onOpenAsset(h)} className="text-left hover:text-[#8A6A28] transition-colors">
+          <AssetCell ticker={h.ticker} name={h.name} />
+        </button>
+      ) : <AssetCell ticker={h.isin} name={h.name} />,
+    },
+    {
+      key: "class",
+      label: "Class",
+      sortValue: (h) => h.assetClass,
+      render: (h) => (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[#78716c]">
+          <span className="h-2 w-2 rounded-[2px]" style={{ background: classColor(h.assetClass) }} />{h.assetClass}
+        </span>
+      ),
+    },
+    { key: "value", label: "Value", align: "right", sortValue: (h) => h.marketValue, render: (h) => <span className="font-bold">{formatCurrency(h.marketValue, currency, 0)}</span> },
+    { key: "weight", label: "Weight", align: "right", sortValue: (h) => h.marketValue, render: (h) => `${weightOf(h.marketValue).toFixed(1)}%` },
+    { key: "cost", label: "Invested", align: "right", sortValue: (h) => h.costBasis, render: (h) => formatCurrency(h.costBasis, currency, 0) },
+    { key: "pnl", label: "Unrealized", align: "right", sortValue: (h) => h.unrealizedPnl, render: (h) => <SignedAmount amount={h.unrealizedPnl} currency={currency} /> },
+    { key: "roi", label: "Return", align: "right", sortValue: (h) => h.roiPct, render: (h) => <SignedPct pct={h.roiPct} /> },
+  ];
+
+  return (
+    <>
+      <ExplorePanel title="Concentration" desc="How much of the value sits in a few holdings.">
+        <Figs className={MODULE_BODY}>
+          <Fig label="Holdings" value={String(holdings.length)} sub={`${classes.length} asset ${classes.length === 1 ? "class" : "classes"}`} strong />
+          {largest && <Fig label="Largest" value={`${weightOf(largest.marketValue).toFixed(1)}%`} sub={largest.ticker ?? largest.name} />}
+          <Fig label="Largest five" value={`${top5.toFixed(1)}%`} sub="Of the value" />
+          <Fig
+            label="Effective holdings"
+            value={effective === null ? "—" : effective.toFixed(1)}
+            sub={effective === null ? undefined : effective < 5 ? "Concentrated" : effective < 15 ? "Moderately spread" : "Well spread"}
+            info="How many equally sized holdings would be as concentrated as yours (1 over the sum of the squared weights). Far below the number of holdings means a few of them carry most of the value."
+          />
+        </Figs>
+      </ExplorePanel>
+
+      {map.length > 1 && (
+        <ExplorePanel title="Holdings Map" desc="Every holding, its area its value, its colour its asset class. Open one for its page.">
+          <div className={MODULE_BODY}>
+            <div className="h-[340px]">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 340 }}>
+                <Treemap
+                  data={map}
+                  dataKey="size"
+                  nameKey="name"
+                  isAnimationActive={false}
+                  content={(node) => <HoldingsMapCell node={node} onOpen={(assetId) => { const h = holdings.find((x) => x.assetId === assetId); if (h?.ticker) onOpenAsset(h); }} />}
+                />
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 pt-3 text-[11.5px] text-[#78716c]">
+              {classes.map((c) => (
+                <span key={c.label} className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: c.color }} />{c.label} · {weightOf(c.value).toFixed(0)}%
+                </span>
+              ))}
+            </div>
+          </div>
+        </ExplorePanel>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px]">
+        {members.length > 0 && (
+          <ExplorePanel title="By Portfolio" desc="Each portfolio's share of the value. Open one for its page.">
+            <div className={MODULE_BODY}>
+              <HBars
+                rows={[...members].sort((a, b) => b.weightPct - a.weightPct).map((m) => ({
+                  key: m.portfolioUuid,
+                  label: m.name,
+                  value: m.weightPct,
+                  figure: `${m.weightPct.toFixed(1)}%`,
+                  color: colorOfPortfolio(m.portfolioUuid),
+                  title: `${m.name} · ${formatCurrency(m.marketValue, currency, 0)}`,
+                }))}
+                onSelect={onOpenPortfolio}
+              />
+            </div>
+          </ExplorePanel>
+        )}
+        <ExplorePanel title="By Asset Class" desc="What kind of assets the value is in.">
+          <div className={MODULE_BODY}>
+            <HBars rows={classes.map((c) => ({ key: c.label, label: c.label, value: weightOf(c.value), figure: `${weightOf(c.value).toFixed(1)}%`, color: c.color, title: `${c.label} · ${formatCurrency(c.value, currency, 0)}` }))} />
+          </div>
+        </ExplorePanel>
+        {sector.length > 0 && (
+          <ExplorePanel title="By Sector" desc="Looking through funds to the companies they hold, by weight.">
+            <div className={MODULE_BODY}><HBars rows={exposureBars(sector)} /></div>
+          </ExplorePanel>
+        )}
+        {region.length > 0 && (
+          <ExplorePanel title="By Region" desc="Looking through funds to where their companies are, by weight.">
+            <div className={MODULE_BODY}><HBars rows={exposureBars(region)} /></div>
+          </ExplorePanel>
+        )}
+      </div>
+
+      <ExplorePanel title="Every Holding" desc="Sort by any column. Open a holding for its page.">
+        <DataTable columns={columns} rows={byValue} rowKey={(h) => h.assetId} initialSort={{ key: "value", desc: true }} />
+      </ExplorePanel>
+
+      {overlapping.length > 0 && (
+        <ExplorePanel title="Held in More Than One Portfolio" desc="Your combined position in these is bigger than any single portfolio shows.">
+          <div className={MODULE_BODY}>
+            {overlapping.map((a) => (
+              <div key={a.assetId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 py-2.5 border-b border-[#EEE9DD] last:border-b-0">
+                <span className="truncate text-[13px] font-semibold text-[#1c1917]">
+                  {a.ticker ?? a.name}{a.ticker && <span className="ml-2 font-medium text-[11.5px] text-[#78716c]">{a.name}</span>}
+                </span>
+                <span className="text-right text-[13px] font-bold tabular-nums">
+                  {formatCurrency(a.marketValue, currency, 0)}
+                  <span className="ml-2 text-xs font-medium text-[#78716c]">{a.weightPct.toFixed(1)}%</span>
+                </span>
+                <span className="col-span-2 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-[#78716c]">
+                  {a.holdings.map((h) => (
+                    <span key={h.portfolioUuid} className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ background: colorOfPortfolio(h.portfolioUuid) }} />
+                      {members.find((m) => m.portfolioUuid === h.portfolioUuid)?.name ?? "—"} <span className="tabular-nums">{formatCurrency(h.marketValue, currency, 0)}</span>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </ExplorePanel>
+      )}
+    </>
+  );
+}
+
+// One holding's tile on the Holdings Map: its colour, and its ticker and weight when it has room.
+function HoldingsMapCell({ node, onOpen }: { node: TreemapNode; onOpen: (assetId: string) => void }) {
+  const { x, y, width, height, depth } = node;
+  if (depth !== 1) return <g />;
+  const name = String(node.name ?? "");
+  const color = String(node.color ?? COMPOSITION_OTHER_COLOR);
+  const weightPct = Number(node.weightPct ?? 0);
+  const roomy = width > 56 && height > 34;
+  return (
+    <g className="cursor-pointer" onClick={() => onOpen(String(node.assetId))}>
+      <title>{`${String(node.fullName ?? name)} · ${weightPct.toFixed(1)}%`}</title>
+      <rect x={x + 1} y={y + 1} width={Math.max(0, width - 2)} height={Math.max(0, height - 2)} rx={6} fill={color} className="transition-opacity hover:opacity-85" />
+      {roomy && (
+        <>
+          <text x={x + 9} y={y + 19} fill="#ffffff" fontSize={12} fontWeight={700}>{name.length > width / 8 ? `${name.slice(0, Math.max(1, Math.floor(width / 8) - 1))}…` : name}</text>
+          {height > 46 && <text x={x + 9} y={y + 34} fill="#ffffff" fillOpacity={0.85} fontSize={11}>{weightPct.toFixed(1)}%</text>}
+        </>
+      )}
+    </g>
   );
 }
 
@@ -1729,213 +1916,174 @@ function AssetExplore({ ticker, assetId, portfolioUuid, revision }: { ticker: st
     ...(data.sector ? [{ label: "Sector", value: data.sector }] : []),
     ...(data.industry ? [{ label: "Industry", value: data.industry }] : []),
     ...(data.country ? [{ label: "Country", value: data.country }] : []),
-    ...(data.terPct !== null ? [{ label: "Yearly fee (TER)", value: `${data.terPct.toFixed(2)}%` }] : []),
+    ...(data.terPct !== null ? [{ label: "TER", value: `${data.terPct.toFixed(2)}%` }] : []),
     { label: "Quoted in", value: data.quoteCurrency },
   ];
+  const held = position.data?.holding ?? null;
+  const posCurrency = position.data?.currency ?? data.currency;
+  const weights = (entries: ExposureEntryResponse[]) =>
+    entries.slice(0, 6).map((e, i) => ({
+      key: e.label,
+      label: e.label,
+      value: e.weightPct,
+      figure: `${e.weightPct.toFixed(0)}%`,
+      color: e.label === "Unknown" ? UNKNOWN_EXPOSURE_COLOR : CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length],
+    }));
+  const chip = (on: boolean) =>
+    `px-2.5 py-1 rounded-full border text-[11.5px] font-semibold transition-colors ${on ? "bg-[#1c1917] border-[#1c1917] text-white" : "border-[#E0DACC] text-[#78716c] hover:text-[#1c1917]"}`;
 
   return (
     <>
+      <PageHeader
+        eyebrow={`Holding · ${data.assetClass}`}
+        title={data.name}
+        value={held ? formatCurrency(held.marketValue, posCurrency, 0) : last !== undefined ? formatCurrency(last, unit, 2) : undefined}
+        change={held ? { text: `${formatPct(held.roiPct)} since first buy`, tone: toneOfValue(held.roiPct) } : null}
+        note={data.ticker}
+        figures={held ? [
+          { label: "Position", value: formatCurrency(held.marketValue, posCurrency, 0), sub: `${formatQuantity(held.quantity)} ${data.assetClass === "Crypto" ? data.ticker : "shares"}` },
+          { label: "Return", value: formatPct(held.roiPct), sub: "Since first buy", tone: toneOfValue(held.roiPct) },
+          { label: "In portfolio", value: `${held.weightPct.toFixed(1)}%`, sub: "Of its value" },
+          { label: "Unrealized P&L", value: formatSignedCurrency(held.unrealizedPnl, posCurrency), sub: `On ${formatCurrency(held.costBasis, posCurrency, 0)} invested`, tone: toneOfValue(held.unrealizedPnl) },
+        ] : []}
+      />
+
       <Module>
-        <div className="p-6 md:p-7 pb-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-6">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#C49A3C] mb-1.5">{data.assetClass}</p>
-            <h2 className="text-lg md:text-xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {data.name}
-            </h2>
-          </div>
-          {last !== undefined && (
-            <div className="sm:text-right shrink-0">
-              <p className="text-2xl font-black text-slate-900 tabular-nums" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                {formatCurrency(last, unit, 2)}
-              </p>
+        <ModuleHead
+          title="Price"
+          desc="Adjusted closes over the range picked."
+          right={
+            <div className="flex flex-wrap items-center gap-1.5">
+              {ASSET_RANGES.map((r) => (
+                <button key={r} type="button" aria-pressed={r === range} onClick={() => setRange(r)} className={chip(r === range)}>{r}</button>
+              ))}
+              {hasQuoteToggle && [data.currency, data.quoteCurrency].map((c) => (
+                <button key={c} type="button" aria-pressed={c === unit} onClick={() => setInQuoteCurrency(c === data.quoteCurrency)} className={chip(c === unit)}>{c}</button>
+              ))}
               {changePct !== null && (
-                <p className={`text-[13px] font-bold tabular-nums mt-1 ${rising ? "text-emerald-600" : "text-rose-600"}`}>
-                  {formatPct(changePct)} <span className="text-slate-400 font-semibold">over {ASSET_RANGE_LABELS[data.range]}</span>
-                </p>
+                <span className={`ml-1.5 text-[13px] font-bold tabular-nums ${toneClass(toneOfValue(changePct))}`} title={`Over ${ASSET_RANGE_LABELS[data.range]}`}>
+                  {formatPct(changePct)}
+                </span>
               )}
             </div>
-          )}
-        </div>
-        <div className="px-6 md:px-7 pt-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100">
-            {ASSET_RANGES.map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRange(r)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
-                  r === range ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-          {hasQuoteToggle && (
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100">
-              {[data.currency, data.quoteCurrency].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setInQuoteCurrency(c === data.quoteCurrency)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
-                    c === unit ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
+          }
+        />
+        <div className={MODULE_BODY}>
+          {error && <p className="pb-3 text-sm font-semibold text-[#e11d48]">{error}</p>}
+          {points.length < 2 ? (
+            <p className="text-[12.5px] text-[#a8a29e]">No prices in this range.</p>
+          ) : (
+            <div className={`h-[220px] transition-opacity ${loading ? "opacity-40" : ""}`}>
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 700, height: 220 }}>
+                <AreaChart data={points} margin={{ top: 12, right: 10, left: 0, bottom: 0 }}>
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={data.frequency === "daily" && data.range === "1M" ? chartDateLabel : monthShortYearLabel}
+                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={40}
+                  />
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    tickFormatter={(v) => formatCompact(Number(v))}
+                    tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={56}
+                  />
+                  <Tooltip
+                    labelFormatter={(label) => fullDateLabel(label as string)}
+                    formatter={(value) => [formatCurrency(Number(value), unit, 2), "Close"]}
+                    contentStyle={TOOLTIP_STYLE}
+                  />
+                  <Area type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} fill={lineColor} fillOpacity={0.1} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           )}
+          {data.pricesAsOf && <NoteS className="pt-2">Last close on {fullDateLabel(data.pricesAsOf)}, {formatCurrency(last ?? 0, unit, 2)}.</NoteS>}
         </div>
-        {error && <p className="px-6 md:px-7 pt-4 text-sm font-semibold text-rose-600">{error}</p>}
-        {points.length < 2 ? (
-          <ModuleMessage>No prices in this range.</ModuleMessage>
-        ) : (
-          <div className={`p-6 md:p-7 h-80 transition-opacity ${loading ? "opacity-40" : ""}`}>
-            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 700, height: 320 }}>
-              <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={data.frequency === "daily" && data.range === "1M" ? chartDateLabel : monthShortYearLabel}
-                  tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={40}
-                />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  tickFormatter={(v) => formatCompact(Number(v))}
-                  tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={56}
-                />
-                <Tooltip
-                  labelFormatter={(label) => fullDateLabel(label as string)}
-                  formatter={(value) => [formatCurrency(Number(value), unit, 2), "Close"]}
-                  contentStyle={TOOLTIP_STYLE}
-                />
-                <Area type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} fill={lineColor} fillOpacity={0.1} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        {data.pricesAsOf && (
-          <p className="px-6 md:px-7 pb-5 -mt-2 text-[11px] font-semibold text-slate-400">
-            Adjusted closes, last one on {fullDateLabel(data.pricesAsOf)}.
-          </p>
-        )}
       </Module>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ExplorePanel eyebrow={data.assetClass} title="About" desc="What the asset is and where it trades.">
-          <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">
-            {facts.map((f) => (
-              <div key={f.label} className="flex items-center justify-between gap-4 py-3">
-                <dt className="text-[13px] font-semibold text-slate-600">{f.label}</dt>
-                <dd className="text-[13px] font-bold text-slate-900 text-right truncate">{f.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </ExplorePanel>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-[22px]">
         {position.data && <PositionPanel position={position.data} />}
+        <Module>
+          <ModuleHead title="Profile" desc="What the asset is and where it trades." />
+          <Figs className={MODULE_BODY}>
+            {facts.map((f) => <Fig key={f.label} label={f.label} value={f.value} />)}
+          </Figs>
+        </Module>
+        {data.sectorWeightings.length > 1 && (
+          <Module>
+            <ModuleHead title="By Sector" desc="Where the fund's companies operate, by weight." />
+            <div className={MODULE_BODY}><HBars rows={weights(data.sectorWeightings)} /></div>
+          </Module>
+        )}
+        {data.regionWeightings.length > 1 && (
+          <Module>
+            <ModuleHead title="By Region" desc="The fund's geographic exposure, by weight." />
+            <div className={MODULE_BODY}><HBars rows={weights(data.regionWeightings)} /></div>
+          </Module>
+        )}
+        {data.topHoldings.length > 0 && (
+          <Module>
+            <ModuleHead title="Largest Holdings" desc="The fund's largest positions, by weight." />
+            <div className={MODULE_BODY}><HBars rows={weights(data.topHoldings)} /></div>
+          </Module>
+        )}
+        {position.data?.dividends && position.data.dividends.lifetimeIncome > 0 && (
+          <Module>
+            <ModuleHead title="Dividends" desc="What it has paid you." />
+            <Figs className={MODULE_BODY}>
+              <Fig label="Received" value={formatCurrency(position.data.dividends.lifetimeIncome, posCurrency, 0)} sub="Since first buy" tone="gain" strong />
+              <Fig label="Last 12 months" value={formatCurrency(position.data.dividends.trailing12MIncome, posCurrency, 0)} />
+              <Fig label="Yield" value={plainPctOrDash(position.data.dividends.yieldPct)} />
+              <Fig label="Yield on cost" value={plainPctOrDash(position.data.dividends.yieldOnCostPct)} />
+            </Figs>
+          </Module>
+        )}
       </div>
-
-      {data.topHoldings.length > 0 && (
-        <ExplorePanel eyebrow="Fund" title="Largest Holdings" desc="The fund's largest positions, by weight.">
-          <div className="p-6 md:p-7">
-            <ExposureBreakdown entries={data.topHoldings} />
-          </div>
-        </ExplorePanel>
-      )}
-      {(data.sectorWeightings.length > 1 || data.regionWeightings.length > 1) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {data.sectorWeightings.length > 1 && (
-            <ExplorePanel eyebrow="Fund" title="By Sector" desc="Where the fund's companies operate, by weight.">
-              <div className="p-6 md:p-7"><ExposureBreakdown entries={data.sectorWeightings} /></div>
-            </ExplorePanel>
-          )}
-          {data.regionWeightings.length > 1 && (
-            <ExplorePanel eyebrow="Fund" title="By Region" desc="The fund's geographic exposure, by weight.">
-              <div className="p-6 md:p-7"><ExposureBreakdown entries={data.regionWeightings} /></div>
-            </ExplorePanel>
-          )}
-        </div>
-      )}
     </>
   );
 }
 
 /**
  * POSITION PANEL — the user's own position in an asset, in the reference currency: what's held
- * now and what it's worth, what selling it has realized, what it has paid, and what trading it
- * has cost on each broker. Each part shows only when it applies.
+ * now and what it's worth, then what selling it has realized and what trading it has cost on each
+ * broker, each only when it applies. Its dividends are a module of their own.
  */
 function PositionPanel({ position }: { position: PositionResponse }) {
-  const { currency, holding, realized, dividends, costs } = position;
-  const rows: { label: string; value: string; tone?: "gain" | "loss" }[] = [];
-  const tone = (n: number) => (n >= 0 ? "gain" : "loss");
-  if (holding) {
-    rows.push(
-      { label: "Quantity", value: formatQuantity(holding.quantity) },
-      { label: "Value", value: formatCurrency(holding.marketValue, currency, 2) },
-      { label: "Average cost", value: formatCurrency(holding.avgCost, currency, 2) },
-      { label: "Unrealized P&L", value: `${formatSignedCurrency(holding.unrealizedPnl, currency)} · ${formatPct(holding.roiPct)}`, tone: tone(holding.unrealizedPnl) },
-      { label: "Weight in the portfolio", value: `${holding.weightPct.toFixed(1)}%` },
-    );
-  }
-  if (realized && realized.realizedTradingPnl !== 0) {
-    rows.push({ label: "Realized from sales", value: formatSignedCurrency(realized.realizedTradingPnl, currency), tone: tone(realized.realizedTradingPnl) });
-  }
-  if (dividends && dividends.lifetimeIncome > 0) {
-    rows.push({ label: "Dividends received", value: formatCurrency(dividends.lifetimeIncome, currency, 2) });
-    if (dividends.yieldOnCostPct !== null) rows.push({ label: "Yield on cost", value: `${dividends.yieldOnCostPct.toFixed(2)}%` });
-  }
-  for (const c of costs) {
-    rows.push({ label: costs.length > 1 ? `Trading costs · ${c.broker}` : "Trading costs", value: formatCurrency(c.totalCosts, currency, 2) });
-  }
-  if (rows.length === 0) return null;
+  const { currency, holding, realized, costs } = position;
+  const sold = realized !== null && realized.realizedTradingPnl !== 0;
+  if (!holding && !sold && costs.length === 0) return null;
 
   return (
-    <ExplorePanel
-      eyebrow={currency}
-      title={holding ? "Your Position" : "Your Past Position"}
-      desc="What you hold of it, what selling it has realized, what it has paid and what trading it has cost."
-    >
-      <dl className="px-6 md:px-7 py-2 divide-y divide-slate-100">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between gap-4 py-3">
-            <dt className="text-[13px] font-semibold text-slate-600">{r.label}</dt>
-            <dd className={`text-[13px] font-bold tabular-nums text-right ${r.tone === "gain" ? "text-emerald-600" : r.tone === "loss" ? "text-rose-600" : "text-slate-900"}`}>
-              {r.value}
-            </dd>
-          </div>
+    <Module>
+      <ModuleHead
+        title={holding ? "Position" : "Past Position"}
+        desc="What you hold of it, what selling it has realized and what trading it has cost."
+      />
+      <Figs className={MODULE_BODY}>
+        {holding && (
+          <>
+            <Fig label="Market value" value={formatCurrency(holding.marketValue, currency, 0)} strong />
+            <Fig label="Unrealized P&L" value={formatSignedCurrency(holding.unrealizedPnl, currency)} tone={toneOfValue(holding.unrealizedPnl)} />
+            <Fig label="Quantity" value={formatQuantity(holding.quantity)} />
+            <Fig label="Avg. cost" value={formatCurrency(holding.avgCost, currency, 2)} />
+            <Fig label="Price" value={formatCurrency(holding.currentPrice, holding.currency, 2)} />
+            <Fig label="Invested" value={formatCurrency(holding.costBasis, currency, 0)} />
+          </>
+        )}
+        {sold && <Fig label="Realized from sales" value={formatSignedCurrency(realized.realizedTradingPnl, currency)} tone={toneOfValue(realized.realizedTradingPnl)} />}
+        {costs.map((c) => (
+          <Fig key={c.broker} label={costs.length > 1 ? `Trading costs · ${c.broker}` : "Trading costs"} value={formatCurrency(c.totalCosts, currency, 2)} />
         ))}
-      </dl>
-    </ExplorePanel>
+      </Figs>
+    </Module>
   );
 }
 
-function FilterSelect({
-  label, value, onChange, options,
-}: {
-  label: string; value: string; onChange: (v: string) => void; options: string[];
-}) {
-  return (
-    <div className="relative shrink-0">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-10 pl-3.5 pr-9 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-300 transition-all appearance-none cursor-pointer"
-      >
-        <option value="all">All {label.toLowerCase()}</option>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-      <ChevronDown className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-    </div>
-  );
-}
 
 /**
  * PERIOD HERO — the headline figure atop a month's Performance card: End Value large and
@@ -1987,7 +2135,8 @@ function PeriodHero({
  * of tiles (see the Monthly/Annual detail view this replaces). The month in progress is
  * valued as of today, and has no volatility or drawdown until it closes.
  */
-function MonthDetail({ period }: { period: PeriodDashboard }) {
+// `withSummary` false for the month in progress, whose summary is This Month's (MonthToDateModule).
+function MonthDetail({ period, withSummary = true }: { period: PeriodDashboard; withSummary?: boolean }) {
   const isGain = period.deltaValue >= 0;
   const marketIsGain = period.marketEffect >= 0;
   const hasBaseline = hasPeriodBaseline(period);
@@ -1997,11 +2146,11 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
 
   return (
     <div className="space-y-6">
-      {isPeriodEmpty(period) ? (
+      {isPeriodEmpty(period) && withSummary ? (
         <EmptyPeriodState message="No portfolio activity recorded for this month yet." />
       ) : (
         <>
-          <Module>
+          {withSummary && <Module>
             <ModuleHead
               eyebrow={period.currency}
               title="The Month"
@@ -2048,7 +2197,7 @@ function MonthDetail({ period }: { period: PeriodDashboard }) {
                 />
               )}
             </div>
-          </Module>
+          </Module>}
           <Module>
             <ModuleHead
               eyebrow="Risk"
@@ -2176,47 +2325,6 @@ function MonthlyReturnsHeatmap({
   );
 }
 
-/**
- * REALIZED ROWS — the assets whose sales made or lost the most, one compact row each: the asset and
- * whether it's still held (plus its dividends), a bar growing from a centre line (gains to the
- * right, losses to the left, all on one scale), then the figure.
- */
-function RealizedRows({ rows, currency }: { rows: RealizedPnlEntryResponse[]; currency: string }) {
-  const maxAbs = Math.max(0, ...rows.map((r) => Math.abs(r.realizedTradingPnl)));
-  return (
-    <ul className="divide-y divide-slate-100">
-      {rows.map((r) => {
-        const isGain = r.realizedTradingPnl >= 0;
-        const halfWidthPct = maxAbs > 0 ? Math.max(1.5, (Math.abs(r.realizedTradingPnl) / maxAbs) * 50) : 0;
-        return (
-          <li key={r.assetId} className="grid grid-cols-[minmax(0,1fr)_auto] @xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_7rem] items-center gap-x-5 gap-y-2 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-900 truncate">
-                {r.ticker ? <>{r.ticker} <span className="font-semibold text-slate-400">· {r.name}</span></> : r.name}
-              </p>
-              <p className="text-[11px] font-semibold text-slate-400 truncate">
-                {r.isHeld ? "Still partly held" : "Closed"}
-                {r.dividendIncome !== 0 && ` · + ${formatCurrency(r.dividendIncome, currency, 0)} dividends`}
-              </p>
-            </div>
-            <div className="order-last col-span-2 @xl:order-none @xl:col-span-1 relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
-              {isGain ? (
-                <div className="absolute left-1/2 top-0 h-full rounded-r-full bg-emerald-500" style={{ width: `${halfWidthPct}%` }} />
-              ) : (
-                <div className="absolute right-1/2 top-0 h-full rounded-l-full bg-rose-500" style={{ width: `${halfWidthPct}%` }} />
-              )}
-            </div>
-            <span className={`text-sm font-black tabular-nums text-right ${isGain ? "text-emerald-600" : "text-rose-600"}`}>
-              {formatSignedCurrency(r.realizedTradingPnl, currency)}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 // One of the realized P&L module's headline figures: a label with its explanation, the figure,
 // and a line under it.
 function RealizedFigure({ label, info, value, note, tone, emphasis = false }: {
@@ -2245,77 +2353,45 @@ function RealizedFigure({ label, info, value, note, tone, emphasis = false }: {
 
 /**
  * REALIZED P&L MODULE — the Income & Costs section's realized P&L: what selling has locked in
- * since inception, in the reference currency (each sale converted at its own date, the PDF
- * report's figures). A band of three figures (the total, from sales, from dividends; just the one
- * from sales when no dividend was ever received), then the
- * five assets whose sales made or lost the most, one row each (RealizedRows). Its detail is
- * Profit & Loss's (ProfitLossExplore): the realized and dividend figures, then every asset in one
- * table.
+ * since inception and the dividends received (just the one from sales when no dividend ever
+ * was), in the reference currency, each sale converted at its own date. Its detail is Profit &
+ * Loss's (ProfitLossExplore): every realized and dividend figure, then every asset in one table.
  */
-function RealizedPnlModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot<InsightsRealizedPnlModule>; currency: string; portfolioUuid: string }) {
+function RealizedPnlModule({ slot, currency, portfolioUuid }: {
+  slot: ModuleSlot<InsightsRealizedPnlModule>;
+  currency: string;
+  portfolioUuid: string;
+}) {
   const [exploring, setExploring] = useState(false);
   const data = slot.module;
   const hasAny = data !== null && (data.topAssets.length > 0 || data.totalRealizedPnl !== 0);
   const canExplore = hasAny && !slot.updating;
-  const toneOf = (v: number): "gain" | "loss" => (v >= 0 ? "gain" : "loss");
-  // No dividend ever: the total is the sales', so the band is just that one figure.
+  // No dividend ever: the total is the sales', so that's the one figure.
   const hasDividends = data !== null && data.totalDividendIncome !== 0;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={currency}
         title="Realized P&L"
         desc={hasDividends || data === null ? "What selling has locked in since inception, plus the dividends received." : "What selling has locked in since inception."}
         onExplore={canExplore ? () => setExploring(true) : undefined}
       />
       <SlotPlaceholder slot={slot} preparingMessage={PREPARING_TICK} />
       {data !== null && !slot.updating && (
-        <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+        <div className={`${MODULE_BODY} space-y-3.5`}>
+          {slot.lagging && <UpdatingNote />}
           {!hasAny ? (
-            <ModuleMessage>No closed positions yet.</ModuleMessage>
+            <p className="text-[12.5px] text-[#a8a29e]">No closed positions yet.</p>
           ) : (
-            <>
-              <div className={`grid grid-cols-1 ${hasDividends ? "@xl:grid-cols-3" : ""} divide-y @xl:divide-y-0 @xl:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/40`}>
-                {hasDividends && (
-                  <RealizedFigure
-                    label="Total"
-                    info="From sales plus dividends, since inception."
-                    value={formatSignedCurrency(data.totalRealizedPnl, currency)}
-                    note="Sales and dividends together"
-                    tone={toneOf(data.totalRealizedPnl)}
-                    emphasis
-                  />
-                )}
-                <RealizedFigure
-                  label="From sales"
-                  info="Sale proceeds minus what those units cost, each sale converted at its own date."
-                  value={formatSignedCurrency(data.totalRealizedTradingPnl, currency)}
-                  note="Proceeds minus what the units cost"
-                  tone={toneOf(data.totalRealizedTradingPnl)}
-                  emphasis={!hasDividends}
-                />
-                {hasDividends && (
-                  <RealizedFigure
-                    label="From dividends"
-                    info="Dividends received since inception, from the holdings you still have and the ones you sold."
-                    value={formatCurrency(data.totalDividendIncome, currency, 0)}
-                    note="Received, held or sold since"
-                  />
-                )}
-              </div>
-              <div className="px-6 md:px-7 pt-5 pb-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Biggest gains and losses from sales</p>
-                {data.topAssets.length === 0 ? (
-                  <p className="text-sm text-slate-400 py-3">Nothing sold yet: the total is all dividends.</p>
-                ) : (
-                  <RealizedRows rows={data.topAssets} currency={currency} />
-                )}
-              </div>
-            </>
+            <FigRows
+              rows={[
+                hasDividends && { key: "total", label: "Total realized", value: formatSignedCurrency(data.totalRealizedPnl, currency), tone: toneOfValue(data.totalRealizedPnl) },
+                { key: "sales", label: "From sales", value: formatSignedCurrency(data.totalRealizedTradingPnl, currency), tone: toneOfValue(data.totalRealizedTradingPnl), info: "Sale proceeds minus what those units cost, each sale converted at its own date." },
+                hasDividends && { key: "dividends", label: "From dividends", value: formatCurrency(data.totalDividendIncome, currency, 0), tone: toneOfValue(data.totalDividendIncome), info: "Dividends received since inception, from the holdings you still have and the ones you sold." },
+              ]}
+            />
           )}
-        </>
+        </div>
       )}
       {canExplore && exploring && (
         <ExploreView title="Profit & Loss" onClose={() => setExploring(false)}>
@@ -2576,15 +2652,15 @@ function DetailBody<T extends { isStale: boolean }>({
  * ROLLING VOLATILITY CHART — annualized volatility over a rolling window, one point per day
  * from the backend, thinned by toChartPoints before drawing.
  */
-function RollingVolatilityChart({ series }: { series: TimeSeries }) {
+function RollingVolatilityChart({ series, className = "h-64" }: { series: TimeSeries; className?: string }) {
   const points = useMemo(() => toChartPoints(series), [series]);
 
   if (points.length < 2) {
-    return <ModuleMessage>Not enough data yet to chart.</ModuleMessage>;
+    return <p className="text-[12.5px] text-[#a8a29e]">Not enough data yet to chart.</p>;
   }
 
   return (
-    <div className="p-6 md:p-7 h-64">
+    <div className={className}>
       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
         <LineChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
           <XAxis
@@ -2621,45 +2697,47 @@ function RollingVolatilityChart({ series }: { series: TimeSeries }) {
  * page: its detail (RiskDetail) holds the rest of it.
  */
 function VolatilityModule({
-  slot, portfolioUuid, returnsRevision, aggregate,
-}: { slot: ModuleSlot<InsightsVolatilityModule>; portfolioUuid: string; returnsRevision: number; aggregate: AggregateSlots | null }) {
+  slot, portfolioUuid, returnsRevision, aggregate, maxDrawdownPct,
+}: {
+  slot: ModuleSlot<InsightsVolatilityModule>;
+  portfolioUuid: string;
+  returnsRevision: number;
+  aggregate: AggregateSlots | null;
+  // Since inception, from the comparison; null to leave it out.
+  maxDrawdownPct: number | null;
+}) {
   const data = slot.module;
-  const showFigure = ready(slot) && slot.module.status !== "insufficient_history";
   const [exploring, setExploring] = useState(false);
 
   return (
     <Module>
       <ModuleHead
         onExplore={ready(slot) ? () => setExploring(true) : undefined}
-        eyebrow="Risk"
         title="Volatility"
-        icon={
-          <InfoTip text="How widely your portfolio's daily returns swing, scaled to a year (the standard deviation of daily returns, annualized). A higher figure means bigger ups and downs along the way.">
-            <div className="w-8 h-8 rounded-xl border flex items-center justify-center cursor-help bg-[#C49A3C]/10 text-[#C49A3C] border-[#C49A3C]/20">
-              <Activity className="h-4 w-4" />
-            </div>
-          </InfoTip>
-        }
         desc={`${data?.rollingWindowDays ? `The chart uses a rolling ${data.rollingWindowDays}-day window.` : "How much your portfolio's value moves around."} Open it for its turbulent periods and drawdowns.`}
-        right={showFigure ? (
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Annualized volatility</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {plainPctOrDash(slot.module.annualizedVolatilityPct)}
-            </p>
-          </div>
-        ) : undefined}
       />
       <SlotPlaceholder slot={slot} />
       {ready(slot) && (
-        <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+        <div className={`${MODULE_BODY} space-y-4`}>
+          {slot.lagging && <UpdatingNote />}
           {slot.module.status === "insufficient_history" ? (
-            <ModuleMessage>Volatility needs at least a year of history — it will appear once your portfolio has one.</ModuleMessage>
+            <p className="text-[12.5px] text-[#a8a29e]">Volatility needs at least a year of history — it will appear once your portfolio has one.</p>
           ) : (
-            slot.module.rollingVolatilityPct && <RollingVolatilityChart series={slot.module.rollingVolatilityPct} />
+            // The figures in a column beside the chart, as in the Performance module.
+            <div className="grid grid-cols-1 @2xl:grid-cols-[auto_minmax(0,1fr)] gap-[22px] @2xl:gap-8 items-center">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(110px,1fr))] @2xl:grid-cols-1 gap-x-5 gap-y-5 @2xl:min-w-[150px]">
+                <Fig
+                  label="Volatility"
+                  value={plainPctOrDash(slot.module.annualizedVolatilityPct)}
+                  info="How widely your portfolio's daily returns swing, scaled to a year (the standard deviation of daily returns, annualized). A higher figure means bigger ups and downs along the way."
+                  strong
+                />
+                {maxDrawdownPct !== null && <Fig label="Max drawdown" value={formatPct(maxDrawdownPct)} tone={toneOfValue(maxDrawdownPct)} strong />}
+              </div>
+              {slot.module.rollingVolatilityPct && <RollingVolatilityChart series={slot.module.rollingVolatilityPct} className="h-[170px]" />}
+            </div>
           )}
-        </>
+        </div>
       )}
       {ready(slot) && exploring && (
         <ExploreView title="Risk" onClose={() => setExploring(false)}>
@@ -2695,6 +2773,17 @@ function VolatilityDetail({ data }: { data: VolatilityDetailResponse }) {
 
 function VolatilityPanels({ data }: { data: VolatilityDetailResponse }) {
   const events = useMemo(() => [...data.riskEvents].sort((a, b) => b.startDate.localeCompare(a.startDate)), [data]);
+  const eventColumns: DataColumn<RiskEventEntry>[] = [
+    {
+      key: "period", label: "Period", sortValue: (e) => e.startDate,
+      render: (e) => <span className="font-bold text-[#1c1917] whitespace-nowrap">{rangeLabel(e.startDate, e.endDate)}</span>,
+    },
+    { key: "days", label: "Days", align: "right", sortValue: (e) => daysBetween(e.startDate, e.endDate), render: (e) => daysBetween(e.startDate, e.endDate) + 1 },
+    { key: "vol", label: "Volatility", align: "right", sortValue: (e) => e.annualizedVolatilityPct, render: (e) => <span className="font-bold">{plainPctOrDash(e.annualizedVolatilityPct)}</span> },
+    { key: "return", label: "Return", align: "right", sortValue: (e) => e.cumulativeReturnPct, render: (e) => <SignedPct pct={e.cumulativeReturnPct} /> },
+    { key: "held", label: "Held", grow: true, render: (e) => <HeldNames names={e.assetNames} /> },
+  ];
+
   return (
     <>
       <ExplorePanel
@@ -2707,43 +2796,40 @@ function VolatilityPanels({ data }: { data: VolatilityDetailResponse }) {
           </span>
         }
       >
-        {data.rollingVolatilityPct ? <RollingVolatilityChart series={data.rollingVolatilityPct} /> : <ModuleMessage>Not enough data yet to chart.</ModuleMessage>}
+        {data.rollingVolatilityPct ? <RollingVolatilityChart series={data.rollingVolatilityPct} className={`${MODULE_BODY} h-64`} /> : <ModuleMessage>Not enough data yet to chart.</ModuleMessage>}
       </ExplorePanel>
+      <DrawdownSection data={data} part="chart" />
       <ExplorePanel
         eyebrow="Risk"
         title="Turbulent Periods"
-        desc="Stretches of at least five trading days when the portfolio's 20-day volatility stayed in its top 10%, with what it held then."
+        desc="Stretches of at least five trading days when the portfolio's 20-day volatility stayed in its top 10%, with what it held then. Hover what it held for the full list."
       >
         {events.length === 0 ? (
           <ModuleMessage>No stretch of unusual turbulence so far.</ModuleMessage>
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {events.map((e) => (
-              <li key={`${e.startDate}-${e.endDate}`} className="px-6 md:px-7 py-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-                  <p className="text-[13px] font-bold text-slate-900">
-                    {rangeLabel(e.startDate, e.endDate)}
-                    <span className="ml-2 text-xs font-semibold text-slate-400">{daysBetween(e.startDate, e.endDate) + 1} days</span>
-                  </p>
-                  <p className="flex items-baseline gap-4 text-[13px] tabular-nums">
-                    <span><span className="text-xs text-slate-400 mr-1.5">Volatility</span><span className="font-bold text-slate-900">{plainPctOrDash(e.annualizedVolatilityPct)}</span></span>
-                    <span><span className="text-xs text-slate-400 mr-1.5">Return</span><SignedPct pct={e.cumulativeReturnPct} /></span>
-                  </p>
-                </div>
-                {e.assetNames.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2.5">
-                    {e.assetNames.map((name) => (
-                      <span key={name} className="px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">{name}</span>
-                    ))}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          <DataTable columns={eventColumns} rows={events} rowKey={(e) => `${e.startDate}-${e.endDate}`} />
         )}
       </ExplorePanel>
-      <DrawdownSection data={data} />
+      <DrawdownSection data={data} part="falls" />
     </>
+  );
+}
+
+// How many of a turbulent period's holdings are named in its row; the rest are a "+N" with the
+// full list on hovering it.
+const HELD_NAMES_SHOWN = 2;
+
+function HeldNames({ names }: { names: string[] }) {
+  if (names.length === 0) return <span className="text-[#a8a29e]">—</span>;
+  const shown = names.slice(0, HELD_NAMES_SHOWN);
+  const more = names.length - shown.length;
+  return (
+    <span className="flex items-center gap-1.5 min-w-0" title={names.join(", ")}>
+      <span className="truncate text-[#78716c]">{shown.join(", ")}</span>
+      {more > 0 && (
+        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-[#F7F5EF] text-[10.5px] font-bold text-[#78716c] cursor-help">+{more}</span>
+      )}
+    </span>
   );
 }
 
@@ -2899,20 +2985,12 @@ function BenchmarkPanels({ data }: { data: BenchmarkResponse }) {
       <ExplorePanel eyebrow="Benchmark" title="Side by Side" desc="The return and risk of each, over the same period.">
         <DataTable columns={pairColumns} rows={pairs} rowKey={(r) => r.key} />
       </ExplorePanel>
-      <ExplorePanel eyebrow="Benchmark" title="Relative Figures" desc="How the portfolio's returns relate to the benchmark's. Hover a figure for what it means.">
-        <FigureList>
-          <FigureRow label="Alpha" info="The part of your annualized return that your exposure to the benchmark (beta) doesn't explain. Positive means the portfolio earned more than its market exposure alone would suggest." value={formatPctOrDash(data.alphaPct)} tone={data.alphaPct === null ? undefined : data.alphaPct >= 0 ? "gain" : "loss"} />
-          <FigureRow label="Beta" info="How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves." value={ratioOrDash(data.beta)} />
-          <FigureRow label="Tracking error" info="How much the gap between your portfolio's and the benchmark's daily returns swings, annualized. Low means the portfolio follows the benchmark closely." value={plainPctOrDash(data.trackingErrorPct)} />
-          <FigureRow label="Information ratio" info="The excess return per unit of tracking error: how consistently the portfolio beat the benchmark, rather than by how much." value={ratioOrDash(data.informationRatio)} />
-          <FigureRow label="Sharpe ratio difference" info="The portfolio's return per unit of volatility minus the benchmark's. Positive means better risk-adjusted returns." value={data.sharpeRatioDiff === null ? "—" : `${data.sharpeRatioDiff >= 0 ? "+" : ""}${data.sharpeRatioDiff.toFixed(2)}`} tone={data.sharpeRatioDiff === null ? undefined : data.sharpeRatioDiff >= 0 ? "gain" : "loss"} />
-          <FigureRow label="Recovery ratio" info="The portfolio's total return over its deepest fall: how much it earned for the worst drop it went through." value={ratioOrDash(data.recoveryRatio)} />
-          <FigureRow label="Days ahead" info="The share of trading days on which the portfolio's return beat the benchmark's." value={plainPctOrDash(data.winRatePct)} />
-          <FigureRow label="Time in the lead" info="The share of the shared period during which the portfolio's growth since the start was above the benchmark's." value={plainPctOrDash(data.timeOutperformingPct)} />
-          {data.tradingDays !== null && (
-            <FigureRow label="Trading days compared" info="The days on which both the portfolio and the benchmark have a price." value={data.tradingDays.toLocaleString("en-US")} />
-          )}
-        </FigureList>
+      <ExplorePanel
+        eyebrow="Benchmark"
+        title="Relative Figures"
+        desc={`How the portfolio's returns relate to the benchmark's${data.tradingDays !== null ? `, over ${data.tradingDays.toLocaleString("en-US")} trading days both have a price` : ""}. Hover a figure for what it means.`}
+      >
+        <RelativeFigures data={data} />
       </ExplorePanel>
       {basket.length > 0 && (
         <ExplorePanel eyebrow="Benchmark" title="What the Benchmark Is Made Of" desc={BENCHMARK_BASKET_INFO}>
@@ -2925,6 +3003,119 @@ function BenchmarkPanels({ data }: { data: BenchmarkResponse }) {
   );
 }
 
+
+type RelativeRow = { label: string; info: string; value: string; reading: string | null; tone?: "gain" | "loss" };
+
+/**
+ * RELATIVE FIGURES — the benchmark comparison's ratios, grouped by the question each answers
+ * (did it earn more, does it follow the benchmark, how often was it ahead), one per row: the
+ * figure on the right, and under its name what that value means in words. A null figure reads "—"
+ * with no words under it.
+ */
+function RelativeFigures({ data }: { data: BenchmarkResponse }) {
+  const signedRatio = (v: number | null) => (v === null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
+  const groups: { title: string; rows: RelativeRow[] }[] = [
+    {
+      title: "Did it earn more?",
+      rows: [
+        {
+          label: "Alpha",
+          info: "The part of your annualized return that your exposure to the benchmark (beta) doesn't explain. Positive means the portfolio earned more than its market exposure alone would suggest.",
+          value: formatPctOrDash(data.alphaPct),
+          reading: data.alphaPct === null ? null : data.alphaPct >= 0 ? "A year above what its market exposure explains" : "A year below what its market exposure explains",
+          tone: toneOfValue(data.alphaPct),
+        },
+        {
+          label: "Sharpe ratio difference",
+          info: "The portfolio's return per unit of volatility minus the benchmark's. Positive means better risk-adjusted returns.",
+          value: signedRatio(data.sharpeRatioDiff),
+          reading: data.sharpeRatioDiff === null ? null : data.sharpeRatioDiff >= 0 ? "More return for each unit of risk" : "Less return for each unit of risk",
+          tone: toneOfValue(data.sharpeRatioDiff),
+        },
+        {
+          label: "Information ratio",
+          info: "The excess return per unit of tracking error: how consistently the portfolio beat the benchmark, rather than by how much.",
+          value: ratioOrDash(data.informationRatio),
+          reading: data.informationRatio === null ? null
+            : data.informationRatio >= 0.5 ? "Ahead of it, consistently"
+            : data.informationRatio >= 0 ? "Ahead of it, but unevenly"
+            : "Behind it, on balance",
+          tone: toneOfValue(data.informationRatio),
+        },
+      ],
+    },
+    {
+      title: "Does it follow the benchmark?",
+      rows: [
+        {
+          label: "Beta",
+          info: "How much your portfolio tends to move when the benchmark moves. 1.0 moves in step with it, 0.5 about half as much, and above 1.0 amplifies its moves.",
+          value: ratioOrDash(data.beta),
+          reading: data.beta === null ? null
+            : data.beta > 1.1 ? "Amplifies the benchmark's moves"
+            : data.beta < 0.9 ? "Moves less than the benchmark"
+            : "Moves in step with the benchmark",
+        },
+        {
+          label: "Tracking error",
+          info: "How much the gap between your portfolio's and the benchmark's daily returns swings, annualized. Low means the portfolio follows the benchmark closely.",
+          value: plainPctOrDash(data.trackingErrorPct),
+          reading: data.trackingErrorPct === null ? null
+            : data.trackingErrorPct < 2 ? "Follows it closely"
+            : data.trackingErrorPct < 6 ? "Strays from it now and then"
+            : "Goes its own way",
+        },
+      ],
+    },
+    {
+      title: "How often was it ahead?",
+      rows: [
+        {
+          label: "Days ahead",
+          info: "The share of trading days on which the portfolio's return beat the benchmark's.",
+          value: plainPctOrDash(data.winRatePct),
+          reading: data.winRatePct === null ? null : "Of the trading days, it did better",
+        },
+        {
+          label: "Time in the lead",
+          info: "The share of the shared period during which the portfolio's growth since the start was above the benchmark's.",
+          value: plainPctOrDash(data.timeOutperformingPct),
+          reading: data.timeOutperformingPct === null ? null : "Of the period, it was ahead since the start",
+        },
+        {
+          label: "Recovery ratio",
+          info: "The portfolio's total return over its deepest fall: how much it earned for the worst drop it went through.",
+          value: ratioOrDash(data.recoveryRatio),
+          reading: data.recoveryRatio === null ? null : "Its total return over its deepest fall",
+        },
+      ],
+    },
+  ];
+
+  return (
+    <div className={`${MODULE_BODY} grid grid-cols-1 @3xl:grid-cols-3 gap-x-8 gap-y-5`}>
+      {groups.map((g) => (
+        <div key={g.title} className="min-w-0">
+          <h3 className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#78716c] pb-1">{g.title}</h3>
+          <dl>
+            {g.rows.map((r) => (
+              <div key={r.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2.5 border-b border-[#EEE9DD] last:border-b-0">
+                <dt className="flex items-center gap-1 min-w-0 text-[13px] font-semibold text-[#1c1917]">
+                  <span className="truncate">{r.label}</span>
+                  <InfoTip text={r.info}>
+                    <Info className="h-3 w-3 shrink-0 text-[#a8a29e] hover:text-[#78716c] cursor-help transition-colors" />
+                  </InfoTip>
+                </dt>
+                <dd className={`row-span-2 self-center text-[15px] font-bold tabular-nums ${toneClass(r.tone)}`}>{r.value}</dd>
+                {r.reading && <dd className="text-[11.5px] text-[#78716c] truncate">{r.reading}</dd>}
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const monthYearLabel = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 const horizonLabel = (period: string) => (period === "Inception" ? "Since inception" : `Last ${period.toLowerCase()}`);
@@ -2991,21 +3182,42 @@ function ReturnsPanels({ data }: { data: ReturnsResponse }) {
           </div>
         </ExplorePanel>
       )}
-      {annual.length > 0 && (
-        <ExplorePanel eyebrow="Returns" title="By Calendar Year" desc="The time-weighted return of each calendar year.">
-          <div className="p-6 md:p-7 h-56">
-            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 224 }}>
-              <BarChart data={annual} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
-                <XAxis dataKey="year" tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} width={56} />
-                <Tooltip formatter={(value) => [formatPct(Number(value)), "Return"]} contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f1f5f9" }} />
-                <Bar dataKey="value" radius={[6, 6, 6, 6]} maxBarSize={48}>
-                  {annual.map((a) => <Cell key={a.year} fill={a.value >= 0 ? "#10b981" : "#f43f5e"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ExplorePanel>
+      {(annual.length > 0 || data.bestMonth || data.worstMonth) && (
+        <div className={`grid grid-cols-1 gap-[22px] ${annual.length > 0 && (data.bestMonth || data.worstMonth) ? "lg:grid-cols-2" : ""}`}>
+          {annual.length > 0 && (
+            <ExplorePanel eyebrow="Returns" title="By Calendar Year" desc="The time-weighted return of each calendar year.">
+              <div className={`${MODULE_BODY} h-[220px]`}>
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 224 }}>
+                  <BarChart data={annual} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="year" tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: AXIS_TICK_COLOR }} axisLine={false} tickLine={false} width={56} />
+                    <Tooltip formatter={(value) => [formatPct(Number(value)), "Return"]} contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#f1f5f9" }} />
+                    <Bar dataKey="value" radius={[6, 6, 6, 6]} maxBarSize={48}>
+                      {annual.map((a) => <Cell key={a.year} fill={a.value >= 0 ? "#10b981" : "#f43f5e"} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </ExplorePanel>
+          )}
+          {(data.bestMonth || data.worstMonth) && (
+            <ExplorePanel eyebrow="Returns" title="Best and Worst Months" desc="The extremes of the monthly returns, and the deepest fall since inception.">
+              <dl className={MODULE_BODY}>
+                {[
+                  data.bestMonth && { key: "best", label: monthYearLabel(data.bestMonth.month), sub: "Best month", value: formatPct(data.bestMonth.returnPct), tone: toneOfValue(data.bestMonth.returnPct) },
+                  data.worstMonth && { key: "worst", label: monthYearLabel(data.worstMonth.month), sub: "Worst month", value: formatPct(data.worstMonth.returnPct), tone: toneOfValue(data.worstMonth.returnPct) },
+                  data.maxDrawdownPct !== null && { key: "fall", label: "Deepest fall", sub: "From a high to a later low, since inception", value: formatPct(-Math.abs(data.maxDrawdownPct)), tone: "loss" as const },
+                ].filter((r) => !!r).map((r) => (
+                  <div key={r.key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2.5 border-b border-[#EEE9DD] last:border-b-0">
+                    <dt className="text-[13px] font-bold text-[#1c1917] truncate">{r.label}</dt>
+                    <dd className={`row-span-2 self-center text-[15px] font-bold tabular-nums ${toneClass(r.tone)}`}>{r.value}</dd>
+                    <dd className="text-[11.5px] text-[#78716c] truncate">{r.sub}</dd>
+                  </div>
+                ))}
+              </dl>
+            </ExplorePanel>
+          )}
+        </div>
       )}
       {data.horizons.length > 0 && (
         <ExplorePanel
@@ -3014,19 +3226,6 @@ function ReturnsPanels({ data }: { data: ReturnsResponse }) {
           desc="Each trailing period with the risk taken to earn it. Return / risk is the return divided by the volatility: how much it earned for each unit of swing."
         >
           <DataTable columns={horizonColumns} rows={data.horizons} rowKey={(h) => h.period} />
-        </ExplorePanel>
-      )}
-      {(data.bestMonth || data.worstMonth) && (
-        <ExplorePanel eyebrow="Returns" title="Best and Worst Months" desc="The extremes of the monthly returns, and the deepest fall since inception.">
-          <FigureList>
-            {data.bestMonth && (
-              <FigureRow label={`Best month · ${monthYearLabel(data.bestMonth.month)}`} info="The calendar month with the highest return." value={formatPct(data.bestMonth.returnPct)} tone={data.bestMonth.returnPct >= 0 ? "gain" : "loss"} />
-            )}
-            {data.worstMonth && (
-              <FigureRow label={`Worst month · ${monthYearLabel(data.worstMonth.month)}`} info="The calendar month with the lowest return." value={formatPct(data.worstMonth.returnPct)} tone={data.worstMonth.returnPct >= 0 ? "gain" : "loss"} />
-            )}
-            <FigureRow label="Deepest fall" info="The largest drop from a high to a later low, since inception." value={plainPctOrDash(data.maxDrawdownPct)} />
-          </FigureList>
         </ExplorePanel>
       )}
     </>
@@ -3039,22 +3238,24 @@ function ReturnsPanels({ data }: { data: ReturnsResponse }) {
  * charted and then broken into its deepest falls (DrawdownExplore). It comes from the returns
  * document, so it can be missing while the volatility is there.
  */
-function DrawdownSection({ data }: { data: VolatilityDetailResponse }) {
+function DrawdownSection({ data, part }: { data: VolatilityDetailResponse; part: "chart" | "falls" }) {
   const points = useMemo(() => (data.drawdownPct ? toChartPoints(data.drawdownPct) : []), [data]);
 
   if (!data.drawdownPct || points.length < 2) {
+    // Said once, where the chart would be.
+    if (part === "falls") return null;
     return (
       <ExplorePanel eyebrow="Risk" title="Drawdown" desc="How far below its previous high the portfolio stood, day by day.">
         <ModuleMessage>Not enough history yet to chart the drawdown.</ModuleMessage>
       </ExplorePanel>
     );
   }
-  return <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} />;
+  return <DrawdownExplore series={data.drawdownPct} points={points} maxDrawdownPct={data.maxDrawdownPct} part={part} />;
 }
 
 function DrawdownChart({ points }: { points: { date: string; value: number }[] }) {
   return (
-    <div className="p-6 md:p-7 h-64">
+    <div className={`${MODULE_BODY} h-64`}>
       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 256 }}>
         <AreaChart data={points} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
           <XAxis
@@ -3127,12 +3328,13 @@ function drawdownEpisodes(series: TimeSeries): DrawdownEpisode[] {
 const DRAWDOWN_EPISODE_ROWS = 10;
 
 /**
- * DRAWDOWN EXPLORE — the drawdown panels of Volatility's detail view: the chart, then the portfolio's
- * deepest falls one by one, with how long each took to hit bottom and to climb back.
+ * DRAWDOWN EXPLORE — the drawdown panels of Volatility's detail view, each drawn where the view
+ * puts it (`part`): the chart, under the volatility's, and the portfolio's deepest falls one by
+ * one, with how long each took to hit bottom and to climb back.
  */
 function DrawdownExplore({
-  series, points, maxDrawdownPct,
-}: { series: TimeSeries; points: { date: string; value: number }[]; maxDrawdownPct: number | null }) {
+  series, points, maxDrawdownPct, part,
+}: { series: TimeSeries; points: { date: string; value: number }[]; maxDrawdownPct: number | null; part: "chart" | "falls" }) {
   const episodes = useMemo(() => drawdownEpisodes(series).slice(0, DRAWDOWN_EPISODE_ROWS), [series]);
   const today = series.dates[series.dates.length - 1];
 
@@ -3150,8 +3352,8 @@ function DrawdownExplore({
     },
   ];
 
-  return (
-    <>
+  if (part === "chart") {
+    return (
       <ExplorePanel
         eyebrow="Risk"
         title="Drawdown"
@@ -3160,6 +3362,11 @@ function DrawdownExplore({
       >
         <DrawdownChart points={points} />
       </ExplorePanel>
+    );
+  }
+
+  return (
+    <>
       <ExplorePanel eyebrow="Risk" title="Deepest Falls" desc="The portfolio's deepest falls, how long each took to hit bottom and to climb back.">
         {episodes.length === 0 ? (
           <ModuleMessage>The portfolio hasn&apos;t fallen below a previous high yet.</ModuleMessage>
@@ -3173,157 +3380,7 @@ function DrawdownExplore({
 
 // How many rows the per-asset / per-platform lists below show before the rest would just be
 // noise on a summary tab.
-const TOP_ROWS = 5;
-
-/**
- * RANKED BARS — a short "who contributes most" list: a label, a figure, and a bar scaled to the
- * largest row. Shared by the top dividend payers and the costs by platform. With `onSelect`
- * each row is a button that opens the module's detail view on that row; `more` adds a last line
- * leading to the whole list in the detail, for when the summary may have left rows out.
- */
-function RankedBars({
-  title, rows, onSelect, more,
-}: {
-  title: string;
-  rows: { key: string; label: string; sub?: string; value: number; figure: string }[];
-  onSelect?: (key: string) => void;
-  more?: { label: string; onClick: () => void };
-}) {
-  const max = Math.max(...rows.map((r) => r.value), 0.01);
-  return (
-    <div className="px-6 md:px-7 py-6 border-t border-slate-100">
-      <h3 className="text-sm font-black text-slate-900 mb-3">{title}</h3>
-      <div className="space-y-1">
-        {rows.map((r) => {
-          const body = (
-            <>
-              <div className="flex items-baseline justify-between gap-3 mb-1">
-                <span className="min-w-0 truncate">
-                  <span className="text-[13px] font-bold text-slate-900">{r.label}</span>
-                  {r.sub && <span className="text-xs text-slate-400 ml-2">{r.sub}</span>}
-                </span>
-                <span className="text-[13px] font-bold text-slate-500 tabular-nums shrink-0">{r.figure}</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full rounded-full bg-[#C49A3C]" style={{ width: `${(r.value / max) * 100}%` }} />
-              </div>
-            </>
-          );
-          return onSelect ? (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => onSelect(r.key)}
-              className="block text-left -mx-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
-              style={{ width: "calc(100% + 1rem)" }}
-            >
-              {body}
-            </button>
-          ) : (
-            <div key={r.key} className="py-1.5">{body}</div>
-          );
-        })}
-      </div>
-      {more && (
-        <button
-          type="button"
-          onClick={more.onClick}
-          className="mt-3 text-xs font-bold text-[#C49A3C] hover:text-[#8A6A28] transition-colors"
-        >
-          {more.label}
-        </button>
-      )}
-    </div>
-  );
-}
-
-/**
- * DIVIDENDS MODULE — the Income & Costs section's dividends: the income since inception as the
- * headline, the yields behind it, and the biggest payers over the last 12 months (the section
- * sends the top TOP_ROWS). wholePortfolioYieldPct is the portfolio's yield as a whole (not just
- * the holdings that pay), which is what "what does my portfolio yield" means. No detail of its
- * own: every dividend figure and asset is in Profit & Loss's (ProfitLossExplore). With no dividend
- * ever received it keeps only the since-inception figure, at zero.
- */
-function DividendsModule({ slot, currency }: { slot: ModuleSlot<InsightsDividendsModule>; currency: string }) {
-  const data = slot.module;
-  const hasIncome = data !== null && data.totalLifetimeIncome > 0;
-
-  return (
-    <Module>
-      <ModuleHead
-        eyebrow={currency}
-        title="Dividends"
-        desc="Cash paid out by your holdings."
-      />
-      <SlotPlaceholder slot={slot} />
-      {data !== null && !slot.updating && (
-        <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          {!hasIncome ? (
-            // Nothing else to show without any: just the total, and why it's zero.
-            <FigureList>
-              <FigureRow
-                label="Since inception"
-                info="None of your holdings has paid a dividend yet."
-                value={formatCurrency(0, currency, 0)}
-                emphasis
-              />
-            </FigureList>
-          ) : (
-            <>
-              <FigureList>
-                <FigureRow
-                  label="Since inception"
-                  info="All the dividends you've received, since your first transaction."
-                  value={formatCurrency(data.totalLifetimeIncome, currency, 0)}
-                  emphasis
-                />
-                <FigureRow
-                  label="Last 12 months"
-                  info="The dividends received over the last 12 months."
-                  value={formatCurrency(data.totalTrailing12MIncome, currency, 0)}
-                />
-                <FigureRow
-                  label="Yield"
-                  info="The last 12 months' dividends over what the whole portfolio is worth today."
-                  value={data.wholePortfolioYieldPct === null ? "—" : `${data.wholePortfolioYieldPct.toFixed(2)}%`}
-                />
-                <FigureRow
-                  label="Yield on cost"
-                  info="The last 12 months' dividends over what you paid for the holdings that pay them."
-                  value={data.portfolioYieldOnCostPct === null ? "—" : `${data.portfolioYieldOnCostPct.toFixed(2)}%`}
-                />
-                <FigureRow
-                  label="vs previous year"
-                  info="How the last 12 months' dividends compare with the 12 months before."
-                  value={formatPctOrDash(data.portfolioGrowthYoyPct)}
-                  tone={data.portfolioGrowthYoyPct === null ? undefined : data.portfolioGrowthYoyPct >= 0 ? "gain" : "loss"}
-                />
-              </FigureList>
-              {data.topPayers.length > 0 && (
-                <RankedBars
-                  title="Top payers, last 12 months"
-                  rows={data.topPayers.map((a) => ({
-                    key: a.assetId,
-                    label: a.ticker ?? a.name,
-                    sub: a.ticker ? a.name : undefined,
-                    value: a.trailing12MIncome,
-                    figure: formatCurrency(a.trailing12MIncome, currency, 0),
-                  }))}
-                />
-              )}
-            </>
-          )}
-        </>
-      )}
-    </Module>
-  );
-}
-
-
-// Every dividend figure the Dividends module summarises, plus the ones it leaves out (the
-// previous 12 months, the yield of just the paying holdings), in Profit & Loss's detail.
+// Every dividend figure, in Profit & Loss's detail.
 function DividendsFigures({ data }: { data: DividendsResponse }) {
   return (
       <ExplorePanel eyebrow={data.currency} title="Dividends" desc="Cash paid out by your holdings.">
@@ -3344,17 +3401,6 @@ function DividendsFigures({ data }: { data: DividendsResponse }) {
         </FigureList>
       </ExplorePanel>
   );
-}
-
-// annualizedCostDragPct thresholds, the same ones the PDF report uses.
-const costDragLabel = (pct: number) => (pct < 0.1 ? "Negligible" : pct > 0.5 ? "Material" : "Moderate");
-
-function CostDragBadge({ pct }: { pct: number }) {
-  const label = costDragLabel(pct);
-  const tone = label === "Negligible"
-    ? "bg-emerald-50 text-emerald-700"
-    : label === "Moderate" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700";
-  return <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${tone}`}>{label}</span>;
 }
 
 // An asset's cell in a DataTable: its ticker in bold with the full name under it (or just the
@@ -3384,38 +3430,15 @@ function SignedPct({ pct }: { pct: number | null }) {
  * behind the info icon, the value — so two still fit a half-width tile.
  */
 function FigureList({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="@container">
-      <dl className="grid grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4 gap-3 p-5 md:p-6">{children}</dl>
-    </div>
-  );
+  return <Figs className={MODULE_BODY}>{children}</Figs>;
 }
 
-// `emphasis` for the headline figure of the list: the grid's whole width, a bigger value. `tone`
-// colours a value that reads as good or bad news (a change, say).
+// `emphasis` for the headline figure of the list, a size up. `tone` colours a value that reads
+// as good or bad news (a change, say).
 function FigureRow({
   label, info, value, badge, emphasis = false, tone,
 }: { label: string; info: string; value: string; badge?: React.ReactNode; emphasis?: boolean; tone?: "gain" | "loss" }) {
-  const toneClass = tone === "gain" ? "text-emerald-600" : tone === "loss" ? "text-rose-600" : "text-slate-900";
-  return (
-    <div className={`min-w-0 rounded-2xl ${emphasis ? "col-span-full bg-[#C49A3C]/8 px-5 py-4" : "bg-slate-50 px-4 py-3.5"}`}>
-      <dt className="flex items-center gap-1.5 min-w-0 text-[12px] font-semibold text-slate-500">
-        <span className="truncate">{label}</span>
-        <InfoTip text={info}>
-          <Info className="h-3.5 w-3.5 shrink-0 text-slate-300 hover:text-slate-500 cursor-help transition-colors" />
-        </InfoTip>
-      </dt>
-      <dd className="flex items-center gap-2 mt-1 min-w-0">
-        {badge}
-        <span
-          className={`font-black tabular-nums truncate ${emphasis ? "text-3xl" : "text-lg"} ${toneClass}`}
-          style={emphasis ? { fontFamily: "'Playfair Display', Georgia, serif" } : undefined}
-        >
-          {value}
-        </span>
-      </dd>
-    </div>
-  );
+  return <Fig label={label} info={info} value={value} badge={badge} strong={emphasis} tone={tone} />;
 }
 
 /**
@@ -3426,72 +3449,49 @@ function FigureRow({
  */
 function TradingCostsModule({ slot, currency, portfolioUuid }: { slot: ModuleSlot<InsightsTradingCostsModule>; currency: string; portfolioUuid: string }) {
   const data = slot.module;
-  const platforms = data?.topPlatforms ?? [];
-  // undefined: closed; null: open; a platform: open on that platform's row.
-  const [exploring, setExploring] = useState<string | null | undefined>(undefined);
+  const [exploring, setExploring] = useState(false);
   const canExplore = data !== null && !slot.updating && data.totalTransactions > 0;
 
   return (
     <Module>
       <ModuleHead
-        eyebrow={currency}
         title="Trading Costs"
         desc="Commissions plus the spread paid when buying and selling."
-        onExplore={canExplore ? () => setExploring(null) : undefined}
+        onExplore={canExplore ? () => setExploring(true) : undefined}
       />
       <SlotPlaceholder slot={slot} />
       {data !== null && !slot.updating && (
-        <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+        <div className={`${MODULE_BODY} space-y-4`}>
+          {slot.lagging && <UpdatingNote />}
           {data.totalTransactions === 0 ? (
-            <ModuleMessage>No trades recorded yet.</ModuleMessage>
+            <p className="text-[12.5px] text-[#a8a29e]">No trades recorded yet.</p>
           ) : (
-            <>
-              <FigureList>
-                <FigureRow
-                  label="Total costs"
-                  info="Commissions plus the spread paid on every buy and sell, since your first transaction."
-                  value={formatCurrency(data.totalCosts, currency, 0)}
-                  emphasis
-                />
-                <FigureRow
-                  label="Per trade"
-                  info={`Average cost across ${data.totalTransactions} ${data.totalTransactions === 1 ? "trade" : "trades"}.`}
-                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, currency, 2)}
-                />
-                <FigureRow
-                  label="Of traded volume"
-                  info="Costs over the total amount you bought and sold."
-                  value={data.costRatioPct === null ? "—" : `${data.costRatioPct.toFixed(2)}%`}
-                />
-                <FigureRow
-                  label="Yearly drag"
+            <Figs pairs>
+                <Fig label="Fees paid" value={formatCurrency(data.totalCosts, currency, 0)} strong info="Commissions plus the spread paid on every buy and sell, since your first transaction." />
+                <Fig
+                  label="Cost drag"
+                  value={plainPctOrDash(data.annualizedCostDragPct)}
+                  strong
+                  tone={data.annualizedCostDragPct !== null && data.annualizedCostDragPct > 0.5 ? "loss" : undefined}
                   info="How much costs take off the portfolio's return each year. Under 0.10% is negligible, over 0.50% is material."
-                  value={data.annualizedCostDragPct === null ? "—" : `${data.annualizedCostDragPct.toFixed(2)}%`}
-                  badge={data.annualizedCostDragPct === null ? undefined : <CostDragBadge pct={data.annualizedCostDragPct} />}
                 />
-              </FigureList>
-              {platforms.length > 1 && (
-                <RankedBars
-                  title="By platform"
-                  rows={platforms.map((pl) => ({
-                    key: pl.platform,
-                    label: pl.platform,
-                    sub: `${pl.transactionCount} ${pl.transactionCount === 1 ? "trade" : "trades"}`,
-                    value: pl.totalCosts,
-                    figure: formatCurrency(pl.totalCosts, currency, 0),
-                  }))}
-                  onSelect={setExploring}
-                  more={platforms.length >= TOP_ROWS ? { label: "Every platform", onClick: () => setExploring(null) } : undefined}
+                <Fig
+                  label="Per trade"
+                  value={data.avgCostPerTrade === null ? "—" : formatCurrency(data.avgCostPerTrade, currency, 2)}
+                  info="The average cost of one buy or sell."
                 />
-              )}
-            </>
+                <Fig
+                  label="Of traded volume"
+                  value={data.costRatioPct === null ? "—" : `${data.costRatioPct.toFixed(2)}%`}
+                  info="Costs over the total amount bought and sold."
+                />
+              </Figs>
           )}
-        </>
+        </div>
       )}
-      {canExplore && exploring !== undefined && (
-        <ExploreView title="Trading Costs" onClose={() => setExploring(undefined)}>
-          <TradingCostsExplore portfolioUuid={portfolioUuid} revision={slot.revision} focus={exploring} />
+      {canExplore && exploring && (
+        <ExploreView title="Trading Costs" onClose={() => setExploring(false)}>
+          <TradingCostsExplore portfolioUuid={portfolioUuid} revision={slot.revision} focus={null} />
         </ExploreView>
       )}
     </Module>
@@ -3603,10 +3603,10 @@ const PREPARING_AGGREGATE = "Being prepared — this shows up after the overnigh
 
 /**
  * PORTFOLIOS MIX MODULE — the aggregate's `portfolios` module, Composition side: each
- * portfolio's share of the value, of the profit and of the risk, then the assets held in more
- * than one (from `comovement`, the same document). Risk share next to weight is the point: a
- * portfolio carrying more risk than its size, or one offsetting the rest. Colours match the
- * Compare page (portfolioColorMap).
+ * portfolio's share of the value as a bar, with its share of the risk as a line on the same
+ * scale, then the assets held in more than one (from `comovement`, the same document). Risk
+ * share next to weight is the point: a portfolio carrying more risk than its size, or one
+ * offsetting the rest. Colours match the Compare page (portfolioColorMap).
  */
 function PortfoliosMixModule({
   slot, comovement, currency,
@@ -3614,113 +3614,49 @@ function PortfoliosMixModule({
   const data = slot.module;
   const { portfolios } = usePortfolio();
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
-  const nameOf = (uuid: string) => data?.members.find((m) => m.portfolioUuid === uuid)?.name ?? portfolios.find((p) => p.uuid === uuid)?.name ?? "—";
   const overlapping = comovement?.overlappingAssets ?? [];
+  const members = data?.members ?? [];
+  const top = Math.max(...members.map((m) => Math.max(m.weightPct, m.riskContributionPct ?? 0)), 1) * 1.1;
 
   return (
     <Module>
-      <ModuleHead
-        eyebrow={currency}
-        title="Your Portfolios"
-        desc="How each portfolio makes up the whole: its share of the value, of the profit and of the risk."
-      />
+      <ModuleHead title="Portfolios Mix" desc="How each portfolio makes up the whole: its share of the value and of the risk." />
       <SlotPlaceholder slot={slot} preparingMessage={PREPARING_AGGREGATE} />
       {data !== null && !slot.updating && (
-        <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm min-w-[520px]">
-              <thead>
-                <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="text-left font-black py-3 pl-6 md:pl-7 pr-4">Portfolio</th>
-                  <th className="text-right font-black py-3 px-4">Value</th>
-                  <th className="text-right font-black py-3 px-4">Share of value</th>
-                  <th className="text-right font-black py-3 px-4" title="Its share of the combined profit. Above 100% or below 0 when one portfolio lost while another gained.">
-                    <span className="underline decoration-dotted decoration-slate-300 underline-offset-4 cursor-help">Share of profit</span>
-                  </th>
-                  <th className="text-right font-black py-3 pl-4 pr-6 md:pr-7" title="Its share of the combined risk at today's weights. The shares add up to 100%.">
-                    <span className="underline decoration-dotted decoration-slate-300 underline-offset-4 cursor-help">Share of risk</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.members.map((m) => (
-                  <tr key={m.portfolioUuid} className="border-t border-slate-100">
-                    <th scope="row" className="text-left py-3 pl-6 md:pl-7 pr-4">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorOf(m.portfolioUuid) }} />
-                        <span className="font-bold text-slate-900">{m.name}</span>
-                      </span>
-                    </th>
-                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatCurrency(m.marketValue, currency, 0)}</td>
-                    <td className="text-right py-3 px-4 font-bold text-slate-900 tabular-nums">{m.weightPct.toFixed(1)}%</td>
-                    <td className="text-right py-3 px-4 tabular-nums whitespace-nowrap">
-                      <span className="font-bold text-slate-900">{m.pnlSharePct === null ? "—" : `${m.pnlSharePct.toFixed(1)}%`}</span>
-                      <span className={`block text-xs font-semibold ${m.totalPnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {formatSignedCurrency(m.totalPnl, currency)}
-                      </span>
-                    </td>
-                    <td className="text-right py-3 pl-4 pr-6 md:pr-7 tabular-nums whitespace-nowrap">
-                      <span className="font-bold text-slate-900">{m.riskContributionPct === null ? "—" : `${m.riskContributionPct.toFixed(1)}%`}</span>
-                      {m.riskContributionPct !== null && <RiskShareNote risk={m.riskContributionPct} weight={m.weightPct} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {data.status === "insufficient_history" && (
-            <p className="px-6 md:px-7 py-4 border-t border-slate-100 text-xs text-slate-400">
-              Risk shares need at least 60 trading days shared by your portfolios — they&apos;ll show up once there are.
-            </p>
-          )}
+        <div className={`${MODULE_BODY} space-y-4`}>
+          {slot.lagging && <UpdatingNote />}
+          <HBars
+            max={top}
+            rows={members.map((m) => ({
+              key: m.portfolioUuid,
+              label: m.name,
+              value: m.weightPct,
+              mark: m.riskContributionPct,
+              color: colorOf(m.portfolioUuid),
+              figure: `${m.weightPct.toFixed(0)}%`,
+              title: `${m.name} · ${formatCurrency(m.marketValue, currency, 0)} · ${m.riskContributionPct === null ? "risk share not available" : `${m.riskContributionPct.toFixed(1)}% of the risk`}`,
+            }))}
+          />
           {overlapping.length > 0 && (
-            <div className="px-6 md:px-7 py-6 border-t border-slate-100">
-              <h3 className="text-sm font-black text-slate-900">Held in more than one portfolio</h3>
-              <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
-                Your combined position in these is bigger than any single portfolio shows.
-              </p>
-              <div className="divide-y divide-slate-100">
-                {overlapping.slice(0, 10).map((a) => (
-                  <div key={a.assetId} className="py-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-1.5">
-                    <div className="min-w-0">
-                      <p className="truncate">
-                        <span className="text-[13px] font-bold text-slate-900">{a.ticker ?? a.name}</span>
-                        {a.ticker && <span className="text-xs text-slate-400 ml-2">{a.name}</span>}
-                      </p>
-                      <p className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                        {a.holdings.map((h) => (
-                          <span key={h.portfolioUuid} className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorOf(h.portfolioUuid) }} />
-                            {nameOf(h.portfolioUuid)} <span className="tabular-nums">{formatCurrency(h.marketValue, currency, 0)}</span>
-                          </span>
-                        ))}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-[13px] font-bold text-slate-900 tabular-nums">{formatCurrency(a.marketValue, currency, 0)}</p>
-                      <p className="text-xs text-slate-400 tabular-nums">{a.weightPct.toFixed(1)}% of the total</p>
-                    </div>
-                  </div>
+            <div className="pt-1">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#78716c] pb-1">Held in more than one</h3>
+              <ul>
+                {overlapping.slice(0, 5).map((a) => (
+                  <li key={a.assetId} className="flex items-center gap-3 py-2 border-b border-[#EEE9DD] last:border-b-0 text-[13px]">
+                    <span className="min-w-0 flex-1 truncate font-semibold text-[#1c1917]" title={a.name}>{a.ticker ?? a.name}</span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      {a.holdings.map((h) => <span key={h.portfolioUuid} className="h-2 w-2 rounded-full" style={{ background: colorOf(h.portfolioUuid) }} />)}
+                    </span>
+                    <span className="shrink-0 font-bold tabular-nums">{formatCurrency(a.marketValue, currency, 0)}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
-        </>
+        </div>
       )}
     </Module>
   );
-}
-
-// How far a risk share has to sit from the value share before it's worth pointing out, in
-// percentage points — closer than that, "about its size" is the honest reading.
-const RISK_SHARE_MARGIN = 5;
-
-function RiskShareNote({ risk, weight }: { risk: number; weight: number }) {
-  if (risk < 0) return <span className="block text-xs font-semibold text-emerald-600">Offsets the others</span>;
-  if (risk > weight + RISK_SHARE_MARGIN) return <span className="block text-xs font-semibold text-amber-600">More than its size</span>;
-  if (risk < weight - RISK_SHARE_MARGIN) return <span className="block text-xs font-semibold text-slate-400">Less than its size</span>;
-  return null;
 }
 
 /**
@@ -3738,40 +3674,39 @@ function PortfolioCorrelationModule({ slot, members }: { slot: ModuleSlot<Insigh
   return (
     <Module>
       <ModuleHead
-        eyebrow="Risk"
-        title="How Your Portfolios Move Together"
+        title="How the Portfolios Move Together"
         desc={corr ? `Correlation of daily returns, over ${corr.observations} shared trading days.` : "Correlation of their daily returns."}
       />
       <SlotPlaceholder slot={slot} preparingMessage={PREPARING_AGGREGATE} />
       {data !== null && !slot.updating && (
         <>
-          {slot.lagging && <div className="p-6 md:p-7 pb-0"><UpdatingNote /></div>}
+          {slot.lagging && <div className="px-6 pb-3"><UpdatingNote /></div>}
           {corr === null ? (
             <ModuleMessage>Needs at least 60 trading days shared by your portfolios — it will appear once there are.</ModuleMessage>
           ) : (
-            <div className="p-6 md:p-7 overflow-x-auto">
-              <table className="border-collapse">
+            <div className={`${MODULE_BODY} overflow-x-auto`}>
+              <table className="border-separate border-spacing-[3px] text-[11px]">
                 <thead>
                   <tr>
                     <th />
                     {corr.portfolioUuids.map((u) => (
-                      <th key={u} scope="col" className="px-1 pb-2 text-[11px] font-bold text-slate-500 text-center max-w-24 truncate">{nameOf(u)}</th>
+                      <th key={u} scope="col" className="px-1.5 py-0.5 font-bold text-[#78716c] text-center max-w-24 truncate">{nameOf(u)}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {corr.portfolioUuids.map((rowUuid, i) => (
                     <tr key={rowUuid}>
-                      <th scope="row" className="pr-3 py-1 text-left text-[11px] font-bold text-slate-500 max-w-32 truncate">{nameOf(rowUuid)}</th>
+                      <th scope="row" className="pr-1.5 text-left font-bold text-[#78716c] max-w-28 truncate">{nameOf(rowUuid)}</th>
                       {corr.portfolioUuids.map((colUuid, j) => {
                         const v = corr.matrix[i]?.[j] ?? null;
                         return (
-                          <td key={colUuid} className="p-1">
+                          <td key={colUuid} className="p-0">
                             {i === j || v === null ? (
-                              <div className="w-16 h-12 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-300">—</div>
+                              <div className="w-[52px] h-[34px] rounded-md bg-[#F7F5EF] flex items-center justify-center text-[#a8a29e]">—</div>
                             ) : (
                               <div
-                                className="w-16 h-12 rounded-lg flex items-center justify-center text-xs font-bold tabular-nums"
+                                className="w-[52px] h-[34px] rounded-md flex items-center justify-center font-semibold tabular-nums"
                                 style={correlationCellStyle(v)}
                                 title={`${nameOf(rowUuid)} and ${nameOf(colUuid)}: ${v.toFixed(2)}`}
                               >
@@ -3785,10 +3720,10 @@ function PortfolioCorrelationModule({ slot, members }: { slot: ModuleSlot<Insigh
                   ))}
                 </tbody>
               </table>
-              <div className="flex items-center gap-3 mt-5 text-[11px] font-semibold text-slate-500">
+              <div className="flex items-center gap-3 mt-3.5 text-[11px] text-[#78716c]">
                 <span>Move opposite</span>
                 {/* Same scale as the holdings' correlation matrix (correlationCellStyle). */}
-                <span className="h-2 w-40 rounded-full" style={{ background: "linear-gradient(to right, rgb(244,63,94), #f8fafc, rgb(16,185,129))" }} />
+                <span className="h-2 w-28 rounded-full" style={{ background: "linear-gradient(to right, rgb(244,63,94), #f8fafc, rgb(16,185,129))" }} />
                 <span>Move together</span>
               </div>
             </div>
@@ -3808,7 +3743,12 @@ function PortfolioCorrelationModule({ slot, members }: { slot: ModuleSlot<Insigh
  * In Insights' Performance section, right under the portfolio's value: the short term, before
  * the rest of the history.
  */
-function MonthToDateModule({ slot, currency }: { slot: ModuleSlot<InsightsThisMonthModule>; currency: string }) {
+function MonthToDateModule({ slot, currency, returnPct }: {
+  slot: ModuleSlot<InsightsThisMonthModule>;
+  currency: string;
+  // The month's time-weighted return so far (the month's own document); null when there's none yet.
+  returnPct: number | null;
+}) {
   return (
     <Module>
       <ModuleHead
@@ -3817,12 +3757,114 @@ function MonthToDateModule({ slot, currency }: { slot: ModuleSlot<InsightsThisMo
         desc="How the market moved your portfolio, day by day and month to date. Money you added or withdrew is left out."
       />
       {SlotPlaceholder({ slot, preparingMessage: "Not enough history yet to show this month's moves." })
-        ?? (slot.module && <MonthToDateBody data={slot.module} currency={currency} lagging={slot.lagging} />)}
+        ?? (slot.module && <MonthToDateBody data={slot.module} currency={currency} lagging={slot.lagging} returnPct={returnPct} />)}
     </Module>
   );
 }
 
-function MonthToDateBody({ data, currency, lagging }: { data: InsightsThisMonthModule; currency: string; lagging: boolean }) {
+// Holdings listed on each side of GainsLossesCard.
+const GAINS_LOSSES_ROWS = 3;
+
+/**
+ * GAINS & LOSSES CARD — between Realized P&L and Trading Costs: how what the portfolio holds is doing, from the
+ * same holdings. The unrealized P&L of the open positions (market value against what they cost),
+ * then the holdings gaining and losing the most of it. Closed positions are Realized P&L's.
+ */
+function GainsLossesCard({ slot, currency }: { slot: ModuleSlot<InsightsHoldingsModule>; currency: string }) {
+  const holdings = slot.module?.holdings ?? [];
+  const gaining = holdings.filter((h) => h.unrealizedPnl > 0).sort((a, b) => b.unrealizedPnl - a.unrealizedPnl).slice(0, GAINS_LOSSES_ROWS);
+  const losing = holdings.filter((h) => h.unrealizedPnl < 0).sort((a, b) => a.unrealizedPnl - b.unrealizedPnl).slice(0, GAINS_LOSSES_ROWS);
+
+  return (
+    // No title of its own: the two lists' headings say what it is.
+    <Module className="pt-[22px]">
+      {SlotPlaceholder({ slot, preparingMessage: PREPARING_TICK }) ?? (holdings.length === 0 ? (
+        <ModuleMessage>Nothing held yet.</ModuleMessage>
+      ) : (
+        <div className={`${MODULE_BODY} space-y-4`}>
+          <GainsLossesList title="Gaining most" holdings={gaining} currency={currency} />
+          <GainsLossesList title="Losing most" holdings={losing} currency={currency} />
+        </div>
+      ))}
+    </Module>
+  );
+}
+
+function GainsLossesList({ title, holdings, currency }: { title: string; holdings: PortfolioHoldingResponse[]; currency: string }) {
+  if (holdings.length === 0) return null;
+  return (
+    <div>
+      <h3 className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#78716c] pb-1">{title}</h3>
+      <ul>
+        {holdings.map((h) => (
+          <li key={h.assetId} className="flex items-baseline gap-3 py-2 border-b border-[#EEE9DD] last:border-b-0">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#1c1917]" title={h.name}>{h.ticker ?? h.isin ?? h.name}</span>
+            <span className={`shrink-0 text-[13px] font-bold tabular-nums ${toneClass(toneOfValue(h.unrealizedPnl))}`}>
+              {formatSignedCurrency(h.unrealizedPnl, currency)}
+            </span>
+            <span className={`shrink-0 w-14 text-right text-xs tabular-nums ${toneClass(toneOfValue(h.roiPct))}`}>
+              {formatPct(h.roiPct)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * THIS MONTH CARD — the month so far, beside the Value chart near the top of a portfolio's page:
+ * how the market moved the portfolio since last month's close, in percent and in money, the
+ * money added or withdrawn, and the value it started from. Only the figures: the whole card opens
+ * the month's own page (MonthPage, with the day-by-day chart), the same the heatmap opens.
+ */
+function ThisMonthCard({ slot, currency, onOpen }: {
+  slot: ModuleSlot<InsightsThisMonthModule>;
+  currency: string;
+  onOpen: (year: number, month: number) => void;
+}) {
+  const data = slot.module;
+  // The month of the latest daily value (the months run on UTC dates); today's before there's one.
+  const latest = data?.chart.reduce<string | null>((max, s) => (max === null || s.snapshotAt > max ? s.snapshotAt : max), null);
+  const at = latest ? new Date(latest) : new Date();
+  const year = at.getUTCFullYear();
+  const month = at.getUTCMonth() + 1;
+  const monthName = at.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  const open = ready(slot) ? () => onOpen(year, month) : undefined;
+
+  return (
+    <Module>
+      <ModuleHead title={`${monthName} so far`} desc="How the market moved the portfolio this month, without the money you added or withdrew. Open the month for its days." onExplore={open} />
+      {SlotPlaceholder({ slot, preparingMessage: "Not enough history yet to show this month." }) ?? (data && (
+        <>
+        {slot.lagging && <div className="px-6 pb-3"><UpdatingNote /></div>}
+        <button
+          type="button"
+          onClick={open}
+          className={`w-full ${MODULE_BODY} text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C49A3C]/40`}
+        >
+          <FigRows
+            rows={[
+              data.monthStartValue !== 0 && { key: "pct", label: "Market effect", value: formatPct(data.mtdMarketEffectPct), tone: toneOfValue(data.mtdMarketEffect) },
+              { key: "money", label: data.monthStartValue !== 0 ? `Market effect, ${currency}` : "Market effect", value: formatSignedCurrency(data.mtdMarketEffect, currency), tone: toneOfValue(data.mtdMarketEffect) },
+              { key: "added", label: data.mtdNetCapitalContributed < 0 ? "Money withdrawn" : "Money added", value: formatCurrency(Math.abs(data.mtdNetCapitalContributed), currency, 0) },
+              { key: "start", label: "Start value", value: formatCurrency(data.monthStartValue, currency, 0) },
+              {
+                key: "today",
+                label: "Today",
+                value: data.previousDayValue !== 0 ? formatPct(data.dayMarketEffectPct) : formatSignedCurrency(data.dayMarketEffect, currency),
+                tone: toneOfValue(data.dayMarketEffect),
+              },
+            ]}
+          />
+        </button>
+        </>
+      ))}
+    </Module>
+  );
+}
+
+function MonthToDateBody({ data, currency, lagging, returnPct }: { data: InsightsThisMonthModule; currency: string; lagging: boolean; returnPct: number | null }) {
   const isDayGain = data.dayMarketEffect >= 0;
   const isMtdGain = data.mtdMarketEffect >= 0;
   // A day or month with no opening value has no percentage to show (see hasPeriodBaseline).
@@ -3839,13 +3881,20 @@ function MonthToDateBody({ data, currency, lagging }: { data: InsightsThisMonthM
   return (
     <>
       {lagging && <div className="px-6 md:px-7 pt-6"><UpdatingNote /></div>}
-      <div className="grid grid-cols-1 md:grid-cols-3 divide-y divide-slate-100 md:divide-y-0 md:divide-x">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y divide-slate-100 sm:divide-y-0 lg:divide-x">
         <StatContent
           title="Month Start Value"
           value={formatCurrency(data.monthStartValue, currency, 0)}
           icon={<Wallet className="h-4 w-4 text-blue-600" />}
           info="Market value at the close of last month."
           color="blue"
+        />
+        <StatContent
+          title="Return"
+          value={returnPct !== null ? formatPct(returnPct) : "—"}
+          icon={returnPct === null || returnPct >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-rose-600" />}
+          info={returnPct !== null ? "Time-weighted, month to date: unaffected by money added or withdrawn." : "Not available yet for this month."}
+          color={returnPct === null ? "slate" : returnPct >= 0 ? "emerald" : "red"}
         />
         <StatContent
           title="Market Move Today"
@@ -3906,8 +3955,8 @@ function MonthToDateBody({ data, currency, lagging }: { data: InsightsThisMonthM
 }
 
 /**
- * MONTH PAGE — a month opened from the returns heatmap, in place of the whole page, the month in
- * progress followed by how the market moved it day by day (MonthToDateModule) (the way back
+ * MONTH PAGE — a month opened from the returns heatmap, in place of the whole page; the month in
+ * progress opens on how the market moved it day by day (MonthToDateModule) instead (the way back
  * is the browser's back button): /insights/monthly/{YYYY-MM}, fetched by PerformanceSection so
  * its report link can sit at the top of the page. Its figures come from the same stored values as the
  * Performance section's history, so they're hidden while that's being rebuilt.
@@ -3942,8 +3991,10 @@ function MonthPage({
   return (
     <div className="space-y-6">
       {month.data.isStale && <UpdatingNote />}
-      <MonthDetail period={month.data} />
-      {month.data.inProgress && <MonthToDateModule slot={thisMonth} currency={currency} />}
+      {/* The month in progress opens on This Month, which says what its summary would, plus its
+          return; a closed month on its own summary. */}
+      {month.data.inProgress && <MonthToDateModule slot={thisMonth} currency={currency} returnPct={month.data.timeWeightedReturnPct} />}
+      <MonthDetail period={month.data} withSummary={!month.data.inProgress} />
     </div>
   );
 }
@@ -3958,7 +4009,7 @@ function MonthPage({
  * correlations behind it). A month opens from Performance's detail (see PerformanceSection).
  */
 function HistoryPage({
-  insights, performance, value, portfolioUuid, onSelectMonth, isAggregate,
+  insights, performance, value, portfolioUuid, onSelectMonth, isAggregate, onOpenPortfolio, comparison, backtest,
 }: {
   insights: Insights;
   // The Performance section, already loaded, and its value (PerformanceSection checks both).
@@ -3968,6 +4019,13 @@ function HistoryPage({
   onSelectMonth: (year: number, month: number) => void;
   // "All portfolios": Holdings and Risk then also show how the portfolios make it up.
   isAggregate: boolean;
+  // Opens one of the aggregate's portfolios (from the Composition).
+  onOpenPortfolio?: (uuid: string) => void;
+  comparison: PortfolioComparisonEntry | null;
+  // A strategy's backtest: a simulation, so only what it says about the strategy — its returns
+  // against the benchmark, its mix, what trading cost it at the costs set for it, its risk. Its
+  // gains, its month in progress, what it realized or was paid are simulated bookkeeping, left out.
+  backtest: boolean;
 }) {
   const { composition, incomeCosts, risk, timedOut } = insights;
   const currency = performance.currency;
@@ -4001,69 +4059,137 @@ function HistoryPage({
     />
   );
 
+  const compositionModule = (
+    <HoldingsExplorer
+      slot={own(composition, (d) => d.holdings)}
+      sector={composition.data?.sectorExposure ?? null}
+      region={composition.data?.regionExposure ?? null}
+      aggregate={aggregate}
+      currency={currency}
+      portfolioUuid={portfolioUuid}
+      onOpenPortfolio={onOpenPortfolio}
+    />
+  );
+  const valueModule = historyUpdating ? <Module><StaleUpdatingState /></Module> : (
+    <ValueModule value={value} currency={currency} comparison={comparison}>{performanceDetail}</ValueModule>
+  );
+  const volatilityModule = (
+    <VolatilityModule
+      slot={own(risk, (d) => d.volatility)}
+      portfolioUuid={portfolioUuid}
+      returnsRevision={insights.performance.revision}
+      aggregate={aggregate}
+      maxDrawdownPct={comparison?.performance?.maxDrawdownPct ?? null}
+    />
+  );
+  const updatingNote = !historyUpdating && performance.historyIsStale && <Tile><UpdatingNote /></Tile>;
+  const riskModel = <Tile id={moduleAnchor("risk")}><RiskModelModule slot={own(risk, (d) => d.frontier)} portfolioUuid={portfolioUuid} /></Tile>;
+
+  const tradingCosts = <TradingCostsModule slot={own(incomeCosts, (d) => d.tradingCosts)} currency={currency} portfolioUuid={portfolioUuid} />;
+
+  // A backtest leads with how the strategy did, then its mix beside what trading cost it (the
+  // costs the user set for it, totted up over the run), then its risk.
+  if (backtest) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-12 gap-[22px]">
+        {updatingNote}
+        <Tile id={moduleAnchor("value")}>{valueModule}</Tile>
+        <Tile span="wide" id={moduleAnchor("composition")}>{compositionModule}</Tile>
+        <Tile span="narrow" id={moduleAnchor("costs")}>{tradingCosts}</Tile>
+        <Tile id={moduleAnchor("volatility")}>{volatilityModule}</Tile>
+        {riskModel}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-12 gap-6">
-      <Tile>
-        <HoldingsExplorer
-          slot={own(composition, (d) => d.holdings)}
-          sector={composition.data?.sectorExposure ?? null}
-          region={composition.data?.regionExposure ?? null}
-          aggregate={aggregate}
+    <div className="grid grid-cols-2 lg:grid-cols-12 gap-[22px]">
+      {updatingNote}
+      <Tile id={moduleAnchor("value")}>{valueModule}</Tile>
+      <Tile span="wide" id={moduleAnchor("composition")}>{compositionModule}</Tile>
+      <Tile span="narrow">
+        {historyUpdating ? <Module><StaleUpdatingState /></Module> : (
+          <ThisMonthCard slot={slotOf(insights.performance, timedOut, (d) => d.thisMonth, (_, d) => d.historyIsStale)} currency={currency} onOpen={onSelectMonth} />
+        )}
+      </Tile>
+      {aggregate && (
+        <>
+          <Tile span="half"><PortfoliosMixModule slot={aggregate.portfolios} comovement={aggregate.comovement.module} currency={currency} /></Tile>
+          <Tile span="half"><PortfolioCorrelationModule slot={aggregate.comovement} members={aggregate.portfolios.module?.members ?? []} /></Tile>
+        </>
+      )}
+      {/* What was made, sold (realized, dividends) and still held (gains & losses), beside what
+          trading cost; then the risk. */}
+      <Tile span="narrow" id={moduleAnchor("realized")}>
+        <RealizedPnlModule
+          slot={own(incomeCosts, (d) => d.realizedPnl)}
           currency={currency}
           portfolioUuid={portfolioUuid}
         />
       </Tile>
-      <Tile><RealizedPnlModule slot={own(incomeCosts, (d) => d.realizedPnl)} currency={currency} portfolioUuid={portfolioUuid} /></Tile>
-      <Tile span="half"><DividendsModule slot={own(incomeCosts, (d) => d.dividends)} currency={currency} /></Tile>
-      <Tile span="half"><TradingCostsModule slot={own(incomeCosts, (d) => d.tradingCosts)} currency={currency} portfolioUuid={portfolioUuid} /></Tile>
-      {!historyUpdating && performance.historyIsStale && <Tile><UpdatingNote /></Tile>}
-      <Tile>
-        {historyUpdating ? <Module><StaleUpdatingState /></Module> : (
-          <ValueModule value={value} currency={currency}>{performanceDetail}</ValueModule>
-        )}
+      <Tile span="narrow">
+        <GainsLossesCard slot={own(composition, (d) => d.holdings)} currency={currency} />
       </Tile>
-      <Tile>
-        <VolatilityModule
-          slot={own(risk, (d) => d.volatility)}
-          portfolioUuid={portfolioUuid}
-          returnsRevision={insights.performance.revision}
-          aggregate={aggregate}
-        />
-      </Tile>
-      <Tile><RiskModelModule slot={own(risk, (d) => d.frontier)} portfolioUuid={portfolioUuid} /></Tile>
+      <Tile span="narrow" id={moduleAnchor("costs")}>{tradingCosts}</Tile>
+      <Tile id={moduleAnchor("volatility")}>{volatilityModule}</Tile>
+      {riskModel}
     </div>
   );
 }
 
 /**
- * VALUE MODULE — Performance on the page: the portfolio's value at each month end since
- * inception and today. Its detail (`children`, PerformanceDetail) holds the rest of Performance.
+ * PERFORMANCE MODULE — the portfolio's value over time, next to its returns: since inception
+ * (time-weighted), over the last 12 months and against its benchmark, from the comparison the
+ * header loads, and its value today. Opens the returns, the months and the benchmark.
  */
-function ValueModule({ value, currency, children }: { value: InsightsValueModule; currency: string; children: React.ReactNode }) {
+function ValueModule({ value, currency, comparison, children }: {
+  value: InsightsValueModule;
+  currency: string;
+  comparison: PortfolioComparisonEntry | null;
+  children: React.ReactNode;
+}) {
   const [exploring, setExploring] = useState(false);
+  const inception = comparison?.performance?.totalReturnPct ?? null;
+  const year = comparison?.performance?.horizons.find((h) => h.period === "1 Year")?.totalReturnPct ?? null;
+  const annualized = comparison?.performance?.annualizedReturnPct ?? null;
   return (
-    <>
-      <ChartCard
-        chart={value.chart}
-        currency={currency}
-        title="Portfolio Value"
-        desc="Market value at each month end since inception, and today. Open it for this month, the returns and the benchmark."
+    <Module>
+      <ModuleHead
+        title="Performance"
+        desc="Market value at each month end since inception, and today. Open it for the returns, the months and the benchmark."
         onExplore={() => setExploring(true)}
-        right={
-          <div className="sm:text-right shrink-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Value today</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums mt-1" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-              {formatCurrency(value.currentValue, currency, 0)}
-            </p>
-          </div>
-        }
       />
+      <div className={`${MODULE_BODY} grid grid-cols-1 @2xl:grid-cols-[auto_minmax(0,1fr)] gap-[22px] @2xl:gap-8 items-center`}>
+        {/* One column beside the chart on a wide card, side by side above it on a narrow one. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(110px,1fr))] @2xl:grid-cols-1 gap-x-5 gap-y-5 @2xl:min-w-[150px]">
+          {inception !== null && (
+            <Fig
+              label="TWR since inception"
+              value={formatPct(inception)}
+              tone={toneOfValue(inception)}
+              strong
+              info="Time-weighted return: how much one euro invested on the first day would have grown, compounding each period's return. Money you added or withdrew doesn't change it, and sales and dividends are included, so it measures the strategy, not the size of your deposits. That's the figure to compare with a benchmark."
+            />
+          )}
+          {year !== null && <Fig label="Last 12 months" value={formatPct(year)} tone={toneOfValue(year)} strong />}
+          {annualized !== null && (
+            <Fig
+              label="Per year"
+              value={formatPct(annualized)}
+              tone={toneOfValue(annualized)}
+              strong
+              info="Annualized time-weighted return: the steady yearly rate that would have compounded into the return since inception."
+            />
+          )}
+        </div>
+        <SnapshotChart chart={value.chart} currency={currency} className="h-[240px]" />
+      </div>
       {exploring && (
         <ExploreView title="Performance" onClose={() => setExploring(false)}>
           {children}
         </ExploreView>
       )}
-    </>
+    </Module>
   );
 }
 
