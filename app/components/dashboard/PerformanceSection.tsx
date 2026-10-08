@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink,
-  ChevronRight, Info, Maximize2,
+  ArrowUpRight, ChevronRight, Info,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Treemap,
@@ -275,7 +275,7 @@ export function PerformanceSection({
  */
 export function Module({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`group/module relative h-full bg-white rounded-[1.75rem] border border-[#EEE9DD] overflow-hidden transition-colors has-[[data-explore]]:hover:border-[#C49A3C]/60 ${className}`}>
+    <section className={`group/module relative h-full bg-white rounded-[1.75rem] border border-[#EEE9DD] overflow-hidden transition-colors has-[[data-explore]]:hover:border-[#C49A3C]/60 has-[[data-explore]]:hover:bg-[#FBFAF6] ${className}`}>
       {children}
     </section>
   );
@@ -422,7 +422,7 @@ export const moduleAnchor = (m: ModuleAnchor) => `module-${m}`;
 
 // The heading every module shares, as small as a label so the figures lead: its title in small
 // capitals, with `right` (a toggle, a headline figure) on the right. With `onExplore`, the module
-// has a detail view (ExploreView): the header opens it, and so does a round "expand" button pinned
+// has a detail view (ExploreView): the header opens it, and so does an arrow pinned
 // to the card's top right corner (ExpandButton), always in the same place whatever the header
 // holds; the whole card lights up on hover. Clicks on `right` stay its own (a breakdown's chips
 // switch the breakdown, they don't open the detail). `desc` says what the module shows, on hovering
@@ -448,8 +448,9 @@ export function ModuleHead({
   );
 }
 
-// The way into a module's detail view: a round gold button in the card's top right corner,
-// the same on every card.
+// The way into a module's detail view: a quiet arrow in the card's top right corner, the same
+// on every card, that turns gold as the card is hovered (the card's border and ground warm up
+// with it, see Module) so the figures keep the eye until the pointer is on the card.
 function ExpandButton({ title, onClick }: { title: string; onClick: () => void }) {
   return (
     <button
@@ -458,9 +459,9 @@ function ExpandButton({ title, onClick }: { title: string; onClick: () => void }
       onClick={onClick}
       aria-label={`Open ${title} in detail`}
       title="Open in detail"
-      className="absolute top-4 right-4 md:top-[18px] md:right-[18px] h-6 w-6 rounded-full flex items-center justify-center bg-[#C49A3C] text-white transition-colors hover:bg-[#A8822F] outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
+      className="absolute top-4 right-4 md:top-[18px] md:right-[18px] h-6 w-6 rounded-full flex items-center justify-center text-[#a8a29e] transition-colors group-hover/module:text-[#C49A3C] hover:bg-[#C49A3C]/10 outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40"
     >
-      <Maximize2 className="h-3 w-3" />
+      <ArrowUpRight className="h-4 w-4" />
     </button>
   );
 }
