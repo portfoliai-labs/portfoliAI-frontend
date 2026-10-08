@@ -3,10 +3,11 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   TrendingUp, TrendingDown, Wallet, CircleDollarSign, Activity,
   Loader2, AlertCircle, FileText, ExternalLink,
-  ArrowUpRight, ChevronRight, Info,
+  ArrowUpRight, ChevronLeft, ChevronRight, Info,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceDot, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Treemap,
@@ -1398,7 +1399,9 @@ interface CompositionItem {
  * donut beside a list of rows, the largest COMPOSITION_TOP and the rest as one "N more", and the
  * way down a level. By holding (by portfolio on "All portfolios"), where a slice or a row opens
  * that holding's page (AssetExplore) or that portfolio; and, to read only, by asset class, sector
- * and region (the look-through exposure). The module, and its "N more", open the whole of it
+ * and region (the look-through exposure). The breakdowns are a carousel that turns every 5
+ * seconds: under the body, on one line, the one shown and a dot for each between the steps to
+ * the previous and next; on touch the body swipes. The module, and its "N more", open the whole of it
  * (CompositionExplore).
  */
 function HoldingsExplorer({
@@ -1427,6 +1430,21 @@ function HoldingsExplorer({
   ];
   const [picked, setPicked] = useState<Breakdown | null>(null);
   const breakdown = picked && breakdowns.includes(picked) ? picked : breakdowns[0];
+  // Which way the last step went (1 forward, -1 back), for the body to slide in from that side.
+  const [direction, setDirection] = useState(1);
+  const breakdownIndex = breakdowns.indexOf(breakdown);
+  const pick = (b: Breakdown) => {
+    setDirection(breakdowns.indexOf(b) >= breakdownIndex ? 1 : -1);
+    setPicked(b);
+    setHovered(null);
+  };
+  // Steps around the breakdowns, wrapping at either end.
+  const step = (by: 1 | -1) => {
+    setDirection(by);
+    setPicked(breakdowns[(breakdownIndex + by + breakdowns.length) % breakdowns.length]);
+    setHovered(null);
+  };
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [exploring, setExploring] = useState(false);
   // The holding whose detail view (AssetExplore) is open. Rows without a ticker can't open one:
@@ -1494,21 +1512,64 @@ function HoldingsExplorer({
   const navigable = items.some((i) => i.onOpen);
   const isLast = (item: CompositionItem) => item === shown[shown.length - 1];
 
-  const chips = holdings.length > 0 && breakdowns.length > 1 && (
-    <div role="group" aria-label="Breakdown" className="flex flex-wrap gap-1.5">
-      {breakdowns.map((b) => (
-        <button
-          key={b}
-          type="button"
-          aria-pressed={b === breakdown}
-          onClick={() => { setPicked(b); setHovered(null); }}
-          className={`px-2.5 py-1 rounded-full border text-[11.5px] font-semibold transition-colors ${
-            b === breakdown ? "bg-[#1c1917] border-[#1c1917] text-white" : "border-[#E0DACC] text-[#78716c] hover:text-[#1c1917]"
-          }`}
-        >
-          {BREAKDOWN_LABELS[b]}
-        </button>
-      ))}
+  const carousel = holdings.length > 0 && breakdowns.length > 1;
+  const stepButton = "h-6 w-6 rounded-full flex items-center justify-center text-[#a8a29e] transition-colors hover:text-[#1c1917] hover:bg-[#F7F5EF] outline-none focus-visible:ring-2 focus-visible:ring-[#C49A3C]/40";
+  // Under the body, on one line: the breakdown shown and a dot for each, between the steps to
+  // the previous and next one. The active dot fills up over 5 seconds (composition-autoplay, in globals.css),
+  // and when it's full the carousel steps on (onAnimationEnd), so the timer and what it draws
+  // can't drift apart. It holds while the card is hovered or has the keyboard's focus (a click on
+  // a dot or an arrow leaves focus there, and mustn't stop it for good), or its detail is open, and
+  // never runs with reduced motion.
+  const paused = exploring || exploringAsset !== null;
+  const controls = carousel && (
+    <div
+      role="group"
+      aria-roledescription="carousel"
+      aria-label="Breakdown"
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+        if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+      }}
+      className="flex items-center justify-center gap-1"
+    >
+      <button type="button" onClick={() => step(-1)} aria-label="Previous breakdown" className={stepButton}>
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <div className="flex items-center gap-3 px-1">
+        <span className="min-w-[88px] text-right text-[11.5px] font-semibold text-[#1c1917]">{BREAKDOWN_LABELS[breakdown]}</span>
+        <div className="flex items-center gap-1.5">
+          {breakdowns.map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => pick(b)}
+              aria-label={BREAKDOWN_LABELS[b]}
+              aria-current={b === breakdown}
+              title={BREAKDOWN_LABELS[b]}
+              className="h-3 flex items-center outline-none group/dot"
+            >
+              <span
+                className={`relative block h-1.5 rounded-full overflow-hidden transition-all duration-300 group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-[#C49A3C]/40 ${
+                  b === breakdown ? "w-6 bg-[#EEE9DD]" : "w-1.5 bg-[#E0DACC] group-hover/dot:bg-[#a8a29e]"
+                }`}
+              >
+                {b === breakdown && (
+                  <span
+                    key={b}
+                    onAnimationEnd={() => step(1)}
+                    className={`absolute inset-0 origin-left bg-[#C49A3C] motion-safe:animate-composition-autoplay group-hover/module:[animation-play-state:paused] group-has-[:focus-visible]/module:[animation-play-state:paused] ${
+                      paused ? "[animation-play-state:paused]" : ""
+                    }`}
+                  />
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <button type="button" onClick={() => step(1)} aria-label="Next breakdown" className={stepButton}>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 
@@ -1517,7 +1578,6 @@ function HoldingsExplorer({
       <ModuleHead
         title="Composition"
         desc={navigable ? "Open a slice or a row to go down a level. Open the module for everything it's made of." : "A breakdown to read: the holdings and portfolios open from the first view. Open the module for everything it's made of."}
-        right={chips}
         onExplore={holdings.length > 0 ? () => setExploring(true) : undefined}
       />
       {SlotPlaceholder({ slot, preparingMessage: PREPARING_TICK }) ?? (holdings.length === 0 ? (
@@ -1529,8 +1589,33 @@ function HoldingsExplorer({
           <p className="text-slate-400 text-sm mt-1">Upload or add transactions to see your holdings here.</p>
         </div>
       ) : (
-        <div className={`flex-1 flex flex-col justify-center gap-3 ${MODULE_BODY}`}>
-          <div className="grid grid-cols-1 @md:grid-cols-[minmax(0,170px)_minmax(0,1fr)] @2xl:grid-cols-[210px_minmax(0,1fr)] gap-5 @2xl:gap-[26px] items-center">
+        <div
+          className={`flex-1 flex flex-col justify-center gap-3 overflow-hidden ${MODULE_BODY}`}
+          // On touch, a sideways swipe over the body steps the carousel.
+          onTouchStart={carousel ? (e) => { touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; } : undefined}
+          onTouchEnd={carousel ? (e) => {
+            const start = touchStart.current;
+            touchStart.current = null;
+            if (!start) return;
+            const dx = e.changedTouches[0].clientX - start.x;
+            const dy = e.changedTouches[0].clientY - start.y;
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+          } : undefined}
+        >
+          <AnimatePresence mode="wait" initial={false} custom={direction}>
+          <motion.div
+            key={breakdown}
+            custom={direction}
+            variants={{
+              enter: (d: number) => ({ x: d * 24, opacity: 0 }),
+              center: { x: 0, opacity: 1 },
+              exit: (d: number) => ({ x: d * -24, opacity: 0 }),
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="grid grid-cols-1 @md:grid-cols-[minmax(0,170px)_minmax(0,1fr)] @2xl:grid-cols-[210px_minmax(0,1fr)] gap-5 @2xl:gap-[26px] items-center">
             <div className="relative w-full max-w-[210px] aspect-square mx-auto">
               <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 210, height: 210 }}>
                 <PieChart>
@@ -1599,7 +1684,9 @@ function HoldingsExplorer({
                 );
               })}
             </ul>
-          </div>
+          </motion.div>
+          </AnimatePresence>
+          {controls}
         </div>
       ))}
 
