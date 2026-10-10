@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Bell, Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useUser } from "../../context/UserContext";
 import { portfoliosService } from "../../services/portfoliosService";
@@ -12,6 +12,7 @@ import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { VIRTUAL_COLOR, VirtualBadge } from "./BacktestMarks";
+import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import type { Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
@@ -21,16 +22,22 @@ const createdLabel = (iso: string) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
 /**
- * MANAGE PORTFOLIOS — Manage / Investments / Manage portfolios: every portfolio the user can
+ * MANAGE PORTFOLIOS — All portfolios / Manage portfolios (see WealthSection): every portfolio the user can
  * change, in one list, to rename (right on its row), delete (asking first) or open, and the way to
  * create one. The real portfolios first, the default leading (it can't be deleted: the backend
  * answers 409), then the strategies' backtests. "All portfolios" isn't listed: it's built from the
  * others and can be neither renamed nor deleted, which a line under the list says. Values come
- * from GET /v1/portfolios/comparison, like the hub's. A demo account sees the list but can't change
- * anything.
+ * from GET /v1/portfolios/comparison, like the hub's. A real portfolio's row counts its alerts (an
+ * adopted strategy's included) and leads to them (`onOpenAlerts`: its Alerts tab). Backtests are adopted
+ * from Plan / Strategy. A demo account sees the list but can't change anything.
  */
-export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; onOpenPortfolio: (uuid: string) => void }) {
-  const { portfolios, deletePortfolio } = usePortfolio();
+export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
+  trail: Crumb[];
+  onOpenPortfolio: (uuid: string) => void;
+  // That portfolio's alerts page.
+  onOpenAlerts: (uuid: string) => void;
+}) {
+  const { portfolios, deletePortfolio, client, canManage } = usePortfolio();
   const { isDemo } = useUser();
   const [creating, setCreating] = useState(false);
   const [toDelete, setToDelete] = useState<Portfolio | null>(null);
@@ -42,16 +49,17 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
   const [entries, setEntries] = useState<{ key: string; byUuid: Map<string, PortfolioComparisonEntry> }>({ key: "", byUuid: new Map() });
   useEffect(() => {
     let cancelled = false;
-    portfoliosService.compare()
+    portfoliosService.compare([], client?.uuid)
       .then((list) => { if (!cancelled) setEntries({ key: uuidsKey, byUuid: new Map(list.map((e) => [e.portfolio.uuid, e])) }); })
       .catch(() => { if (!cancelled) setEntries({ key: uuidsKey, byUuid: new Map() }); });
     return () => { cancelled = true; };
-  }, [uuidsKey]);
+  }, [uuidsKey, client?.uuid]);
   const loaded = entries.key === uuidsKey;
 
   const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
   const backtests = portfolios.filter((p) => p.isVirtual && !p.isAggregate);
   const hasAggregate = portfolios.some((p) => p.isAggregate);
+  const { rules } = usePortfoliosAlertRules(real.map((p) => p.uuid));
 
   const handleDelete = async () => {
     if (!toDelete) return;
@@ -74,6 +82,10 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
       color={color}
       entry={loaded ? entries.byUuid.get(p.uuid) ?? null : undefined}
       readOnly={isDemo}
+      manageable={canManage}
+      // Backtests take no alerts; undefined while they load.
+      alertCount={p.isVirtual || rules === null ? undefined : rules.filter((r) => r.portfolioUuid === p.uuid).length}
+      onOpenAlerts={() => onOpenAlerts(p.uuid)}
       onOpen={() => onOpenPortfolio(p.uuid)}
       onDelete={() => setToDelete(p)}
     />
@@ -100,7 +112,9 @@ export function ManagePortfolios({ trail, onOpenPortfolio }: { trail: Crumb[]; o
 
       <ManageGroup
         title="Portfolios"
-        note={`${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · the default one can be renamed, not deleted`}
+        note={canManage
+          ? `${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · the default one can be renamed, not deleted`
+          : `${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · ${client?.name} renames and deletes them`}
       >
         {real.map((p) => row(p, colorOf(p.uuid)))}
       </ManageGroup>
@@ -154,17 +168,21 @@ function ManageGroup({ title, note, tone, children }: { title: string; note?: st
 
 /**
  * One portfolio in the list: its colour and name (which Rename turns into a field, saved on Enter
- * or the tick), its value and when it was created, then Open, Rename and Delete. The default
- * portfolio's Delete is disabled, with why.
+ * or the tick), its alerts (a pill leading to them), its value and when it was created,
+ * then Open, Rename and Delete. The default portfolio's Delete is disabled,
+ * with why. Without `manageable` (a client's, for their advisor), Open only.
  */
 function ManageRow({
-  portfolio, color, entry, readOnly, onOpen, onDelete,
+  portfolio, color, entry, readOnly, manageable, alertCount, onOpenAlerts, onOpen, onDelete,
 }: {
   portfolio: Portfolio;
   color: string;
   // undefined while loading, null when there are no figures yet.
   entry: PortfolioComparisonEntry | null | undefined;
   readOnly: boolean;
+  manageable: boolean;
+  alertCount?: number;
+  onOpenAlerts: () => void;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -225,6 +243,17 @@ function ManageRow({
                 <span className="shrink-0 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500">Default</span>
               )}
               {portfolio.isVirtual && <VirtualBadge portfolio={portfolio} />}
+              {alertCount !== undefined && (
+                <button
+                  type="button"
+                  onClick={onOpenAlerts}
+                  title={`${portfolio.name}'s alerts`}
+                  className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-500 hover:border-[#C49A3C]/60 hover:text-[#C49A3C] transition-colors"
+                >
+                  <Bell className="h-2.5 w-2.5" />
+                  {alertCount === 0 ? "No alerts" : `${alertCount} ${alertCount === 1 ? "alert" : "alerts"}`}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -249,6 +278,7 @@ function ManageRow({
               <button type="button" onClick={onOpen} aria-label={`Open ${portfolio.name}`} title="Open" className={`${iconButton} text-slate-400 hover:text-slate-900 hover:bg-slate-100`}>
                 <ArrowUpRight className="h-4 w-4" />
               </button>
+              {manageable && <>
               <button
                 type="button"
                 onClick={startRename}
@@ -269,6 +299,7 @@ function ManageRow({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+              </>}
             </>
           )}
         </div>

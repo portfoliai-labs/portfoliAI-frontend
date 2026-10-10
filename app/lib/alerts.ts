@@ -1,7 +1,15 @@
-import type { AlertParams, AlertRuleResponse, AlertWindow } from "../models/Alert";
+import type { AlertParams, AlertRuleResponse, AlertWindow, WeightSelector } from "../models/Alert";
+import { STRATEGY_CATEGORY_LABELS, type StrategyCategory } from "../models/Strategy";
 
-// The backend caps a user at 20 rules (a 409 beyond that).
+// The backend caps the rules made by hand at 20 per portfolio (a 409 beyond that); those an
+// adopted strategy keeps don't count.
 export const ALERT_RULE_LIMIT = 20;
+
+/** Whether an adopted strategy keeps the rule: its params and its existence aren't the user's to change. */
+export const isKept = (rule: Pick<AlertRuleResponse, "source">) => rule.source != null;
+
+/** A category as shown: its label for a known one, the backend's own wording otherwise. */
+export const categoryLabel = (category: string) => STRATEGY_CATEGORY_LABELS[category as StrategyCategory] ?? category;
 
 // From this share of the way to the threshold a rule reads as "approaching". The backend has no
 // notion of "near" (it only says whether the condition holds), so this cut-off is the frontend's.
@@ -33,9 +41,10 @@ export interface AlertState {
 /**
  * The state of a rule, worked out from what the backend sends: a disabled rule is "off" (its
  * reading is stale, so it's ignored); no reading yet is "pending"; an unmeasurable one is
- * "unavailable"; isTriggered means it fired and still holds; `breached` alone means the condition
- * holds but hasn't yet held for two checks; otherwise it's "approaching" from
- * APPROACHING_FROM_PCT of the way to the threshold, and "ok" below that.
+ * "unavailable"; isTriggered means the condition holds and has held for two checks (or held at
+ * the first check, which never notifies); `breached` alone means it holds but not for two checks
+ * yet; otherwise it's "approaching" from APPROACHING_FROM_PCT of the way to the threshold, and "ok"
+ * below that. A weight rule outside its range says just that, where the portfolio stands.
  */
 export function alertState(rule: AlertRuleResponse): AlertState {
   const reading = rule.reading;
@@ -46,12 +55,20 @@ export function alertState(rule: AlertRuleResponse): AlertState {
   if (reading.status === "unavailable") return { kind: "unavailable", label: "Not enough history", tone: "muted", ...base };
 
   const progressPct = reading.progressPct;
-  if (rule.isTriggered) return { kind: "triggered", label: "Triggered", tone: "danger", progressPct, breached: true };
-  if (reading.breached) return { kind: "reached", label: "Threshold reached", tone: "danger", progressPct, breached: true };
+  const weight = rule.params.type === "weight";
+  if (rule.isTriggered) return { kind: "triggered", label: weight ? "Outside your range" : "Triggered", tone: "danger", progressPct, breached: true };
+  if (reading.breached) return { kind: "reached", label: weight ? "Outside your range" : "Threshold reached", tone: "danger", progressPct, breached: true };
   if (progressPct !== null && progressPct >= APPROACHING_FROM_PCT) {
     return { kind: "approaching", label: "Approaching", tone: "warn", progressPct, breached: false };
   }
   return { kind: "ok", label: "Within range", tone: "ok", progressPct, breached: false };
+}
+
+/** A weight range in words: "35–45%", "at least 5%", "at most 40%". */
+export function formatRange(minPct: number | null | undefined, maxPct: number | null | undefined): string {
+  if (minPct != null && maxPct != null) return `${Number(minPct.toFixed(2))}–${formatAlertPct(maxPct)}`;
+  if (minPct != null) return `at least ${formatAlertPct(minPct)}`;
+  return maxPct != null ? `at most ${formatAlertPct(maxPct)}` : "";
 }
 
 /**
@@ -68,13 +85,33 @@ export function describeAlert(rule: AlertRuleResponse, clientName?: string): { t
     };
   }
 
-  const assetLabel = params.assetId === null ? "Any asset" : reading?.ticker ?? reading?.assetName ?? "Selected asset";
-  return {
-    title: `${assetLabel} above ${formatAlertPct(params.thresholdPct)}`,
-    subtitle: params.assetId === null && reading?.ticker
-      ? `Heaviest now: ${reading.ticker}`
-      : `Share of ${clientName ? `${clientName}'s` : "your"} portfolio`,
-  };
+  const { selector } = params;
+  const range = formatRange(params.minPct, params.maxPct);
+  const share = `share of ${clientName ? `${clientName}'s` : "your"} portfolio`;
+  switch (selector.kind) {
+    case "any_asset":
+      return {
+        title: `Any single holding ${range}`,
+        subtitle: reading?.ticker ? `Heaviest now: ${reading.ticker}` : `Each holding's ${share}`,
+      };
+    case "asset":
+      return {
+        title: `${reading?.ticker ?? reading?.assetName ?? selector.assetId} ${range}`,
+        subtitle: `Its ${share}`,
+      };
+    case "category":
+      return {
+        title: `${categoryLabel(selector.category)} ${range}`,
+        subtitle: `The securities in this asset class, combined ${share}`,
+      };
+    case "group": {
+      const count = selector.assetIds.length === 1 ? "1 security" : `${selector.assetIds.length} securities`;
+      return {
+        title: `${selector.label || count} ${range}`,
+        subtitle: `${selector.label ? `${count}, combined` : "Combined"} ${share}`,
+      };
+    }
+  }
 }
 
 /** "Now" and "limit" figures for the gauge, or null when the rule has no measurement to show. */
@@ -83,12 +120,27 @@ export function alertFigures(rule: AlertRuleResponse): { current: string; limit:
   if (!rule.enabled || reading === null || reading.status !== "ok") return null;
   if (reading.currentValue === null || reading.thresholdValue === null) return null;
 
-  // portfolio_change readings are signed (a fall is negative); asset weights are plain shares.
-  const signed = rule.params.type === "portfolio_change";
+  // portfolio_change readings are signed (a fall is negative); weights are plain shares, against
+  // the end of the range they're measured to.
+  if (rule.params.type === "portfolio_change") {
+    return { current: formatAlertPct(reading.currentValue, true), limit: formatAlertPct(reading.thresholdValue, true) };
+  }
+  const limit = formatAlertPct(reading.thresholdValue);
   return {
-    current: formatAlertPct(reading.currentValue, signed),
-    limit: formatAlertPct(reading.thresholdValue, signed),
+    current: formatAlertPct(reading.currentValue),
+    limit: reading.bound === "min" ? `min ${limit}` : reading.bound === "max" ? `max ${limit}` : limit,
   };
+}
+
+/** What a weight selector picks, in words: "Bonds", "VWCE", "Core", "any single holding". */
+export function selectorLabel(selector: WeightSelector, assetLabel?: string): string {
+  switch (selector.kind) {
+    case "any_asset": return "any single holding";
+    case "asset": return assetLabel ?? "the selected security";
+    case "category": return categoryLabel(selector.category);
+    case "group":
+      return selector.label || `${selector.assetIds.length === 1 ? "1 security" : `${selector.assetIds.length} securities`} together`;
+  }
 }
 
 /**
@@ -102,8 +154,12 @@ export function describeParams(params: AlertParams, assetLabel?: string, clientN
     const verb = params.direction === "down" ? "falls" : "rises";
     return `Notify me when the result of ${portfolio} ${verb} by ${formatAlertPct(params.thresholdPct)} or more over ${WINDOW_LABEL[params.window]}.`;
   }
-  const subject = params.assetId === null ? "any single holding" : assetLabel ?? "the selected asset";
-  return `Notify me when ${subject} is above ${formatAlertPct(params.thresholdPct)} of ${portfolio}.`;
+  const subject = selectorLabel(params.selector, assetLabel);
+  const { minPct, maxPct } = params;
+  const where = minPct != null && maxPct != null
+    ? `below ${formatAlertPct(minPct)} or above ${formatAlertPct(maxPct)}`
+    : minPct != null ? `below ${formatAlertPct(minPct)}` : `above ${formatAlertPct(maxPct ?? 0)}`;
+  return `Notify me when ${subject} is ${where} of ${portfolio}.`;
 }
 
 /**
@@ -130,8 +186,19 @@ export function sameParams(a: AlertParams, b: AlertParams): boolean {
   if (a.type === "portfolio_change" && b.type === "portfolio_change") {
     return a.direction === b.direction && a.window === b.window && a.thresholdPct === b.thresholdPct;
   }
-  if (a.type === "asset_weight" && b.type === "asset_weight") {
-    return a.assetId === b.assetId && a.thresholdPct === b.thresholdPct;
+  if (a.type === "weight" && b.type === "weight") {
+    return a.minPct === b.minPct && a.maxPct === b.maxPct && sameSelector(a.selector, b.selector);
   }
   return false;
+}
+
+function sameSelector(a: WeightSelector, b: WeightSelector): boolean {
+  if (a.kind === "asset" && b.kind === "asset") return a.assetId === b.assetId;
+  if (a.kind === "category" && b.kind === "category") return a.category === b.category;
+  if (a.kind === "group" && b.kind === "group") {
+    return (a.label ?? null) === (b.label ?? null)
+      && a.assetIds.length === b.assetIds.length
+      && a.assetIds.every((id) => b.assetIds.includes(id));
+  }
+  return a.kind === "any_asset" && b.kind === "any_asset";
 }

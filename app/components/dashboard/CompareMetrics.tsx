@@ -7,7 +7,7 @@ import { formatCurrency } from "../../lib/format";
 import { Module, ModuleHead, formatPct } from "./CompareCharts";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 
-const HORIZONS = ["1 Month", "6 Months", "1 Year", "3 Years"];
+const HORIZONS = ["1 Month", "6 Months", "1 Year", "3 Years", "5 Years", "10 Years"];
 
 type Better = "higher" | "lower";
 

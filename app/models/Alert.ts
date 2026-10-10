@@ -1,9 +1,11 @@
 // models/Alert.ts
 //
-// Types for the alert rules under /v1/alerts/rules (backend branch feature/user-alerts,
-// schemas AlertRuleResponse / AlertRuleCreateRequest / AlertRuleUpdateRequest). Every key of a
-// response is always present; a value that doesn't apply is `null`. Every threshold is a
-// percentage (5 = 5%) — there are no absolute-value thresholds, and no per-category alerts.
+// Types for the alert rules under /v1/portfolios/{p}/alert-rules (schemas AlertRuleResponse /
+// AlertRuleCreateRequest / AlertRuleUpdateRequest). Every key of a response is always present; a
+// value that doesn't apply is `null`. Every threshold is a percentage (5 = 5%): there are no
+// absolute-value thresholds.
+
+import type { StrategyCategory } from "./Strategy";
 
 type AlertDirection = "up" | "down";
 
@@ -20,15 +22,46 @@ interface PortfolioChangeParams {
   window: AlertWindow;
 }
 
-// An asset's weight in the portfolio is strictly above thresholdPct (> 0 and <= 100).
-// assetId is a holdings assetId; null means any held asset.
-interface AssetWeightParams {
-  type: "asset_weight";
-  thresholdPct: number;
-  assetId: string | null;
+// What a weight rule weighs. `asset`: one security, by its holdings assetId. `group`: 1–50
+// holdings assetIds weighed together (those not held count as 0), `label` the user's own name for
+// it. `category`: the held securities of that category, as the user's asset categories have it
+// (models/AssetCategory). `any_asset`: each holding on its own, the heaviest one measured.
+interface AssetSelector {
+  kind: "asset";
+  assetId: string;
 }
 
-type AlertParams = PortfolioChangeParams | AssetWeightParams;
+interface GroupSelector {
+  kind: "group";
+  assetIds: string[];
+  label: string | null;
+}
+
+interface CategorySelector {
+  kind: "category";
+  category: StrategyCategory;
+}
+
+interface AnyAssetSelector {
+  kind: "any_asset";
+}
+
+type WeightSelector = AssetSelector | GroupSelector | CategorySelector | AnyAssetSelector;
+
+// The share of the portfolio the selector picks is below minPct or above maxPct: at least one is
+// set, both > 0 and <= 100, min < max. `any_asset` takes a maxPct only.
+interface WeightParams {
+  type: "weight";
+  selector: WeightSelector;
+  minPct: number | null;
+  maxPct: number | null;
+}
+
+type AlertParams = PortfolioChangeParams | WeightParams;
+
+// A weight reading: which end of the range its thresholdValue is. For "min", progressPct grows
+// as the weight falls toward the minimum.
+type WeightBound = "min" | "max";
 
 type AlertReadingStatus = "ok" | "unavailable";
 
@@ -48,10 +81,12 @@ interface AlertRuleReading {
   currentValue: number | null;
   thresholdValue: number | null;
   progressPct: number | null;
-  // asset_weight: which asset the reading is about (the heaviest one for "any asset").
+  // A weight rule on one asset: which asset the reading is about (the heaviest one for any_asset).
   assetId: string | null;
   assetName: string | null;
   ticker: string | null;
+  // A weight rule's: the end of its range the reading is measured against.
+  bound: WeightBound | null;
   // portfolio_change: the P&L move in `currency`, and the day it is measured against.
   pnlChange: number | null;
   currency: string | null;
@@ -71,6 +106,11 @@ interface AlertRuleResponse {
   // null = just created / changed / re-enabled, waiting for its first check (within ~5 min).
   // A disabled rule isn't re-checked, so its reading goes stale: ignore it while enabled is false.
   reading: AlertRuleReading | null;
+  // Non-null: the rule is kept by something else, a strategy adopted on the portfolio
+  // ("adoption:<id>", models/AdoptedStrategy). Only its channels and `enabled` change by hand: a
+  // PATCH with params, or a DELETE, is a 409 KeptAlertRuleOperationError. It changes with the
+  // adoption.
+  source: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,7 +139,8 @@ interface AlertRuleUpdateRequest {
 }
 
 export type {
-  AlertDirection, AlertWindow, PortfolioChangeParams, AssetWeightParams, AlertParams,
+  AlertDirection, AlertWindow, PortfolioChangeParams, AssetSelector, GroupSelector, CategorySelector, AnyAssetSelector,
+  WeightSelector, WeightParams, AlertParams, WeightBound,
   AlertReadingStatus, AlertUnavailableReason, AlertRuleReading, AlertRuleResponse,
   ClientAlertRuleResponse, AlertRuleCreateRequest, AlertRuleUpdateRequest,
 };

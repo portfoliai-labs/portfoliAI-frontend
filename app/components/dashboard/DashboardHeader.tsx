@@ -23,9 +23,11 @@ interface DashboardHeaderProps {
   isMenuOpen?: boolean;
   subscriptionTier?: SubscriptionTier | null;
   onNavigate?: (section: string) => void;
+  // A section on one of its pages (a notification's link), as the Sidebar's rows open them.
+  onOpenPage?: (section: string, view: unknown) => void;
 }
 
-export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscriptionTier, onNavigate }: DashboardHeaderProps) {
+export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscriptionTier, onNavigate, onOpenPage }: DashboardHeaderProps) {
   const {
     notifications,
     hasUnread,
@@ -134,6 +136,7 @@ export function DashboardHeader({ onLogout, onMenuToggle, isMenuOpen, subscripti
               isLoading={isLoading}
               onClose={() => setIsPanelOpen(false)}
               onDismissAll={() => { dismissAll(); setIsPanelOpen(false); }}
+              onOpenPage={onOpenPage ? (section, view) => { setIsPanelOpen(false); onOpenPage(section, view); } : undefined}
             />
           )}
         </div>

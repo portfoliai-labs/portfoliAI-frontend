@@ -1,4 +1,4 @@
-// SAMPLE DATA for a demo account's Alerts (Manage / Investments / Alerts, see AlertsSettings): a
+// SAMPLE DATA for a demo account's Alerts (a portfolio's Alerts tab, see AlertsSettings): a
 // demo account is read only, so it can't create rules of its own, and this shows what the page
 // looks like with some, grouped by portfolio. Made-up rules in every state (triggered,
 // approaching, within range, off), put on up to two of its portfolios that have none. Never sent
@@ -24,6 +24,7 @@ const reading = (r: Partial<AlertRuleReading>): AlertRuleReading => ({
   assetId: null,
   assetName: null,
   ticker: null,
+  bound: null,
   pnlChange: null,
   currency: "EUR",
   referenceDate: null,
@@ -49,13 +50,17 @@ const SAMPLES: Sample[][] = [
       lastTriggeredAt: "2026-09-28T14:10:00Z",
     },
     {
-      params: { type: "asset_weight", thresholdPct: 25, assetId: null },
-      reading: reading({ currentValue: 21.4, thresholdValue: 25, progressPct: 86, assetName: "iShares Core MSCI World", ticker: "SWDA" }),
+      params: { type: "weight", selector: { kind: "any_asset" }, minPct: null, maxPct: 25 },
+      reading: reading({ currentValue: 21.4, thresholdValue: 25, progressPct: 86, assetName: "iShares Core MSCI World", ticker: "SWDA", bound: "max" }),
     },
     {
       params: { type: "portfolio_change", direction: "up", thresholdPct: 10, window: "month" },
       reading: reading({ currentValue: 2.1, thresholdValue: 10, progressPct: 21, pnlChange: 780, referenceDate: "2026-08-30" }),
       notifyEmail: false,
+    },
+    {
+      params: { type: "weight", selector: { kind: "category", category: "bonds" }, minPct: 20, maxPct: 40 },
+      reading: reading({ currentValue: 23.5, thresholdValue: 20, progressPct: 45, bound: "min" }),
     },
   ],
   [
@@ -64,8 +69,8 @@ const SAMPLES: Sample[][] = [
       reading: reading({ currentValue: -0.4, thresholdValue: -3, progressPct: 13, pnlChange: -95, referenceDate: "2026-09-28" }),
     },
     {
-      params: { type: "asset_weight", thresholdPct: 40, assetId: null },
-      reading: reading({ currentValue: 31, thresholdValue: 40, progressPct: 78, assetName: "Apple Inc.", ticker: "AAPL" }),
+      params: { type: "weight", selector: { kind: "any_asset" }, minPct: null, maxPct: 40 },
+      reading: reading({ currentValue: 31, thresholdValue: 40, progressPct: 78, assetName: "Apple Inc.", ticker: "AAPL", bound: "max" }),
       enabled: false,
     },
   ],
@@ -84,6 +89,7 @@ export function sampleAlertRules(portfolioUuids: string[]): PortfolioAlertRule[]
       isTriggered: s.isTriggered ?? false,
       lastTriggeredAt: s.lastTriggeredAt ?? null,
       reading: s.reading,
+      source: null,
       createdAt: "2026-06-01T09:00:00Z",
       updatedAt: "2026-06-01T09:00:00Z",
     })),

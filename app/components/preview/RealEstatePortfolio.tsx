@@ -9,7 +9,7 @@ import {
 import { BellRing, Building2, Calculator, Download, FileSearch, FileText, Home, Landmark, MapPin, Plus, Receipt, Sparkles, TrendingUp } from "lucide-react";
 import { Breadcrumb, type Crumb } from "../dashboard/Breadcrumb";
 import { DataTable, type DataColumn } from "../dashboard/ExploreView";
-import { ActionCard } from "../dashboard/InsightsHub";
+import { ActionCard } from "../dashboard/ActionCard";
 import { Toggle } from "../dashboard/Toggle";
 import { formatCompact, formatCurrency } from "../../lib/format";
 import { CATEGORICAL_PALETTE } from "../../lib/chartColors";
