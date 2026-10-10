@@ -13,7 +13,10 @@ import { usePortfoliosAlertRules } from "../../hooks/useAlertRules";
 import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { formatCurrency } from "../../lib/format";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
-import { PLAN_SECTION, WEALTH_SECTION, openPlanPage } from "../../lib/dashboardNav";
+import { PLAN_SECTION, WEALTH_SECTION, openClientPage, openPlanPage } from "../../lib/dashboardNav";
+import { useMyPublications } from "../../hooks/useMyPublications";
+import { publicationService } from "../../services/publicationService";
+import { PublishStrategyDialog } from "./PublishStrategyDialog";
 import { investmentsOf, isBacktest, type Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 import { PerformanceSection, Module, ModuleHead, MODULE_BODY, Figs, Fig, HBars } from "./PerformanceSection";
@@ -59,7 +62,8 @@ export type WealthView =
   // A sample real estate portfolio; a demo account's preview.
   | { kind: "realEstate"; page: RealEstatePage };
 
-const SECTION = WEALTH_SECTION;
+const NO_SCOPE: Record<string, string> = {};
+const NO_TRAIL: Crumb[] = [];
 const PORTFOLIO_PAGES: PortfolioPage[] = ["overview", "transactions", "alerts", "reports", "compare", "portfolios", "categories", "strategy"];
 const PAGE_LABELS: Record<Exclude<PortfolioPage, "overview">, string> = {
   transactions: "Transactions",
@@ -71,10 +75,18 @@ const PAGE_LABELS: Record<Exclude<PortfolioPage, "overview">, string> = {
   strategy: "Strategy",
 };
 
-/** The page the current history entry was on, read for this account. */
-function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
+// The fields every view of one Wealth carries, beside its own: a client's (`{ client }`).
+type WealthScope = Record<string, string>;
+
+const inScope = (view: unknown, scope: WealthScope) =>
+  typeof view === "object" && view !== null && Object.entries(scope).every(([k, v]) => (view as Record<string, unknown>)[k] === v);
+
+/** The page the current history entry was on, read for this account (and this scope). */
+function viewFromHistory(isDemo: boolean, portfolios: Portfolio[], section: string, scope: WealthScope): WealthView {
   const entry = readDashboardEntry();
-  const view = (entry?.section === SECTION ? entry.view : undefined) as (WealthView | { kind: string; [k: string]: unknown }) | undefined;
+  const raw = entry?.section === section && inScope(entry.view, scope) ? entry.view : undefined;
+  // A scope's own fields alone (a client opened on no page) are no page.
+  const view = (raw && "kind" in (raw as object) ? raw : undefined) as (WealthView | { kind: string; [k: string]: unknown }) | undefined;
   const investments = investmentsOf(portfolios);
   const top: WealthView = isDemo ? { kind: "root" } : { kind: "portfolio", uuid: investments?.uuid ?? "", page: "overview" };
   if (!view) return top;
@@ -83,9 +95,12 @@ function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
       return top;
     case "portfolio": {
       const v = view as { uuid?: string; page?: string; simulation?: unknown };
-      if (!portfolios.some((p) => p.uuid === v.uuid)) return top;
       // A portfolio had tabs (`tab`), then Insights as its first page, before its own page.
       const page = PORTFOLIO_PAGES.includes(v.page as PortfolioPage) ? (v.page as PortfolioPage) : "overview";
+      // No portfolio named (""): the investments, on that page (a link from outside, which
+      // doesn't know which portfolio stands for them).
+      if (v.uuid === "" && investments) return { kind: "portfolio", uuid: investments.uuid, page };
+      if (!portfolios.some((p) => p.uuid === v.uuid)) return top;
       return page === "strategy" && typeof v.simulation === "string"
         ? { kind: "portfolio", uuid: v.uuid!, page, simulation: v.simulation }
         : { kind: "portfolio", uuid: v.uuid!, page };
@@ -130,19 +145,33 @@ function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
  *
  * Every page is a browser history entry, so back and forward move between them (see
  * lib/dashboardHistory). Opening a portfolio also makes it the selected one (PortfolioContext).
+ *
+ * An advisor's client's Wealth is the same pages (see ClientsSection): in the Clients section, each
+ * view carrying the client (`scope`), under the client's crumbs (`rootTrail`), on that client's
+ * portfolios (a PortfolioProvider of theirs), with no previews.
  */
-export function WealthSection({ onNavigate }: { onNavigate: (section: string) => void }) {
-  const { portfolios, selectPortfolio } = usePortfolio();
-  const { isDemo } = useUser();
-  const [view, setView] = useState<WealthView>(() => viewFromHistory(isDemo, portfolios));
+export function WealthSection({ onNavigate, section = WEALTH_SECTION, scope = NO_SCOPE, rootTrail: outerTrail = NO_TRAIL, extraActions }: {
+  onNavigate: (section: string) => void;
+  section?: string;
+  scope?: WealthScope;
+  rootTrail?: Crumb[];
+  // Added to the investments' actions: a client's own (their settings).
+  extraActions?: PageAction[];
+}) {
+  const { portfolios, selectPortfolio, client } = usePortfolio();
+  const { isDemo: demoAccount } = useUser();
+  // The previews (Wealth itself, wallets, real estate) are a demo account's own Wealth's only.
+  const isDemo = demoAccount && !client;
+  const [view, setView] = useState<WealthView>(() => viewFromHistory(isDemo, portfolios, section, scope));
 
   useEffect(() => {
     // Record the page it opened on, so the Sidebar marks it.
     const entry = readDashboardEntry();
-    if (entry?.section === SECTION && !entry.view) pushDashboardEntry({ section: SECTION, view }, true);
+    if (entry?.section === section && !(entry.view && "kind" in (entry.view as object))) pushDashboardEntry({ section, view: { ...scope, ...view } }, true);
     const onPopState = () => {
-      if (readDashboardEntry()?.section !== SECTION) return;
-      const next = viewFromHistory(isDemo, portfolios);
+      const current = readDashboardEntry();
+      if (current?.section !== section || !inScope(current.view ?? {}, scope)) return;
+      const next = viewFromHistory(isDemo, portfolios, section, scope);
       setView((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
     };
     window.addEventListener("popstate", onPopState);
@@ -153,7 +182,7 @@ export function WealthSection({ onNavigate }: { onNavigate: (section: string) =>
 
   const go = (next: WealthView) => {
     if (next.kind === "portfolio") selectPortfolio(next.uuid);
-    pushDashboardEntry({ section: SECTION, view: next });
+    pushDashboardEntry({ section, view: { ...scope, ...next } });
     setView(next);
     window.scrollTo({ top: 0 });
   };
@@ -161,7 +190,7 @@ export function WealthSection({ onNavigate }: { onNavigate: (section: string) =>
 
   const investments = investmentsOf(portfolios);
   // Wealth itself is a page only where there's more than the investments (a demo account's wallets).
-  const rootTrail: Crumb[] = isDemo ? [{ label: "Wealth", onClick: () => go({ kind: "root" }) }] : [];
+  const rootTrail: Crumb[] = isDemo ? [{ label: "Wealth", onClick: () => go({ kind: "root" }) }] : outerTrail;
 
   if (view.kind === "root" && isDemo) {
     return <WealthRoot investments={investments} onOpen={go} />;
@@ -197,6 +226,7 @@ export function WealthSection({ onNavigate }: { onNavigate: (section: string) =>
       page={page}
       trail={trail}
       isInvestments={portfolio.uuid === investments?.uuid}
+      extraActions={portfolio.uuid === investments?.uuid ? extraActions : undefined}
       onOpen={openPortfolio}
       simulation={simulation}
       onOpenSimulation={(uuid) => go({ kind: "portfolio", uuid: portfolio.uuid, page: "strategy", simulation: uuid })}
@@ -225,14 +255,16 @@ const toneOf = (v: number | null | undefined): "gain" | "loss" | undefined => (v
 
 /** One portfolio's side-by-side figures (GET /v1/portfolios/comparison), for its header. */
 function useComparisonEntry(uuid: string) {
+  const { client } = usePortfolio();
+  const clientUuid = client?.uuid ?? null;
   const [entry, setEntry] = useState<{ uuid: string; value: PortfolioComparisonEntry | null } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    portfoliosService.compare([uuid])
+    portfoliosService.compare([uuid], clientUuid)
       .then((list) => { if (!cancelled) setEntry({ uuid, value: list[0] ?? null }); })
       .catch(() => { if (!cancelled) setEntry({ uuid, value: null }); });
     return () => { cancelled = true; };
-  }, [uuid]);
+  }, [uuid, clientUuid]);
   // undefined while loading, null when it couldn't be read.
   return entry?.uuid === uuid ? entry.value : undefined;
 }
@@ -315,14 +347,18 @@ function useActivityCounts(portfolio: Portfolio, real: Portfolio[]) {
  *   its run), its transactions generated and read only, and its Insights leave out what a
  *   simulation doesn't have (see PerformanceSection's `backtest`).
  * Under the header, its Insights (PerformanceSection), whose Composition opens each portfolio of
- * All portfolios. A demo account sees everything but can't change anything.
+ * All portfolios. A demo account sees everything but can't change anything. An advisor on a
+ * client's (PortfolioContext's `client`) can't rename or delete it; its alerts are the advisor's,
+ * its asset categories the client's, and its Strategy page says whether the client sees it.
  */
-export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, simulation, onOpenSimulation, onBacktestGone, onNavigate }: {
+export function PortfolioNode({ portfolio, page, trail, isInvestments, extraActions = [], onOpen, simulation, onOpenSimulation, onBacktestGone, onNavigate }: {
   portfolio: Portfolio;
   page: PortfolioPage;
   trail: Crumb[];
   // It stands for all the investments ("All portfolios", or the only portfolio).
   isInvestments: boolean;
+  // Added to its actions, last.
+  extraActions?: PageAction[];
   onOpen: (uuid: string, page?: PortfolioPage) => void;
   // On its Strategy page: the advisor's simulation a shared strategy came from, open read-only,
   // and the way to open one.
@@ -332,7 +368,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
   onBacktestGone?: () => void;
   onNavigate: (section: string) => void;
 }) {
-  const { portfolios, deletePortfolio } = usePortfolio();
+  const { portfolios, deletePortfolio, client, canManage } = usePortfolio();
   const { isDemo } = useUser();
   const colorOf = useMemo(() => portfolioColorMap(portfolios), [portfolios]);
   const real = useMemo(() => portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault)), [portfolios]);
@@ -340,12 +376,17 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
   const entry = useComparisonEntry(portfolio.uuid);
   const counts = useActivityCounts(portfolio, real);
   const { hasAdoption, shared, reload: reloadAdoption } = useHasAdoption(portfolio);
-  const strategyAction: PageAction[] = hasAdoption || shared.length > 0 ? [{ label: "Strategy", onClick: () => open("strategy") }] : [];
+  // An advisor reaches a client's portfolio's Strategy page with or without one: it's where theirs is adopted.
+  const strategyAction: PageAction[] = hasAdoption || shared.length > 0 || client ? [{ label: "Strategy", onClick: () => open("strategy") }] : [];
   const openCategories = () => {
     const investments = investmentsOf(portfolios);
     if (investments) onOpen(investments.uuid, "categories");
   };
-  const [dialog, setDialog] = useState<"new" | "rename" | "delete" | "adopt" | null>(null);
+  const [dialog, setDialog] = useState<"new" | "rename" | "delete" | "adopt" | "publish" | "withdraw" | null>(null);
+  // An advisor's backtest: whether it's in Explore.
+  const { publications, reload: reloadPublications, canPublish } = useMyPublications();
+  const publication = backtest ? publications?.get(portfolio.uuid) : undefined;
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[]>(() => initialCompareSelection(portfolios, null));
@@ -371,7 +412,14 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
   // ── What can be done with it ──
   const actions: PageAction[] = backtest
     ? [
-        { label: "Adopt this strategy", primary: true, onClick: () => setDialog("adopt"), ...demo },
+        { label: canPublish ? "Adopt on a client" : "Adopt this strategy", primary: true, onClick: () => setDialog("adopt"), ...demo },
+        ...(canPublish ? publication
+          ? [
+              { label: "Edit the publication", onClick: () => setDialog("publish") },
+              { label: "Withdraw from Explore", onClick: () => { setWithdrawError(null); setDialog("withdraw"); } },
+            ]
+          : [{ label: "Publish to Explore", onClick: () => setDialog("publish"), ...(publications === undefined ? { disabled: true } : {}) }]
+          : []),
         { label: "Delete backtest", danger: true, onClick: () => setDialog("delete"), ...demo },
       ]
     : portfolio.isAggregate
@@ -381,6 +429,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
           ...(real.length > 1 ? [{ label: "Compare", onClick: () => open("compare") }] : []),
           ...strategyAction,
           { label: "Asset categories", onClick: () => open("categories") },
+          ...extraActions,
         ]
       : [
           // Its activity pages: what's there, and where to add to it.
@@ -392,13 +441,16 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
           // the categories of everything held.
           ...(addsPortfolios ? [{ label: "New portfolio", onClick: () => setDialog("new") }] : []),
           ...(isInvestments ? [{ label: "Asset categories", onClick: () => open("categories") }] : []),
-          { label: "Rename", onClick: () => setDialog("rename"), ...demo },
-          {
-            label: "Delete portfolio",
-            danger: true,
-            onClick: () => setDialog("delete"),
-            ...(portfolio.isDefault ? { disabled: true, title: "The default portfolio can't be deleted" } : demo),
-          },
+          ...extraActions,
+          ...(canManage ? [
+            { label: "Rename", onClick: () => setDialog("rename"), ...demo },
+            {
+              label: "Delete portfolio",
+              danger: true,
+              onClick: () => setDialog("delete"),
+              ...(portfolio.isDefault ? { disabled: true, title: "The default portfolio can't be deleted" } : demo),
+            },
+          ] : []),
         ];
 
   // ── Its activity ──
@@ -447,7 +499,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
 
   const header = (
     <PageHeader
-      eyebrow={backtest ? "Backtest" : portfolio.isAggregate || isInvestments ? "Investments" : "Portfolio"}
+      eyebrow={`${client ? `${client.name} · ` : ""}${backtest ? "Backtest" : portfolio.isAggregate || isInvestments ? "Investments" : "Portfolio"}`}
       notice={backtest ? <BacktestBanner portfolioUuid={portfolio.uuid} /> : undefined}
       title={portfolio.name}
       note={note}
@@ -486,14 +538,50 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
           strategyUuid={portfolio.uuid}
           strategyName={portfolio.name}
           onClose={() => setDialog(null)}
-          onAdopted={(uuid) => {
+          onAdopted={(uuid, clientUuid) => {
             setDialog(null);
-            onOpen(uuid, "strategy");
+            if (clientUuid) openClientPage(onNavigate, clientUuid, { kind: "portfolio", uuid, page: "strategy" });
+            else onOpen(uuid, "strategy");
           }}
-          onOpenCategories={() => {
+          onOpenCategories={(clientUuid) => {
             setDialog(null);
-            openCategories();
+            if (clientUuid) openClientPage(onNavigate, clientUuid, { kind: "portfolio", uuid: "", page: "categories" });
+            else openCategories();
           }}
+        />
+      )}
+      {dialog === "publish" && (
+        <PublishStrategyDialog
+          backtest={portfolio}
+          published={publication}
+          onClose={() => setDialog(null)}
+          onPublished={() => {
+            setDialog(null);
+            reloadPublications();
+          }}
+        />
+      )}
+      {dialog === "withdraw" && publication && (
+        <ConfirmDialog
+          title={`Withdraw "${portfolio.name}" from Explore?`}
+          description="It leaves the catalog: nobody can read it there any more. The backtest stays yours, to publish again."
+          confirmLabel="Withdraw"
+          confirming={deleting}
+          error={withdrawError}
+          onConfirm={async () => {
+            setDeleting(true);
+            setWithdrawError(null);
+            try {
+              await publicationService.withdraw(publication.publicationId);
+              setDialog(null);
+              reloadPublications();
+            } catch (err) {
+              setWithdrawError(err instanceof Error ? err.message : "Unable to withdraw this strategy.");
+            } finally {
+              setDeleting(false);
+            }
+          }}
+          onClose={() => setDialog(null)}
         />
       )}
       {dialog === "delete" && (
@@ -584,11 +672,11 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
       <div className="space-y-6 pb-12">
         <Breadcrumb trail={pageTrail} current={PAGE_LABELS.categories} />
         <p className="text-[13px] text-slate-500 leading-relaxed max-w-3xl">
-          The category each of your securities counts in, across all your portfolios: alerts on a category, and adopting a
-          strategy by category, weigh a portfolio by it. Each one comes with a suggestion; a category you pick replaces it
-          everywhere, until you restore it.
+          {client
+            ? `The category each of ${client.name}'s securities counts in, across all their portfolios: alerts on a category, and adopting a strategy by category, weigh a portfolio by it. A category you pick is ${client.name}'s too, everywhere, until it's restored.`
+            : "The category each of your securities counts in, across all your portfolios: alerts on a category, and adopting a strategy by category, weigh a portfolio by it. Each one comes with a suggestion; a category you pick replaces it everywhere, until you restore it."}
         </p>
-        <AssetCategoriesEditor />
+        <AssetCategoriesEditor clientUuid={client?.uuid} />
       </div>
     );
   }
@@ -617,6 +705,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
         <AlertsSettings
           key={portfolio.uuid}
           portfolios={alertPortfolios}
+          clientName={client?.name}
           grouped={portfolio.isAggregate ? true : undefined}
           onOpenCategories={openCategories}
           onOpenAdoption={(uuid) => onOpen(uuid, "strategy")}

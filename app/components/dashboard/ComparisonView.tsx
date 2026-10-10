@@ -260,14 +260,16 @@ function useSideScroll(itemCount: number) {
 
 /** Every portfolio's figures for the cards, from one call (GET /v1/portfolios/comparison, none listed). */
 function useAllFigures(uuidsKey: string) {
+  const { client } = usePortfolio();
+  const clientUuid = client?.uuid ?? null;
   const [state, setState] = useState<{ key: string; byUuid: Map<string, PortfolioComparisonEntry> } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    portfoliosService.compare()
+    portfoliosService.compare([], clientUuid)
       .then((list) => { if (!cancelled) setState({ key: uuidsKey, byUuid: new Map(list.map((e) => [e.portfolio.uuid, e])) }); })
       .catch(() => { if (!cancelled) setState({ key: uuidsKey, byUuid: new Map() }); });
     return () => { cancelled = true; };
-  }, [uuidsKey]);
+  }, [uuidsKey, clientUuid]);
   // The previous figures stay up while a changed list of portfolios reloads.
   return state?.byUuid;
 }
@@ -278,6 +280,8 @@ function useAllFigures(uuidsKey: string) {
  * means stale columns should now be drawn anyway, with a hint.
  */
 function useComparison(uuidsKey: string) {
+  const { client } = usePortfolio();
+  const clientUuid = client?.uuid ?? null;
   const [state, setState] = useState<{ entries: PortfolioComparisonEntry[] | null; loading: boolean; failed: boolean; timedOut: boolean }>({
     entries: null, loading: true, failed: false, timedOut: false,
   });
@@ -293,7 +297,7 @@ function useComparison(uuidsKey: string) {
       // Keep the previous columns up while a new selection loads, so the page doesn't flash.
       if (isFirst) setState((prev) => ({ ...prev, loading: true, failed: false, timedOut: false }));
       try {
-        const entries = await portfoliosService.compare(uuids);
+        const entries = await portfoliosService.compare(uuids, clientUuid);
         if (cancelled) return;
         const anyStale = entries.some((e) => e.isStale);
         const timedOut = anyStale && Date.now() - startedAt >= STALE_TIMEOUT_MS;
@@ -309,7 +313,7 @@ function useComparison(uuidsKey: string) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [uuidsKey]);
+  }, [uuidsKey, clientUuid]);
 
   return state;
 }

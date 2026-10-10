@@ -15,8 +15,10 @@ import type { WalletPage } from "../components/preview/WalletPages";
 // as Insights, then Manage, so old links and history entries still land on it.
 export const WEALTH_SECTION = "performance";
 export const PLAN_SECTION = "plan";
-// The strategies catalog as a section of its own: an advisor's (an investor's is Plan's, under
-// Strategy). The Journal: a demo account's preview.
+// An advisor's clients: the list, and each client's Wealth (see ClientsSection).
+export const CLIENTS_SECTION = "clients";
+// The strategies catalog's section before it was Plan's, under Strategy: old links land there.
+// The Journal: a demo account's preview.
 export const EXPLORE_SECTION = "explore";
 export const JOURNAL_SECTION = "journal";
 
@@ -31,6 +33,13 @@ export function openSectionView(onNavigate: Navigate, section: string, view: unk
 
 export const openWealthView = (onNavigate: Navigate, view: WealthView) =>
   openSectionView(onNavigate, WEALTH_SECTION, view);
+
+/**
+ * A client's page (an advisor's), on one of their Wealth's pages: their investments unless said.
+ * The client is in the view: `{ client, ...wealthView }`.
+ */
+export const openClientPage = (onNavigate: Navigate, clientUuid: string, view?: WealthView) =>
+  openSectionView(onNavigate, CLIENTS_SECTION, { client: clientUuid, ...(view ?? {}) });
 
 /** A portfolio (All portfolios included) on one of its pages: its own page unless said. */
 export const openPortfolioPage = (onNavigate: Navigate, portfolioUuid: string, page: PortfolioPage = "overview") =>

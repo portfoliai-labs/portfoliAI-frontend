@@ -37,7 +37,7 @@ export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
   // That portfolio's alerts page.
   onOpenAlerts: (uuid: string) => void;
 }) {
-  const { portfolios, deletePortfolio } = usePortfolio();
+  const { portfolios, deletePortfolio, client, canManage } = usePortfolio();
   const { isDemo } = useUser();
   const [creating, setCreating] = useState(false);
   const [toDelete, setToDelete] = useState<Portfolio | null>(null);
@@ -49,11 +49,11 @@ export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
   const [entries, setEntries] = useState<{ key: string; byUuid: Map<string, PortfolioComparisonEntry> }>({ key: "", byUuid: new Map() });
   useEffect(() => {
     let cancelled = false;
-    portfoliosService.compare()
+    portfoliosService.compare([], client?.uuid)
       .then((list) => { if (!cancelled) setEntries({ key: uuidsKey, byUuid: new Map(list.map((e) => [e.portfolio.uuid, e])) }); })
       .catch(() => { if (!cancelled) setEntries({ key: uuidsKey, byUuid: new Map() }); });
     return () => { cancelled = true; };
-  }, [uuidsKey]);
+  }, [uuidsKey, client?.uuid]);
   const loaded = entries.key === uuidsKey;
 
   const real = portfolios.filter((p) => !p.isVirtual).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
@@ -82,6 +82,7 @@ export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
       color={color}
       entry={loaded ? entries.byUuid.get(p.uuid) ?? null : undefined}
       readOnly={isDemo}
+      manageable={canManage}
       // Backtests take no alerts; undefined while they load.
       alertCount={p.isVirtual || rules === null ? undefined : rules.filter((r) => r.portfolioUuid === p.uuid).length}
       onOpenAlerts={() => onOpenAlerts(p.uuid)}
@@ -111,7 +112,9 @@ export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {
 
       <ManageGroup
         title="Portfolios"
-        note={`${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · the default one can be renamed, not deleted`}
+        note={canManage
+          ? `${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · the default one can be renamed, not deleted`
+          : `${real.length} ${real.length === 1 ? "portfolio" : "portfolios"} · ${client?.name} renames and deletes them`}
       >
         {real.map((p) => row(p, colorOf(p.uuid)))}
       </ManageGroup>
@@ -167,16 +170,17 @@ function ManageGroup({ title, note, tone, children }: { title: string; note?: st
  * One portfolio in the list: its colour and name (which Rename turns into a field, saved on Enter
  * or the tick), its alerts (a pill leading to them), its value and when it was created,
  * then Open, Rename and Delete. The default portfolio's Delete is disabled,
- * with why.
+ * with why. Without `manageable` (a client's, for their advisor), Open only.
  */
 function ManageRow({
-  portfolio, color, entry, readOnly, alertCount, onOpenAlerts, onOpen, onDelete,
+  portfolio, color, entry, readOnly, manageable, alertCount, onOpenAlerts, onOpen, onDelete,
 }: {
   portfolio: Portfolio;
   color: string;
   // undefined while loading, null when there are no figures yet.
   entry: PortfolioComparisonEntry | null | undefined;
   readOnly: boolean;
+  manageable: boolean;
   alertCount?: number;
   onOpenAlerts: () => void;
   onOpen: () => void;
@@ -274,6 +278,7 @@ function ManageRow({
               <button type="button" onClick={onOpen} aria-label={`Open ${portfolio.name}`} title="Open" className={`${iconButton} text-slate-400 hover:text-slate-900 hover:bg-slate-100`}>
                 <ArrowUpRight className="h-4 w-4" />
               </button>
+              {manageable && <>
               <button
                 type="button"
                 onClick={startRename}
@@ -294,6 +299,7 @@ function ManageRow({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+              </>}
             </>
           )}
         </div>

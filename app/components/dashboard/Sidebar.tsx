@@ -1,11 +1,13 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass, Map as MapIcon, PieChart, BookOpen } from "lucide-react";
+import { LayoutDashboard, Settings, ChevronRight, Sparkles, Users, Newspaper, Map as MapIcon, PieChart, BookOpen, History } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useDashboardEntry } from "../../lib/dashboardHistory";
-import { EXPLORE_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION } from "../../lib/dashboardNav";
+import { CLIENTS_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION } from "../../lib/dashboardNav";
+import { clientDisplayName, useClients } from "../../context/ClientsContext";
+import { useClientPortfolios } from "../../hooks/useClientPortfolios";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { ALL_WALLETS, WALLET_OPTIONS } from "../preview/WalletPages";
 import { PLAN_PAGE_LABELS, planPages } from "./PlanSection";
@@ -36,7 +38,11 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
   // Which page the open section is on, to mark its row.
   const entry = useDashboardEntry();
   const view = (entry?.section === activeSection ? entry.view : undefined) as
-    { kind?: string; uuid?: string; id?: string; page?: string } | undefined;
+    { kind?: string; uuid?: string; id?: string; page?: string; client?: string } | undefined;
+  // An advisor's: their clients under Clients, and the open one's portfolios under it.
+  const { clients } = useClients();
+  const openClient = isAdvisor && activeSection === CLIENTS_SECTION ? view?.client ?? null : null;
+  const { portfolios: clientPortfolios } = useClientPortfolios(openClient);
 
   // Investor: the sections, and under the open one its pages. Under Wealth, what it's made of:
   // All portfolios and each real portfolio under it (only the portfolios while Wealth opens on
@@ -85,14 +91,34 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // Advisors pick a client's portfolio per screen instead (see useClientDefaultPortfolio).
+  // Each client, and under the open one their portfolios while they have more than one (as an
+  // investor's are under Wealth), each opening that page of the client's Wealth.
+  const clientRealPortfolios = clientPortfolios.filter((p) => !p.isVirtual);
+  const clientRows: SubItem[] = [...clients]
+    .sort((a, b) => clientDisplayName(a).localeCompare(clientDisplayName(b)))
+    .flatMap((c) => {
+      const listed = openClient === c.uuid && clientRealPortfolios.length >= 2;
+      // The client's own row, unless one of their portfolios' rows is the page open.
+      const onPortfolioRow = listed && clientRealPortfolios.some((p) => p.uuid === view?.uuid);
+      const row: SubItem = { key: c.uuid, label: clientDisplayName(c), view: { client: c.uuid }, active: openClient === c.uuid && !onPortfolioRow };
+      if (!listed) return [row];
+      const colorOf = portfolioColorMap(clientPortfolios);
+      return [row, ...clientRealPortfolios.map((p) => ({
+        key: `${c.uuid}:${p.uuid}`,
+        label: p.name,
+        view: { client: c.uuid, kind: 'portfolio', uuid: p.uuid, page: 'overview' },
+        active: view?.uuid === p.uuid,
+        depth: 1,
+        color: colorOf(p.uuid),
+      }))];
+    });
+
+  // A client's pages are the investor's, on the client's portfolios (see ClientsSection); the
+  // strategies catalog is under Strategy, as an investor's.
   const consultantItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'clients', label: 'Clients', icon: Users },
-    { id: 'upload', label: 'Transactions', icon: Receipt },
-    { id: 'performance', label: 'Insights', icon: TrendingUp },
-    // The strategies catalog (an investor's is under Plan's Strategy).
-    { id: EXPLORE_SECTION, label: 'Explore', icon: Compass },
+    { id: CLIENTS_SECTION, label: 'Clients', icon: Users, subs: clientRows },
+    { id: PLAN_SECTION, label: 'Strategy', icon: History, subs: [] },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

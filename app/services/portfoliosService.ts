@@ -42,9 +42,13 @@ export const portfoliosService = {
   // per portfolio in the order given (without any, all of the caller's, aggregate first). 404
   // if one isn't the caller's. Lives here rather than in portfolioService since it spans
   // several portfolios.
-  async compare(portfolioUuids: string[] = []): Promise<PortfolioComparisonEntry[]> {
+  // With `clientUuid`, an advisor's view of that client's (GET
+  // /v1/advisor/clients/{c}/portfolios/comparison, the same answer): the caller's own route only
+  // knows the caller's portfolios.
+  async compare(portfolioUuids: string[] = [], clientUuid?: string | null): Promise<PortfolioComparisonEntry[]> {
     const query = new URLSearchParams(portfolioUuids.map((uuid) => ["portfolio", uuid])).toString();
-    return apiFetch<PortfolioComparisonEntry[]>(`/v1/portfolios/comparison${query ? `?${query}` : ""}`);
+    const base = clientUuid ? `/v1/advisor/clients/${clientUuid}/portfolios/comparison` : "/v1/portfolios/comparison";
+    return apiFetch<PortfolioComparisonEntry[]>(`${base}${query ? `?${query}` : ""}`);
   },
 
   // GET /v1/portfolios/{p} — same access rule as every portfolio-scoped route: the caller's

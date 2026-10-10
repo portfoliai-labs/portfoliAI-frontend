@@ -12,9 +12,6 @@ import { ProfileSection } from "../../components/dashboard/ProfileSection";
 import { AdvisorProfileSection } from "../../components/dashboard/AdvisorProfileSection";
 import { ReportsList } from "../../components/dashboard/ReportsList";
 import { ClientsSection } from "../../components/dashboard/ClientsSection";
-import { AdvisorUploadSection } from "../../components/dashboard/AdvisorUploadSection";
-import { AdvisorReportsList } from "../../components/dashboard/AdvisorReportsList";
-import { AdvisorPerformanceSection } from "../../components/dashboard/AdvisorPerformanceSection";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import AdvisorDashboardOverview from "../../components/dashboard/AdvisorDashboardOverview";
 import { SettingsSection } from "../../components/dashboard/SettingsSection";
@@ -22,13 +19,12 @@ import { NotificationsSection } from "../../components/dashboard/NotificationsSe
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { WealthSection } from "../../components/dashboard/WealthSection";
 import { PlanSection } from "../../components/dashboard/PlanSection";
-import { ExploreSection } from "../../components/dashboard/ExploreSection";
 import { JournalSection } from "../../components/dashboard/JournalSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
-import { EXPLORE_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
+import { CLIENTS_SECTION, EXPLORE_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
@@ -111,20 +107,24 @@ function DashboardPageContent() {
 
   const isAdvisor = user?.role === 'ADVISOR';
 
-  // Where an old Discover page went (an advisor's Discover was Explore only), and an investor's
-  // Explore: under Plan's Strategy. The strategy open in it stays open.
+  // Where an old section's pages went: Discover's (an advisor's was Explore only) and Explore,
+  // under Plan's Strategy, the strategy open in it staying open; an advisor's Transactions and
+  // Insights, each client's own pages now (the Clients section).
   useEffect(() => {
     if (!user) return;
+    if (isAdvisor && (activeSection === 'upload' || activeSection === 'performance')) {
+      pushDashboardEntry({ section: CLIENTS_SECTION }, true);
+      setActiveSection(CLIENTS_SECTION);
+      return;
+    }
     const isExplore = activeSection === EXPLORE_SECTION;
-    if (activeSection !== 'discover' && !(isExplore && !isAdvisor)) return;
+    if (activeSection !== 'discover' && !isExplore) return;
     const view = readDashboardEntry()?.view as { page?: string; publicationId?: string; slug?: string } | undefined;
     const page = isExplore || isAdvisor ? 'explore' : view?.page;
     const publicationId = typeof view?.publicationId === 'string' ? view.publicationId : undefined;
     const [section, next]: [string, unknown] =
       page === 'explore'
-        ? isAdvisor
-          ? [EXPLORE_SECTION, publicationId ? { publicationId } : undefined]
-          : [PLAN_SECTION, { page: 'explore', ...(publicationId ? { publicationId } : {}) }]
+        ? [PLAN_SECTION, { page: 'explore', ...(publicationId ? { publicationId } : {}) }]
         : page === 'journal' ? [JOURNAL_SECTION, view] : ['news', undefined];
     pushDashboardEntry({ section, view: next }, true);
     setActiveSection(section);
@@ -144,8 +144,8 @@ function DashboardPageContent() {
 
   const renderContent = (() => {
     // Every investor-facing case below needs a resolved portfolio; advisor cases never read
-    // `portfolio` at all (they resolve a client's own via useClientDefaultPortfolio), so this
-    // guard only ever blocks the investor branches while PortfolioContext is still loading.
+    // `portfolio` (a client's pages have a PortfolioProvider of that client's, see ClientsSection),
+    // so this guard only ever blocks the investor branches while PortfolioContext is still loading.
     if (!isAdvisor && !portfolio) return null;
 
     switch (activeSection) {
@@ -154,24 +154,24 @@ function DashboardPageContent() {
           ? <AdvisorDashboardOverview onNavigate={navigate} />
           : <DashboardOverview onNavigate={navigate} />;
       case 'clients':
-        return <ClientsSection />;
+        return isAdvisor ? <ClientsSection key={sectionVisit} onNavigate={navigate} /> : <DashboardOverview onNavigate={navigate} />;
       case 'upload':
         // Every portfolio at once: the list filters by portfolio, and new rows say where they go.
-        return isAdvisor ? <AdvisorUploadSection /> : <FileUploader />;
+        // An advisor's is each client's portfolio's, see above.
+        return isAdvisor ? null : <FileUploader />;
       case 'reports':
-        return isAdvisor ? <AdvisorReportsList /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
+        return isAdvisor ? <AdvisorDashboardOverview onNavigate={navigate} /> : <ReportsList portfolioUuid={portfolio!.uuid} />;
       case 'performance':
-        return isAdvisor
-          ? <AdvisorPerformanceSection />
-          : <WealthSection key={sectionVisit} onNavigate={navigate} />;
+        // An advisor's Insights are each client's portfolio's, see above.
+        return isAdvisor ? null : <WealthSection key={sectionVisit} onNavigate={navigate} />;
       case 'plan':
-        if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
+        // An advisor's is Strategy only: their backtests, to adopt on clients' portfolios or publish.
         return <PlanSection key={sectionVisit} onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
       case EXPLORE_SECTION:
-        // An investor's is Plan's, see above.
-        return isAdvisor ? <ExploreSection key={sectionVisit} onNavigate={navigate} /> : null;
+        // Until it lands on Plan's, see above.
+        return null;
       case JOURNAL_SECTION:
         return isDemo ? <JournalSection key={sectionVisit} /> : <DashboardOverview onNavigate={navigate} />;
       case 'discover':
@@ -188,7 +188,8 @@ function DashboardPageContent() {
     }
   })();
 
-  if (loading || (!isAdvisor && portfolioLoading)) {
+  // An advisor's own portfolios are their backtests, which the Dashboard and Strategy list.
+  if (loading || portfolioLoading) {
     return (
       <div className="min-h-screen bg-[#F7F5EF] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

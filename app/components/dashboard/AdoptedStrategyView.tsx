@@ -17,6 +17,8 @@ import type { Portfolio } from "../../models/Portfolio";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SharedStrategyPanel } from "./SharedStrategyPanel";
+import { ClientStrategySharing } from "./ClientStrategySharing";
+import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 
 const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
@@ -42,6 +44,10 @@ interface Draft {
  * Above it, read-only, the strategies the user's advisor shared for the portfolio
  * (SharedStrategyPanel); with one of those and no adoption of their own, the way to adopt is left
  * out. A demo account sees it but can't change it.
+ *
+ * On a client's portfolio (an advisor's, PortfolioContext's `client`) it's the advisor's adoption,
+ * from one of their own backtests: adopted here from those (AdoptStrategyDialog), and shared with
+ * the client or not (ClientStrategySharing).
  */
 export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimulation, onOpenAlerts, onNavigate, onChanged }: {
   portfolio: Portfolio;
@@ -53,8 +59,9 @@ export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimul
   // After a change that may add or remove the adoption, so the page header follows.
   onChanged: () => void;
 }) {
-  const { portfolios } = usePortfolio();
+  const { ownPortfolios, client } = usePortfolio();
   const { isDemo } = useUser();
+  const [adopting, setAdopting] = useState(false);
   const [adoption, setAdoption] = useState<AdoptedStrategy | null | undefined>(undefined);
   const [rules, setRules] = useState<AlertRuleResponse[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,6 +111,21 @@ export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimul
       </div>
     );
   }
+  // A client's portfolio adopts one of the advisor's backtests, picked here.
+  const ownBacktests = client ? ownPortfolios.filter((p) => p.isVirtual && !p.isAggregate) : [];
+  const adoptDialog = adopting && (
+    <AdoptStrategyDialog
+      destination={portfolio}
+      onClose={() => setAdopting(false)}
+      onAdopted={() => {
+        setAdopting(false);
+        void load();
+        onChanged();
+      }}
+      onOpenCategories={() => setAdopting(false)}
+    />
+  );
+
   if (adoption === null) {
     return (
       <div className="space-y-6 pb-12">
@@ -113,24 +135,39 @@ export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimul
           <Target className="h-6 w-6 text-slate-400" />
           <p className="text-sm font-black text-slate-900">No strategy adopted on {portfolio.name}</p>
           <p className="text-xs text-slate-500 max-w-md">
-            Backtest a strategy in Plan, then adopt it here: each of its targets becomes a range, and an alert says where the
-            portfolio stands against it.
+            {client
+              ? `Adopt one of your backtests on ${client.name}'s ${portfolio.name}: each of its targets becomes a range, and an alert tells you where the portfolio stands against it. Share it to let ${client.name} read it.`
+              : "Backtest a strategy in Plan, then adopt it here: each of its targets becomes a range, and an alert says where the portfolio stands against it."}
           </p>
-          <button
-            type="button"
-            onClick={() => openPlanPage(onNavigate, "strategy")}
-            className="mt-2 flex items-center gap-1.5 min-h-10 px-4 rounded-xl bg-[#1c1917] text-white text-xs font-bold hover:bg-[#C49A3C] transition-colors"
-          >
-            Go to Strategy <ArrowUpRight className="h-3.5 w-3.5" />
-          </button>
+          <span className="mt-2 flex flex-wrap justify-center gap-2">
+            {client && ownBacktests.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAdopting(true)}
+                className="flex items-center gap-1.5 min-h-10 px-4 rounded-xl bg-sky-700 text-white text-xs font-bold hover:bg-sky-800 transition-colors"
+              >
+                <Target className="h-3.5 w-3.5" /> Adopt one of your strategies
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => openPlanPage(onNavigate, "strategy")}
+              className={`flex items-center gap-1.5 min-h-10 px-4 rounded-xl text-xs font-bold transition-colors ${
+                client && ownBacktests.length > 0 ? "border border-slate-200 text-slate-700 hover:border-slate-300" : "bg-[#1c1917] text-white hover:bg-[#C49A3C]"
+              }`}
+            >
+              {client && ownBacktests.length === 0 ? "Backtest a strategy" : "Go to Strategy"} <ArrowUpRight className="h-3.5 w-3.5" />
+            </button>
+          </span>
         </div>}
+        {adoptDialog}
       </div>
     );
   }
 
   const { strategy } = adoption;
   const held = strategy.targets.filter((t) => t.weightPct > 0);
-  const origin = adoption.originPortfolioUuid ? portfolios.find((p) => p.uuid === adoption.originPortfolioUuid) : undefined;
+  const origin = adoption.originPortfolioUuid ? ownPortfolios.find((p) => p.uuid === adoption.originPortfolioUuid) : undefined;
   const band = draft ?? strategy.rebalancing;
 
   const startRefine = () => {
@@ -209,6 +246,7 @@ export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimul
       />
 
       {sharedPanels}
+      {client && <ClientStrategySharing portfolioUuid={portfolio.uuid} adoption={adoption} clientName={client.name} onChange={setAdoption} />}
 
       <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 md:px-7 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">

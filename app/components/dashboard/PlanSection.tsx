@@ -7,7 +7,11 @@ import { createPortal } from "react-dom";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useUser } from "../../context/UserContext";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
-import { PLAN_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
+import { PLAN_SECTION, openClientPage, openPortfolioPage } from "../../lib/dashboardNav";
+import { useMyPublications } from "../../hooks/useMyPublications";
+import { publicationService } from "../../services/publicationService";
+import { PublishStrategyDialog } from "./PublishStrategyDialog";
+import type { PublishedStrategy } from "../../models/PublishedStrategy";
 import { PortfolioNode } from "./WealthSection";
 import { investmentsOf, isBacktest, type Portfolio } from "../../models/Portfolio";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
@@ -248,6 +252,9 @@ function RetirementPreview() {
  * publish (Explore, read only). Adopting puts the strategy on a portfolio the user picks (or a new
  * one) and opens that portfolio's Strategy page, where its ranges are. A demo account sees the
  * backtests but can't create, adopt or delete.
+ *
+ * An advisor adopts theirs on a client's portfolio (opening it in the client's Wealth, where it's
+ * shared with the client or not), and publishes them to Explore or withdraws them.
  */
 function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
   onBuild: () => void;
@@ -257,12 +264,32 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
 }) {
   const { portfolios, deletePortfolio } = usePortfolio();
   const { isDemo } = useUser();
+  const { publications, reload: reloadPublications, canPublish } = useMyPublications();
+  const [publishing, setPublishing] = useState<Portfolio | null>(null);
+  const [withdrawing, setWithdrawing] = useState<PublishedStrategy | null>(null);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [adopting, setAdopting] = useState<Portfolio | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [deleting, setDeleting] = useState<Portfolio | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const backtests = portfolios.filter(isBacktest);
+
+  const withdraw = async () => {
+    if (!withdrawing) return;
+    setWithdrawBusy(true);
+    setWithdrawError(null);
+    try {
+      await publicationService.withdraw(withdrawing.publicationId);
+      setWithdrawing(null);
+      reloadPublications();
+    } catch (err) {
+      setWithdrawError(err instanceof Error ? err.message : "Unable to withdraw this strategy.");
+    } finally {
+      setWithdrawBusy(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleting) return;
@@ -294,9 +321,9 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
         }
       />
       <p className="text-[13px] text-slate-500 leading-relaxed max-w-2xl">
-        Backtest how you would invest on historical prices, or first explore the strategies advisors publish. When one of
-        yours fits, adopt it on one of your portfolios: each of its targets becomes a range, and an alert says where the
-        portfolio stands against it.
+        {canPublish
+          ? "Backtest a strategy on historical prices. Adopt it on a client's portfolio: each of its targets becomes a range, and an alert tells you where the portfolio stands against it; share it to let the client read it. Or publish it to Explore, for everyone to read."
+          : "Backtest how you would invest on historical prices, or first explore the strategies advisors publish. When one of yours fits, adopt it on one of your portfolios: each of its targets becomes a range, and an alert says where the portfolio stands against it."}
       </p>
 
       {backtests.length === 0 ? (
@@ -315,7 +342,14 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
             <article key={p.uuid} className="rounded-3xl border-2 border-dashed border-sky-300 bg-white p-5 md:p-6 flex flex-col gap-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <VirtualBadge portfolio={p} />
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <VirtualBadge portfolio={p} />
+                    {publications?.has(p.uuid) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                        <Telescope className="h-3 w-3" /> In Explore
+                      </span>
+                    )}
+                  </span>
                   <h3 className="mt-2 text-lg font-black text-slate-900 truncate" style={serif}>{p.name}</h3>
                   <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Created {createdLabel(p.createdAt)}</p>
                 </div>
@@ -345,8 +379,28 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
                   title={isDemo ? DEMO_DISABLED_TITLE : "Keep one of your portfolios in this strategy's ranges"}
                   className="flex items-center gap-1.5 min-h-10 px-4 rounded-xl bg-sky-700 text-white text-xs font-bold hover:bg-sky-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Target className="h-3.5 w-3.5" /> Adopt this strategy
+                  <Target className="h-3.5 w-3.5" /> {canPublish ? "Adopt on a client" : "Adopt this strategy"}
                 </button>
+                {canPublish && (
+                  publications?.has(p.uuid) ? (
+                    <button
+                      type="button"
+                      onClick={() => { setWithdrawError(null); setWithdrawing(publications.get(p.uuid)!); }}
+                      className="flex items-center gap-1.5 min-h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-slate-300 transition-colors"
+                    >
+                      Withdraw
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPublishing(p)}
+                      disabled={publications === undefined}
+                      className="flex items-center gap-1.5 min-h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:border-slate-300 transition-colors disabled:opacity-50"
+                    >
+                      <Telescope className="h-3.5 w-3.5" /> Publish
+                    </button>
+                  )
+                )}
               </div>
             </article>
           ))}
@@ -358,6 +412,28 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
           onBuild={() => { setChoosing(false); onBuild(); }}
           onExplore={() => { setChoosing(false); onExplore(); }}
           onClose={() => setChoosing(false)}
+        />
+      )}
+
+      {publishing && (
+        <PublishStrategyDialog
+          backtest={publishing}
+          onClose={() => setPublishing(null)}
+          onPublished={() => {
+            setPublishing(null);
+            reloadPublications();
+          }}
+        />
+      )}
+      {withdrawing && (
+        <ConfirmDialog
+          title={`Withdraw "${withdrawing.portfolioName}" from Explore?`}
+          description="It leaves the catalog: nobody can read it there any more. The backtest stays yours, to publish again."
+          confirmLabel="Withdraw"
+          confirming={withdrawBusy}
+          error={withdrawError}
+          onConfirm={withdraw}
+          onClose={() => setWithdrawing(null)}
         />
       )}
 
@@ -377,12 +453,15 @@ function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
           strategyUuid={adopting.uuid}
           strategyName={adopting.name}
           onClose={() => setAdopting(null)}
-          onAdopted={(uuid) => {
+          onAdopted={(uuid, clientUuid) => {
             setAdopting(null);
-            openPortfolioPage(onNavigate, uuid, "strategy");
+            if (clientUuid) openClientPage(onNavigate, clientUuid, { kind: "portfolio", uuid, page: "strategy" });
+            else openPortfolioPage(onNavigate, uuid, "strategy");
           }}
-          onOpenCategories={() => {
+          onOpenCategories={(clientUuid) => {
             setAdopting(null);
+            // A client's: on their investments, whichever portfolio stands for them.
+            if (clientUuid) return openClientPage(onNavigate, clientUuid, { kind: "portfolio", uuid: "", page: "categories" });
             const investments = investmentsOf(portfolios);
             if (investments) openPortfolioPage(onNavigate, investments.uuid, "categories");
           }}

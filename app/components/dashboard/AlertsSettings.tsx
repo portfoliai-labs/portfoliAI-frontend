@@ -65,15 +65,15 @@ const formatDate = (iso: string) =>
  * Without `clientName` they're the investor's own (a portfolio's Alerts page in Wealth, All
  * portfolios' passing itself and every portfolio): with two or more, each portfolio gets a card
  * of its own, with its rules and its own
- * "New alert", whose form opens in that card. With `clientName` it's an advisor's
- * rules on that client's portfolio (the Clients section, passed that client's default one): the
- * asset picker lists the client's holdings, and the advisor is the one notified. A demo account
+ * "New alert", whose form opens in that card. With `clientName` they're an advisor's rules on
+ * that client's portfolios (a client's portfolio page, in the Clients section), laid out the same:
+ * the asset picker lists the client's holdings, and the advisor is the one notified. A demo account
  * (read only) also sees sample rules on two of its portfolios that have none (lib/mock/alerts),
  * to show what the page looks like with some.
  */
 // `grouped`: the per-portfolio card even for a single portfolio, so it's named (one portfolio's
 // alerts, opened from Manage portfolios). `onOpenCategories`: the user's asset categories, which
-// a category alert weighs by (an advisor's are further down the client's panel).
+// a category alert weighs by (the client's, for an advisor).
 // `onOpenAdoption`: a portfolio's adopted strategy, where its kept rules' ranges are changed.
 export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, onOpenCategories, onOpenAdoption }: {
   portfolios: AlertPortfolio[];
@@ -497,7 +497,7 @@ function AlertForm({
   const initialWeight = initial?.type === "weight" ? initial : undefined;
   const initialSelector = initialWeight?.selector;
   const portfolioUuid = target.uuid;
-  const portfolio = clientName ? `${clientName}'s portfolio` : named ? target.name : "your portfolio";
+  const portfolio = clientName ? (named ? `${clientName}'s ${target.name}` : `${clientName}'s portfolio`) : named ? target.name : "your portfolio";
 
   const [type, setType] = useState<AlertParams["type"]>(initial?.type ?? "portfolio_change");
   const [direction, setDirection] = useState<AlertDirection>(initial?.type === "portfolio_change" ? initial.direction : "down");
