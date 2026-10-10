@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownToLine, ChevronDown, Coins, History, Loader2, PiggyBank, Play, Repeat, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownToLine, ChevronDown, Coins, History, Loader2, Minus, PiggyBank, Play, Plus, Repeat, SlidersHorizontal, X } from "lucide-react";
 import { formatCurrency } from "../../lib/format";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { Toggle } from "./Toggle";
@@ -247,7 +247,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
 
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb trail={trail} current="Strategy" />
+      <Breadcrumb trail={trail} current="New strategy" />
 
       <div className="flex items-start gap-3 rounded-2xl border border-dashed border-sky-300 bg-sky-50/70 px-4 py-3.5">
         <span className="w-8 h-8 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
@@ -294,39 +294,28 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
                   <p className="text-[13px] font-black text-slate-900">Asset classes</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">Each one bought through a single ETF.</p>
                 </div>
-                <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-4">
-                  {STRATEGY_CATEGORIES.map((c) => (
-                    <div key={c}>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="flex items-center gap-2 text-[13px] font-bold text-slate-700">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: CATEGORY_COLORS[c] }} />{STRATEGY_CATEGORY_LABELS[c]}
+                <ul className="divide-y divide-slate-100 rounded-xl bg-white border border-slate-200/70 px-3">
+                  {STRATEGY_CATEGORIES.map((c) => {
+                    const weight = form.weights[c];
+                    return (
+                      <li key={c} className="py-2.5 flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: CATEGORY_COLORS[c] }} />
+                          <span className="min-w-0 flex-1">
+                            <span className={`block text-[13px] font-black truncate ${weight > 0 ? "text-slate-900" : "text-slate-500"}`}>{STRATEGY_CATEGORY_LABELS[c]}</span>
+                            <span className="block text-[11px] font-semibold text-slate-400 truncate">{STRATEGY_PROXIES[c]}</span>
+                          </span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={form.weights[c]}
-                            onChange={(e) => setWeights({ ...form.weights, [c]: clamp(Number(e.target.value), 0, 100) })}
-                            aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight`}
-                            className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
-                          />
-                          <span className="text-xs font-bold text-slate-400">%</span>
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={form.weights[c]}
-                        onChange={(e) => setWeights({ ...form.weights, [c]: Number(e.target.value) })}
-                        aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight slider`}
-                        className="w-full mt-1.5 accent-[#C49A3C]"
-                      />
-                      <p className="text-[11px] font-semibold text-slate-400">{STRATEGY_PROXIES[c]}</p>
-                    </div>
-                  ))}
-                </div>
+                        <WeightBar pct={weight} color={CATEGORY_COLORS[c]} />
+                        <WeightStepper
+                          value={weight}
+                          label={STRATEGY_CATEGORY_LABELS[c]}
+                          onChange={(v) => setWeights({ ...form.weights, [c]: v })}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
 
               <div className="space-y-3 pt-5 border-t border-slate-200/70">
@@ -342,24 +331,20 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
                       return (
                         <li key={key} className={`py-2.5 ${refused ? "-mx-3 px-3 bg-rose-50/60" : ""}`}>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="flex items-center gap-2.5 min-w-0">
+                            <span className="flex items-center gap-2.5 min-w-0 flex-1">
                               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: SECURITY_COLORS[i % SECURITY_COLORS.length] }} />
-                              <span className="min-w-0">
+                              <span className="min-w-0 flex-1">
                                 <span className="block text-[13px] font-black text-slate-900 truncate">{p.asset.name}</span>
                                 <span className="block text-[11px] font-semibold text-slate-500 truncate">{assetListingLine(p.asset)}</span>
                               </span>
                             </span>
+                            <WeightBar pct={p.weight} color={SECURITY_COLORS[i % SECURITY_COLORS.length]} />
                             <span className="flex items-center gap-1 shrink-0">
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
+                              <WeightStepper
                                 value={p.weight}
-                                onChange={(e) => setSecurities(form.securities.map((x) => (x === p ? { ...x, weight: clamp(Number(e.target.value), 0, 100) } : x)))}
-                                aria-label={`${p.asset.ticker} weight`}
-                                className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
+                                label={p.asset.ticker}
+                                onChange={(v) => setSecurities(form.securities.map((x) => (x === p ? { ...x, weight: v } : x)))}
                               />
-                              <span className="text-xs font-bold text-slate-400">%</span>
                               <button type="button" onClick={() => setSecurities(form.securities.filter((x) => x !== p))} aria-label={`Remove ${p.asset.ticker}`} className="ml-1 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50">
                                 <X className="h-4 w-4" />
                               </button>
@@ -753,6 +738,49 @@ function AmountFields({ currency, amount, amountType, onChange }: {
 
 const fieldLabel = "block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5";
 const fieldBox = "w-full h-11 px-3.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold outline-none focus:border-[#C49A3C]/60 focus:ring-4 focus:ring-[#C49A3C]/10";
+
+// The steps − and + move a weight by, from the nearest step.
+const WEIGHT_STEP = 5;
+
+/** A weight at a glance, next to its stepper: wide screens only, the number says it all on a phone. */
+function WeightBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <span aria-hidden className="hidden @md:block w-24 @2xl:w-36 h-1.5 rounded-full bg-slate-100 overflow-hidden shrink-0">
+      <span className="block h-full rounded-full transition-[width] duration-200" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
+    </span>
+  );
+}
+
+/** A weight in %: − and + by WEIGHT_STEP, or typed. */
+function WeightStepper({ value, label, onChange }: { value: number; label: string; onChange: (v: number) => void }) {
+  const down = value % WEIGHT_STEP === 0 ? value - WEIGHT_STEP : value - (value % WEIGHT_STEP);
+  const up = value - (value % WEIGHT_STEP) + WEIGHT_STEP;
+  const stepButton = "w-8 h-8 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors";
+  return (
+    <span className="flex items-center shrink-0 rounded-lg border border-slate-200 bg-white overflow-hidden focus-within:border-[#C49A3C]/60">
+      <button type="button" onClick={() => onChange(clamp(down, 0, 100))} disabled={value <= 0} aria-label={`Lower ${label} weight`} className={stepButton}>
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <span className="flex items-center border-x border-slate-200 pr-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={100}
+          value={value}
+          onChange={(e) => onChange(clamp(Number(e.target.value), 0, 100))}
+          onFocus={(e) => e.target.select()}
+          aria-label={`${label} weight`}
+          className="w-11 h-8 text-right text-sm font-black tabular-nums text-slate-900 outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="text-xs font-bold text-slate-400 ml-0.5">%</span>
+      </span>
+      <button type="button" onClick={() => onChange(clamp(up, 0, 100))} disabled={value >= 100} aria-label={`Raise ${label} weight`} className={stepButton}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+}
 
 function NumberField({ label, value, onChange, suffix, step = 1, min, max }: { label: string; value: number; onChange: (v: number) => void; suffix?: string; step?: number; min?: number; max?: number }) {
   return (

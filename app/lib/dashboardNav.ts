@@ -9,14 +9,16 @@
 import { pushDashboardEntry } from "./dashboardHistory";
 import type { WealthView, PortfolioPage } from "../components/dashboard/WealthSection";
 import type { PlanPage } from "../components/dashboard/PlanSection";
-import type { DiscoverView } from "../components/dashboard/DiscoverSection";
 import type { WalletPage } from "../components/preview/WalletPages";
 
 // The dashboard's section ids (see the dashboard page). Wealth keeps "performance", the id it had
 // as Insights, then Manage, so old links and history entries still land on it.
 export const WEALTH_SECTION = "performance";
 export const PLAN_SECTION = "plan";
-export const DISCOVER_SECTION = "discover";
+// The strategies catalog as a section of its own: an advisor's (an investor's is Plan's, under
+// Strategy). The Journal: a demo account's preview.
+export const EXPLORE_SECTION = "explore";
+export const JOURNAL_SECTION = "journal";
 
 type Navigate = (section: string) => void;
 
@@ -38,12 +40,13 @@ export const openPortfolioPage = (onNavigate: Navigate, portfolioUuid: string, p
 export const openWalletPage = (onNavigate: Navigate, id: string, page: WalletPage = "insights") =>
   openWealthView(onNavigate, { kind: "wallet", id, page });
 
-export const openPlanPage = (onNavigate: Navigate, page: Exclude<PlanPage, "backtest">) =>
+export const openPlanPage = (onNavigate: Navigate, page: Exclude<PlanPage, "backtest" | "explore">) =>
   openSectionView(onNavigate, PLAN_SECTION, { page });
 
 /** A backtest's page, under Plan's Strategy. */
 export const openBacktestPage = (onNavigate: Navigate, portfolioUuid: string) =>
   openSectionView(onNavigate, PLAN_SECTION, { page: "backtest", uuid: portfolioUuid, sub: "overview" });
 
-export const openDiscoverView = (onNavigate: Navigate, view: DiscoverView) =>
-  openSectionView(onNavigate, DISCOVER_SECTION, view);
+/** Explore, under Plan's Strategy: the catalog, or one strategy of it. */
+export const openExplorePage = (onNavigate: Navigate, publicationId?: string) =>
+  openSectionView(onNavigate, PLAN_SECTION, publicationId ? { page: "explore", publicationId } : { page: "explore" });

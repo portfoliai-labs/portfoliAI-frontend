@@ -22,23 +22,25 @@ import { NotificationsSection } from "../../components/dashboard/NotificationsSe
 import { NewsPageSection } from "../../components/dashboard/NewsSection";
 import { WealthSection } from "../../components/dashboard/WealthSection";
 import { PlanSection } from "../../components/dashboard/PlanSection";
-import { DiscoverSection } from "../../components/dashboard/DiscoverSection";
+import { ExploreSection } from "../../components/dashboard/ExploreSection";
+import { JournalSection } from "../../components/dashboard/JournalSection";
 import { SectionTrailProvider } from "../../components/dashboard/SectionTrail";
 import { Loader2 } from "lucide-react";
 import { DemoBanner } from "../../components/preview/DemoBanner";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
-import { DISCOVER_SECTION, WEALTH_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
+import { EXPLORE_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
 
 // 'reports' and 'profile' are omitted here on purpose: neither investors nor advisors have a
 // sidebar entry for them anymore (Reports and Profile are hidden for now, Profile's
 // language/currency moved into Settings), so a stale deep link should fall back to overview
 // rather than open them.
 // 'performance' is the investor's Wealth (an advisor's Insights).
-const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'plan', 'discover', 'news', 'settings', 'notifications'];
-// Sections that became part of another: the Journal and Explore are Discover's pages now, the
-// Wallets Wealth's. A link or a history entry to the old one lands on the new. (An investor's News
-// is Discover's too, see below: an advisor keeps a News section of their own.)
-const MOVED_SECTIONS: Record<string, string> = { blog: DISCOVER_SECTION, explore: DISCOVER_SECTION, wallets: WEALTH_SECTION };
+// 'discover' is gone (its News, Journal and Explore are sections, or Plan's, again): kept so a link
+// or history entry to it lands on where its page went, see below.
+const VALID_SECTIONS = ['overview', 'clients', 'upload', 'performance', 'plan', 'news', EXPLORE_SECTION, JOURNAL_SECTION, 'discover', 'settings', 'notifications'];
+// Sections that became part of another: the Wallets are Wealth's. A link or a history entry to the
+// old one lands on the new. (An investor's Explore is Plan's, see below.)
+const MOVED_SECTIONS: Record<string, string> = { blog: JOURNAL_SECTION, wallets: WEALTH_SECTION };
 const resolveSection = (section: string | null | undefined) => (section ? MOVED_SECTIONS[section] ?? section : section);
 
 /**
@@ -109,11 +111,23 @@ function DashboardPageContent() {
 
   const isAdvisor = user?.role === 'ADVISOR';
 
-  // An investor's News is Discover's first page: an old link or history entry to it lands there.
+  // Where an old Discover page went (an advisor's Discover was Explore only), and an investor's
+  // Explore: under Plan's Strategy. The strategy open in it stays open.
   useEffect(() => {
-    if (!user || isAdvisor || activeSection !== 'news') return;
-    pushDashboardEntry({ section: DISCOVER_SECTION, view: { page: 'news' } }, true);
-    setActiveSection(DISCOVER_SECTION);
+    if (!user) return;
+    const isExplore = activeSection === EXPLORE_SECTION;
+    if (activeSection !== 'discover' && !(isExplore && !isAdvisor)) return;
+    const view = readDashboardEntry()?.view as { page?: string; publicationId?: string; slug?: string } | undefined;
+    const page = isExplore || isAdvisor ? 'explore' : view?.page;
+    const publicationId = typeof view?.publicationId === 'string' ? view.publicationId : undefined;
+    const [section, next]: [string, unknown] =
+      page === 'explore'
+        ? isAdvisor
+          ? [EXPLORE_SECTION, publicationId ? { publicationId } : undefined]
+          : [PLAN_SECTION, { page: 'explore', ...(publicationId ? { publicationId } : {}) }]
+        : page === 'journal' ? [JOURNAL_SECTION, view] : ['news', undefined];
+    pushDashboardEntry({ section, view: next }, true);
+    setActiveSection(section);
   }, [user, isAdvisor, activeSection]);
 
   // An investor's transactions live in each portfolio's page now, so a link to the old
@@ -125,7 +139,6 @@ function DashboardPageContent() {
       if (target) openPortfolioPage(openSection, target.uuid, 'transactions');
       return;
     }
-    if (section === 'news' && !isAdvisor) section = DISCOVER_SECTION;
     showSection(resolveSection(section) ?? section);
   };
 
@@ -154,11 +167,16 @@ function DashboardPageContent() {
       case 'plan':
         if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
         return <PlanSection key={sectionVisit} onNavigate={navigate} />;
-      case 'discover':
-        // An advisor's is Explore only (see DiscoverSection).
-        return <DiscoverSection key={sectionVisit} onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
+      case EXPLORE_SECTION:
+        // An investor's is Plan's, see above.
+        return isAdvisor ? <ExploreSection key={sectionVisit} onNavigate={navigate} /> : null;
+      case JOURNAL_SECTION:
+        return isDemo ? <JournalSection key={sectionVisit} /> : <DashboardOverview onNavigate={navigate} />;
+      case 'discover':
+        // Until it lands where its page went, see above.
+        return null;
       case 'profile':
         return isAdvisor ? <AdvisorProfileSection /> : <ProfileSection />;
       case 'settings':

@@ -1,15 +1,14 @@
 "use client";
 
-import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass, Map as MapIcon, PieChart } from "lucide-react";
+import { LayoutDashboard, Settings, Receipt, ChevronRight, Sparkles, Users, TrendingUp, Newspaper, Compass, Map as MapIcon, PieChart, BookOpen } from "lucide-react";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { useUser } from "../../context/UserContext";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useDashboardEntry } from "../../lib/dashboardHistory";
-import { DISCOVER_SECTION, PLAN_SECTION, WEALTH_SECTION } from "../../lib/dashboardNav";
+import { EXPLORE_SECTION, JOURNAL_SECTION, PLAN_SECTION, WEALTH_SECTION } from "../../lib/dashboardNav";
 import { portfolioColorMap } from "../../lib/chartColors";
 import { ALL_WALLETS, WALLET_OPTIONS } from "../preview/WalletPages";
 import { PLAN_PAGE_LABELS, planPages } from "./PlanSection";
-import { DISCOVER_PAGE_LABELS, discoverPages } from "./DiscoverSection";
 import { UserRole, SubscriptionTier } from "../../models/User";
 
 interface SidebarProps {
@@ -72,23 +71,17 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
     key: page,
     label: PLAN_PAGE_LABELS[page],
     view: { page },
-    // Strategy's form for a new backtest, and each backtest, are under Strategy.
-    active: view?.page === page || (page === 'strategy' && (view?.page === 'builder' || view?.page === 'backtest')),
+    // Strategy's form for a new backtest, each backtest and Explore are under Strategy.
+    active: view?.page === page || (page === 'strategy' && (view?.page === 'builder' || view?.page === 'backtest' || view?.page === 'explore')),
     preview: page !== 'strategy',
-  }));
-  const discoverRows: SubItem[] = discoverPages(isDemo).map((page) => ({
-    key: page,
-    label: DISCOVER_PAGE_LABELS[page],
-    view: { page },
-    active: view?.page === page,
-    preview: page === 'journal',
   }));
 
   const investorItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: WEALTH_SECTION, label: 'Wealth', icon: PieChart, subs: wealthRows },
     { id: PLAN_SECTION, label: 'Plan', icon: MapIcon, subs: planRows },
-    { id: DISCOVER_SECTION, label: 'Discover', icon: Compass, subs: discoverRows },
+    { id: 'news', label: 'News', icon: Newspaper },
+    ...(isDemo ? [{ id: JOURNAL_SECTION, label: 'Journal', icon: BookOpen, preview: true }] : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -98,8 +91,8 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
-    // Discover is Explore only for an advisor: the strategies catalog.
-    { id: DISCOVER_SECTION, label: 'Explore', icon: Compass },
+    // The strategies catalog (an investor's is under Plan's Strategy).
+    { id: EXPLORE_SECTION, label: 'Explore', icon: Compass },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

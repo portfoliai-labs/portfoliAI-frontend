@@ -2,7 +2,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUpRight, ChevronRight, History, Plus, Target } from "lucide-react";
+import { ArrowUpRight, ChevronRight, History, Plus, Target, Telescope, Trash2, Wrench, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useUser } from "../../context/UserContext";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
@@ -11,24 +12,30 @@ import { PortfolioNode } from "./WealthSection";
 import { investmentsOf, isBacktest, type Portfolio } from "../../models/Portfolio";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { StrategyBuilder } from "./StrategyBuilder";
+import { StrategiesExplore } from "./StrategiesExplore";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
 import { VirtualBadge } from "./BacktestMarks";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { Panel, PreviewBanner } from "../preview/PreviewKit";
 
-// "builder": Strategy's form for a new backtest; "backtest": one backtest's page, under Strategy.
-export type PlanPage = "profile" | "goals" | "retirement" | "strategy" | "builder" | "backtest";
+// Under Strategy: "builder", the form for a new backtest; "backtest", one backtest's page;
+// "explore", the strategies catalog (StrategiesExplore), to look at before making one's own.
+export type PlanPage = "profile" | "goals" | "retirement" | "strategy" | "builder" | "backtest" | "explore";
 // A backtest's pages: its own, and its generated transactions.
 export type BacktestPage = "overview" | "transactions";
 
-type PlanView = { page: PlanPage; uuid?: string; sub?: BacktestPage };
+// Explore adds the open strategy's publication.
+type PlanView = { page: PlanPage; uuid?: string; sub?: BacktestPage; publicationId?: string };
 
 const SECTION = PLAN_SECTION;
 
 // The pages a demo account sees only: previews, with nothing behind them yet.
 const PREVIEW_PAGES: PlanPage[] = ["profile", "goals", "retirement"];
 
-export const PLAN_PAGE_LABELS: Record<Exclude<PlanPage, "builder" | "backtest">, string> = {
+type ListedPlanPage = Exclude<PlanPage, "builder" | "backtest" | "explore">;
+
+export const PLAN_PAGE_LABELS: Record<ListedPlanPage, string> = {
   profile: "Investor profile",
   goals: "Goals",
   retirement: "Retirement",
@@ -36,7 +43,7 @@ export const PLAN_PAGE_LABELS: Record<Exclude<PlanPage, "builder" | "backtest">,
 };
 
 /** The pages listed under Plan for this account, in order. */
-export const planPages = (isDemo: boolean): Exclude<PlanPage, "builder" | "backtest">[] =>
+export const planPages = (isDemo: boolean): ListedPlanPage[] =>
   isDemo ? ["profile", "goals", "retirement", "strategy"] : ["strategy"];
 
 const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
@@ -47,7 +54,8 @@ const createdLabel = (iso: string) =>
  * PLAN SECTION — where the user is heading, and how they mean to invest to get there: their
  * investor profile (the start of an investor policy statement), their goals and a retirement
  * simulation, all previews for a demo account for now, and Strategy, which backtests a strategy
- * into a virtual portfolio (StrategyBuilder) and adopts one on a portfolio in Wealth
+ * into a virtual portfolio (StrategyBuilder), or first looks at the ones advisors publish
+ * (Explore, read only), and adopts one on a portfolio in Wealth
  * (AdoptStrategyDialog): each of its targets a range there, with an alert saying where the
  * portfolio stands against it. For a demo account a strip at the top of each page shows how they chain together. Every
  * page is a browser history entry (see lib/dashboardHistory).
@@ -66,6 +74,7 @@ export function PlanSection({ onNavigate }: { onNavigate: (section: string) => v
     if (page === "backtest") {
       return view.uuid ? { page, uuid: view.uuid, sub: view.sub === "transactions" ? "transactions" : "overview" } : { page: "strategy" };
     }
+    if (page === "explore" && typeof view.publicationId === "string") return { page, publicationId: view.publicationId };
     return { page };
   };
   const [view, setView] = useState<PlanView>(viewFromHistory);
@@ -98,6 +107,16 @@ export function PlanSection({ onNavigate }: { onNavigate: (section: string) => v
   if (page === "builder") {
     return <StrategyBuilder trail={strategyTrail} onCreated={(uuid) => openBacktest(uuid)} />;
   }
+  if (page === "explore") {
+    return (
+      <StrategiesExplore
+        trail={strategyTrail}
+        publicationId={view.publicationId}
+        onOpen={(publicationId) => goView(publicationId ? { page: "explore", publicationId } : { page: "explore" })}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   // A backtest's page: the same as a portfolio's in Wealth, without what a simulation doesn't
   // have (see PortfolioNode). Adopting it opens the new, real portfolio in Wealth. Until a just
@@ -127,7 +146,7 @@ export function PlanSection({ onNavigate }: { onNavigate: (section: string) => v
       {page === "profile" && <ProfilePreview />}
       {page === "goals" && <GoalsPreview />}
       {page === "retirement" && <RetirementPreview />}
-      {(page === "strategy" || page === "backtest") && <StrategyPage onNew={() => go("builder")} onOpen={openBacktest} onNavigate={onNavigate} />}
+      {(page === "strategy" || page === "backtest") && <StrategyPage onBuild={() => go("builder")} onExplore={() => go("explore")} onOpen={openBacktest} onNavigate={onNavigate} />}
     </div>
   );
 }
@@ -224,16 +243,40 @@ function RetirementPreview() {
 }
 
 /**
- * STRATEGY — the backtests the user made, each to open (its page, under Strategy) or adopt, and the
- * way to a new one (StrategyBuilder). Adopting puts the strategy on a portfolio the user picks (or
- * a new one) and opens that portfolio's Strategy page, where its ranges are. A demo account sees
- * the backtests but can't create or adopt.
+ * STRATEGY — the backtests the user made, each to open (its page, under Strategy), adopt or
+ * delete, and New strategy: build one's own (StrategyBuilder), or first explore the ones advisors
+ * publish (Explore, read only). Adopting puts the strategy on a portfolio the user picks (or a new
+ * one) and opens that portfolio's Strategy page, where its ranges are. A demo account sees the
+ * backtests but can't create, adopt or delete.
  */
-function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen: (uuid: string) => void; onNavigate: (section: string) => void }) {
-  const { portfolios } = usePortfolio();
+function StrategyPage({ onBuild, onExplore, onOpen, onNavigate }: {
+  onBuild: () => void;
+  onExplore: () => void;
+  onOpen: (uuid: string) => void;
+  onNavigate: (section: string) => void;
+}) {
+  const { portfolios, deletePortfolio } = usePortfolio();
   const { isDemo } = useUser();
   const [adopting, setAdopting] = useState<Portfolio | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [deleting, setDeleting] = useState<Portfolio | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const backtests = portfolios.filter(isBacktest);
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deletePortfolio(deleting.uuid);
+      setDeleting(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Unable to delete this backtest.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   return (
     <>
@@ -243,22 +286,23 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
         right={
           <button
             type="button"
-            onClick={onNew}
+            onClick={() => setChoosing(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1c1917] text-white text-xs font-bold hover:bg-[#C49A3C] transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" /> New backtest
+            <Plus className="h-3.5 w-3.5" /> New strategy
           </button>
         }
       />
       <p className="text-[13px] text-slate-500 leading-relaxed max-w-2xl">
-        Backtest how you would invest on historical prices. When one fits, adopt it on one of your portfolios: each of its
-        targets becomes a range, and an alert says where the portfolio stands against it.
+        Backtest how you would invest on historical prices, or first explore the strategies advisors publish. When one of
+        yours fits, adopt it on one of your portfolios: each of its targets becomes a range, and an alert says where the
+        portfolio stands against it.
       </p>
 
       {backtests.length === 0 ? (
         <button
           type="button"
-          onClick={onNew}
+          onClick={() => setChoosing(true)}
           className="min-h-44 w-full rounded-3xl border-2 border-dashed border-sky-300 bg-sky-50/40 flex flex-col items-center justify-center gap-2 px-6 text-center text-sky-700 hover:border-sky-500 transition-colors"
         >
           <History className="h-6 w-6" />
@@ -275,6 +319,16 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
                   <h3 className="mt-2 text-lg font-black text-slate-900 truncate" style={serif}>{p.name}</h3>
                   <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Created {createdLabel(p.createdAt)}</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(null); setDeleting(p); }}
+                  disabled={isDemo}
+                  aria-label={`Delete ${p.name}`}
+                  title={isDemo ? DEMO_DISABLED_TITLE : "Delete this backtest"}
+                  className="p-2 -mr-1 -mt-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
               <div className="mt-auto flex flex-wrap gap-2">
                 <button
@@ -299,6 +353,25 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
         </div>
       )}
 
+      {choosing && (
+        <NewStrategyDialog
+          onBuild={() => { setChoosing(false); onBuild(); }}
+          onExplore={() => { setChoosing(false); onExplore(); }}
+          onClose={() => setChoosing(false)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete "${deleting.name}"?`}
+          description="The backtest and its generated transactions are deleted. This can't be undone."
+          confirming={deleteBusy}
+          error={deleteError}
+          onConfirm={handleDelete}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+
       {adopting && (
         <AdoptStrategyDialog
           strategyUuid={adopting.uuid}
@@ -316,5 +389,80 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
         />
       )}
     </>
+  );
+}
+
+/**
+ * NEW STRATEGY — where a new strategy starts: from scratch (StrategyBuilder's backtest), or from
+ * the catalog, to see how other mixes and rules would have behaved first. In ConfirmDialog's shell.
+ */
+function NewStrategyDialog({ onBuild, onExplore, onClose }: {
+  onBuild: () => void;
+  onExplore: () => void;
+  onClose: () => void;
+}) {
+  const options = [
+    {
+      key: "build",
+      icon: Wrench,
+      title: "Build your own",
+      text: "Pick the securities or asset classes, their weights and how it rebalances, and backtest it on historical prices.",
+      onClick: onBuild,
+    },
+    {
+      key: "explore",
+      icon: Telescope,
+      title: "Explore published strategies",
+      text: "Browse the strategies advisors have published, each simulated, to see how different mixes would have behaved.",
+      onClick: onExplore,
+    },
+  ];
+  return createPortal(
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-strategy-title"
+        className="bg-white rounded-4xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 md:p-8 space-y-5 animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-[#C49A3C]/10 rounded-xl shrink-0">
+              <Plus className="h-5 w-5 text-[#C49A3C]" />
+            </div>
+            <div>
+              <h3 id="new-strategy-title" className="text-lg font-black text-slate-900">New strategy</h3>
+              <p className="text-xs text-slate-500">Start from scratch, or look around first.</p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="grid gap-3">
+          {options.map((o, i) => (
+            <button
+              key={o.key}
+              type="button"
+              autoFocus={i === 0}
+              onClick={o.onClick}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-200 text-left hover:border-[#C49A3C]/60 hover:bg-[#F7F5EF] transition-colors"
+            >
+              <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 group-hover:bg-[#C49A3C]/15 group-hover:text-[#C49A3C] transition-colors">
+                <o.icon className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-black text-slate-900">{o.title}</span>
+                <span className="block mt-0.5 text-xs text-slate-500 leading-relaxed">{o.text}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-slate-300 mt-3 shrink-0" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

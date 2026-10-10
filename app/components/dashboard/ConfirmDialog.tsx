@@ -9,6 +9,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   confirming?: boolean;
+  // Why the last confirm failed, shown above the buttons.
+  error?: string | null;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -21,6 +23,7 @@ export function ConfirmDialog({
   confirmLabel = "Delete",
   cancelLabel = "Cancel",
   confirming,
+  error,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -47,6 +50,7 @@ export function ConfirmDialog({
         </div>
 
         <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
+        {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
 
         <div className="flex items-center justify-end gap-3 pt-2">
           <button

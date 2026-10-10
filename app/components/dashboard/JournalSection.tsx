@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Clock } from "lucide-react";
 import { JOURNAL_ARTICLES, findJournalArticle, type JournalArticle, type JournalCategory } from "../../lib/journal";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
-import { DISCOVER_SECTION } from "../../lib/dashboardNav";
+import { JOURNAL_SECTION } from "../../lib/dashboardNav";
 import { Pills, serif } from "../preview/PreviewKit";
 
-// Discover's page this is (see DiscoverSection); an open article adds its slug to the view.
-const SECTION = DISCOVER_SECTION;
+// An open article adds its slug to the view.
+const SECTION = JOURNAL_SECTION;
 
 type JournalView = { page: "journal"; slug?: string } | undefined;
 type Filter = "all" | JournalCategory;
@@ -27,7 +27,7 @@ const articleFromHistory = (): JournalArticle | undefined => {
 };
 
 /**
- * JOURNAL (Discover / Journal; a demo account's preview for now, see DiscoverSection) — PortfoliAI's own
+ * JOURNAL (a demo account's preview for now) — PortfoliAI's own
  * articles on investing (lib/journal): the newest on a large card, the rest in a grid that can be
  * narrowed to one category, each opening on the article itself. Opening one is a history entry,
  * so the browser's back button returns to the list (see lib/dashboardHistory).

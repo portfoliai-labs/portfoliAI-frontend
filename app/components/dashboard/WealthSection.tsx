@@ -110,7 +110,7 @@ function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
     case "realEstate":
       return isDemo ? { kind: "realEstate", page: (view as { page?: RealEstatePage }).page ?? "home" } : top;
     default:
-      // Manage's hub, Strategy and Explore (now Plan's and Discover's), anything older.
+      // Manage's hub, Strategy and Explore (now Plan's), anything older.
       return top;
   }
 }
@@ -347,6 +347,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
   };
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | "adopt" | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[]>(() => initialCompareSelection(portfolios, null));
   // Bumped to start the page over (back at the top, any detail closed) from its own crumb.
   const [visit, setVisit] = useState(0);
@@ -458,6 +459,7 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
 
   const handleDelete = async () => {
     setDeleting(true);
+    setDeleteError(null);
     try {
       const left = await deletePortfolio(portfolio.uuid);
       setDialog(null);
@@ -468,6 +470,8 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
         const next = investmentsOf(left);
         if (next) onOpen(next.uuid);
       }
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : `Unable to delete this ${backtest ? "backtest" : "portfolio"}.`);
     } finally {
       setDeleting(false);
     }
@@ -499,8 +503,9 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, s
             ? "The backtest and its generated transactions are deleted. This can't be undone."
             : "Its transactions, insights, reports and alerts are deleted with it. This can't be undone."}
           confirming={deleting}
+          error={deleteError}
           onConfirm={handleDelete}
-          onClose={() => setDialog(null)}
+          onClose={() => { setDialog(null); setDeleteError(null); }}
         />
       )}
     </>

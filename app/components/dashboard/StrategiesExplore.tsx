@@ -422,7 +422,7 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
   if (!current?.strategy) {
     return (
       <div className="space-y-6 pb-12">
-        <Breadcrumb trail={trail} current="Strategy" />
+        <Breadcrumb trail={trail} current="Published strategy" />
         {current?.error
           ? <p className="flex items-center gap-2 text-sm font-semibold text-rose-600"><AlertCircle className="h-4 w-4" /> {current.error}</p>
           : <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-[#C49A3C]" /></div>}
