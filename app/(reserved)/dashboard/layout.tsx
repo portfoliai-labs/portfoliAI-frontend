@@ -5,6 +5,7 @@ import React from "react";
 import { NotificationsProvider } from "../../context/NotificationsContext";
 import { PortfolioProvider } from "../../context/PortfolioContext";
 import { ClientsProvider } from "../../context/ClientsContext";
+import { WalletsProvider } from "../../context/WalletsContext";
 
 /**
  * DashboardLayout component
@@ -21,11 +22,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <PortfolioProvider>
       <ClientsProvider>
-        <NotificationsProvider>
-          <div className="dashboard-container">
-            {children}
-          </div>
-        </NotificationsProvider>
+        <WalletsProvider>
+          <NotificationsProvider>
+            <div className="dashboard-container">
+              {children}
+            </div>
+          </NotificationsProvider>
+        </WalletsProvider>
       </ClientsProvider>
     </PortfolioProvider>
   );
