@@ -26,13 +26,14 @@ interface PortfolioContextType {
   current: Portfolio | null;
   loading: boolean;
   selectPortfolio: (uuid: string) => void;
-  refreshPortfolios: () => Promise<void>;
+  refreshPortfolios: () => Promise<Portfolio[]>;
   createPortfolio: (name: string) => Promise<Portfolio>;
   // A strategy's backtest (see models/Strategy): joins the list, selected, like a new portfolio.
   createStrategyPortfolio: (payload: StrategyPortfolioPayload) => Promise<Portfolio>;
   renamePortfolio: (uuid: string, name: string) => Promise<Portfolio>;
   // Throws (with the backend's own message) on the default portfolio's 409 — callers show it.
-  deletePortfolio: (uuid: string) => Promise<void>;
+  // Resolves with the portfolios left, refetched: the aggregate may have gone with it.
+  deletePortfolio: (uuid: string) => Promise<Portfolio[]>;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -45,10 +46,10 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
   const [currentUuid, setCurrentUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchPortfolios = useCallback(async () => {
+  const fetchPortfolios = useCallback(async (): Promise<Portfolio[]> => {
     if (!enabled) {
       setLoading(false);
-      return;
+      return [];
     }
     // No setLoading(true) here: `loading` starts true for the first fetch, and later refetches
     // (after create/delete) stay silent instead of swapping the dashboard for its loader.
@@ -63,6 +64,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
         const remembered = lastSelected ? list.find((p) => p.uuid === lastSelected) : undefined;
         return (remembered ?? list.find((p) => p.isDefault) ?? list[0])?.uuid ?? null;
       });
+      return list;
     } finally {
       setLoading(false);
     }
@@ -103,7 +105,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
   // fetchPortfolios falls back to the default on its own.
   const deletePortfolio = useCallback(async (uuid: string) => {
     await portfoliosService.remove(uuid);
-    await fetchPortfolios();
+    return fetchPortfolios();
   }, [fetchPortfolios]);
 
   const current = useMemo(

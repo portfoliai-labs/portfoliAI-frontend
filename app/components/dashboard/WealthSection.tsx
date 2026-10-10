@@ -440,11 +440,13 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await deletePortfolio(portfolio.uuid);
+      const left = await deletePortfolio(portfolio.uuid);
       setDialog(null);
       if (backtest) (onBacktestGone ?? (() => openPlanPage(onNavigate, "strategy")))();
       else {
-        const next = investmentsOf(portfolios.filter((p) => p.uuid !== portfolio.uuid));
+        // From the list as it is now: deleting the second-to-last portfolio takes All portfolios
+        // with it, and opening that would select a portfolio that's gone (a blank page).
+        const next = investmentsOf(left);
         if (next) onOpen(next.uuid);
       }
     } finally {
