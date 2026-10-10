@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, Bell, Mail, Plus, Pencil, Trash2, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { BellRing, Bell, Mail, Plus, Pencil, Trash2, Loader2, AlertCircle, CheckCircle2, ArrowUpRight, Layers } from "lucide-react";
 import { alertService } from "../../services/alertService";
 import { portfolioService } from "../../services/portfolioService";
 import { usePortfoliosAlertRules, type PortfolioAlertRule } from "../../hooks/useAlertRules";
@@ -14,11 +14,12 @@ import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { isSampleRule, sampleAlertRules } from "../../lib/mock/alerts";
 import {
-  alertFigures, alertState, describeAlert, describeParams, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL, type AlertTone,
+  alertFigures, alertState, describeAlert, describeParams, isKept, sameParams, ALERT_RULE_LIMIT, WINDOW_LABEL, type AlertTone,
 } from "../../lib/alerts";
 import type {
-  AlertParams, AlertRuleUpdateRequest, AlertDirection, AlertWindow, GroupWeightParams,
+  AlertParams, AlertRuleUpdateRequest, AlertDirection, AlertWindow, WeightSelector,
 } from "../../models/Alert";
+import { STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, type StrategyCategory } from "../../models/Strategy";
 
 interface AssetOption {
   assetId: string;
@@ -54,7 +55,11 @@ const formatDate = (iso: string) =>
 /**
  * ALERTS SETTINGS — managing alert rules: list them (with their state, a switch to turn each on or
  * off, edit, delete) and create new ones. The Dashboard shows the same rules as dials; this is
- * where they're configured. At most ALERT_RULE_LIMIT per portfolio.
+ * where they're configured. At most ALERT_RULE_LIMIT made by hand per portfolio.
+ *
+ * The rules a strategy adopted on the portfolio keeps (`source`) are listed apart, under the ones
+ * made by hand: their ranges come from the adoption, so here they can only be turned off or on and
+ * have their channels changed, never edited or deleted (the backend answers 409).
  *
  * Every alert-rule route is nested under a portfolio, so the rules are those of `portfolios`.
  * Without `clientName` they're the investor's own (a portfolio's Alerts page in Wealth, All
@@ -67,8 +72,14 @@ const formatDate = (iso: string) =>
  * to show what the page looks like with some.
  */
 // `grouped`: the per-portfolio card even for a single portfolio, so it's named (one portfolio's
-// alerts, opened from Manage portfolios).
-export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }: { portfolios: AlertPortfolio[]; clientName?: string; grouped?: boolean }) {
+// alerts, opened from Manage portfolios). `onOpenCategories`: the user's asset categories, which
+// a category alert weighs by (an advisor's are further down the client's panel).
+export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, onOpenCategories }: {
+  portfolios: AlertPortfolio[];
+  clientName?: string;
+  grouped?: boolean;
+  onOpenCategories?: () => void;
+}) {
   const uuids = portfolios.map((p) => p.uuid);
   const { rules, setRules, loading, error, reload } = usePortfoliosAlertRules(uuids);
   const grouped = forceGrouped ?? portfolios.length > 1;
@@ -155,7 +166,10 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
     return [...rules, ...sampleAlertRules(bare)];
   }, [isDemo, clientName, rules, portfolios]);
   const rulesOf = (uuid: string) => (shown ?? []).filter((r) => r.portfolioUuid === uuid);
-  const atLimit = (uuid: string) => rulesOf(uuid).length >= ALERT_RULE_LIMIT;
+  // Only the rules made by hand count towards the limit.
+  const manualOf = (uuid: string) => rulesOf(uuid).filter((r) => !isKept(r));
+  const keptOf = (uuid: string) => rulesOf(uuid).filter(isKept);
+  const atLimit = (uuid: string) => manualOf(uuid).length >= ALERT_RULE_LIMIT;
   const count = shown?.length ?? 0;
   const openNew = (portfolioUuid: string) => {
     setMessage(null);
@@ -184,7 +198,6 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
             {rule.notifyEmail && <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</span>}
             {rule.notifyInApp && <span className="flex items-center gap-1.5"><Bell className="w-3.5 h-3.5" /> In-app</span>}
             {!rule.notifyEmail && !rule.notifyInApp && <span>Dashboard only</span>}
-            {rule.policyConstraintId && <span>Kept by the portfolio&apos;s policy</span>}
           </div>
         </div>
 
@@ -207,8 +220,8 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
           </p>
         </div>
 
-        {/* A policy's rule changes with the policy (PATCH / DELETE on it are a 409). */}
-        {!isDemo && !rule.policyConstraintId ? (
+        {/* A kept rule's range changes with its adoption: it has no delete, and its edit is its channels. */}
+        {!isDemo ? (
           <div className="flex items-center gap-1.5 md:justify-end">
             <div className={busy ? "pointer-events-none opacity-60" : ""}>
               <Toggle
@@ -224,13 +237,15 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
             >
               <Pencil className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setToDelete(rule)}
-              aria-label={`Delete ${title}`}
-              className="p-2 rounded-lg text-[#78716c] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {!isKept(rule) && (
+              <button
+                onClick={() => setToDelete(rule)}
+                aria-label={`Delete ${title}`}
+                className="p-2 rounded-lg text-[#78716c] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         ) : <div className="hidden md:block" />}
       </li>
@@ -270,6 +285,7 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
       named={grouped}
       clientName={clientName}
       holdings={assetOptions[p.uuid] ?? null}
+      onOpenCategories={onOpenCategories}
       onSaved={handleSaved}
       onCancel={() => setForm(null)}
     />
@@ -305,6 +321,8 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
         {status && <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-[rgba(196,154,60,0.2)] shadow-sm">{status}</div>}
         {!status && shown !== null && portfolios.map((p) => {
           const own = rulesOf(p.uuid);
+          const manual = manualOf(p.uuid);
+          const kept = keptOf(p.uuid);
           // How many rules are in each state, most pressing first, for the header's pills.
           const byTone = TONE_SUMMARY
             .map((t) => ({ ...t, count: own.filter((r) => alertState(r).tone === t.tone).length }))
@@ -315,7 +333,8 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
               name={p.name}
               color={p.color}
               subtitle={<>
-                {own.length === 0 ? "No alerts yet" : `${own.length} of ${ALERT_RULE_LIMIT} alerts`}
+                {own.length === 0 ? "No alerts yet" : `${manual.length} of ${ALERT_RULE_LIMIT} alerts`}
+                {kept.length > 0 && ` · ${kept.length} from the adopted strategy`}
                 <span className="text-[#a8a29e]"> · checked about every 5 minutes</span>
               </>}
               right={<>
@@ -330,11 +349,12 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
               {form?.portfolioUuid === p.uuid && <div className="px-6 md:px-8 pb-5">{formFor(p)}</div>}
               {own.length === 0 ? (
                 <p className="px-6 md:px-8 py-5 border-t border-[rgba(196,154,60,0.12)] text-sm text-[#a8a29e]">
-                  Nothing watched on this portfolio. Create an alert to be told when it moves by a set amount, or when a holding grows past a share you choose.
+                  Nothing watched on this portfolio. Create an alert to be told when it moves by a set amount, or when a holding or an asset class leaves a range you choose.
                 </p>
-              ) : (
-                <ul className="px-6 md:px-8 border-t border-[rgba(196,154,60,0.12)] divide-y divide-[rgba(196,154,60,0.1)]">{own.map(renderRule)}</ul>
+              ) : manual.length > 0 && (
+                <ul className="px-6 md:px-8 border-t border-[rgba(196,154,60,0.12)] divide-y divide-[rgba(196,154,60,0.1)]">{manual.map(renderRule)}</ul>
               )}
+              {kept.length > 0 && <KeptRules className="px-6 md:px-8">{kept.map(renderRule)}</KeptRules>}
             </PortfolioGroupCard>
           );
         })}
@@ -358,7 +378,9 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
                 {clientName ? `Alerts on ${clientName}'s portfolio` : "Your alerts"}
               </span>
               <p className="text-xs text-[#78716c] mt-0.5">
-                {count} of {ALERT_RULE_LIMIT} · checked about every 5 minutes
+                {only ? manualOf(only.uuid).length : count} of {ALERT_RULE_LIMIT}
+                {only && keptOf(only.uuid).length > 0 && ` · ${keptOf(only.uuid).length} from the adopted strategy`}
+                {" "}· checked about every 5 minutes
               </p>
             </div>
           </div>
@@ -378,11 +400,16 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
         {status ?? (shown !== null && shown.length === 0 ? (
           <p className="text-sm text-[#78716c] py-2">
             {clientName
-              ? `No alerts on ${clientName}'s portfolio yet. Create one to be told when it moves by a set amount, or when a single holding grows past a share you choose.`
-              : "You have no alerts yet. Create one to be told when your portfolio moves by a set amount, or when a single holding grows past a share you choose."}
+              ? `No alerts on ${clientName}'s portfolio yet. Create one to be told when it moves by a set amount, or when a holding or an asset class leaves a range you choose.`
+              : "You have no alerts yet. Create one to be told when your portfolio moves by a set amount, or when a holding or an asset class leaves a range you choose."}
           </p>
-        ) : (
-          <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{(shown ?? []).map(renderRule)}</ul>
+        ) : only && (
+          <>
+            {manualOf(only.uuid).length > 0 && (
+              <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{manualOf(only.uuid).map(renderRule)}</ul>
+            )}
+            {keptOf(only.uuid).length > 0 && <KeptRules>{keptOf(only.uuid).map(renderRule)}</KeptRules>}
+          </>
         ))}
       </div>
 
@@ -392,74 +419,143 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped }
 }
 
 /**
- * ALERT FORM — create a rule or edit one. The rule's type is fixed once created (an edit changes
- * its threshold, direction, period, asset and channels, not what kind of alert it is). Params are
- * only sent on an edit if they actually changed, because changing them restarts the rule.
- * Backend errors (the 20-rule limit, a portfolio-change period the history doesn't cover yet)
- * are shown as the backend words them. It's always on one portfolio (`portfolio`); `named` words
- * it by that portfolio's name, when the user has several.
+ * The rules an adopted strategy keeps, under the ones made by hand: a heading saying where their
+ * ranges come from, then the rows.
  */
-type FormParams = Exclude<AlertParams, GroupWeightParams>;
+function KeptRules({ className = "", children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div className={`border-t border-[rgba(196,154,60,0.12)] ${className}`}>
+      <div className="flex items-start gap-3 pt-5">
+        <span className="p-2 bg-[#F7F5EF] text-[#C49A3C] rounded-xl shrink-0"><Layers className="w-4 h-4" /></span>
+        <div>
+          <p className="text-sm font-black text-[#1c1917]">From your adopted strategy</p>
+          <p className="text-xs text-[#78716c] mt-0.5 leading-relaxed">
+            One range per target of the strategy adopted on this portfolio. They change with the strategy: here you can turn
+            them off or choose how you&apos;re told.
+          </p>
+        </div>
+      </div>
+      <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{children}</ul>
+    </div>
+  );
+}
 
+type WeightKind = WeightSelector["kind"];
+
+const WEIGHT_KINDS: { id: WeightKind; label: string }[] = [
+  { id: "asset", label: "A security" },
+  { id: "group", label: "Several together" },
+  { id: "category", label: "An asset class" },
+  { id: "any_asset", label: "Any single holding" },
+];
+
+// A group weighs at most this many securities together.
+const MAX_GROUP_ASSETS = 50;
+
+/** A percentage field's value: null when blank, NaN when it isn't a number. */
+const parsePct = (text: string): number | null => (text.trim() === "" ? null : Number(text.replace(",", ".")));
+
+/**
+ * ALERT FORM — create a rule or edit one. The rule's type is fixed once created (an edit changes
+ * its condition and channels, not what kind of alert it is). A weight alert watches one of four
+ * things — a security, several weighed together, an asset class (as the user's asset categories
+ * have it) or any single holding — against a range: below a minimum, above a maximum, or either
+ * (any single holding takes a maximum only). Params are only sent on an edit if they actually
+ * changed, because changing them restarts the rule. A rule an adopted strategy keeps opens on its
+ * channels alone: its condition is the adoption's. Backend errors (the 20-rule limit, a
+ * portfolio-change period the history doesn't cover yet) are shown as the backend words them.
+ * It's always on one portfolio (`portfolio`); `named` words it by that portfolio's name, when the
+ * user has several.
+ */
 function AlertForm({
-  rule, portfolio: target, named, clientName, holdings, onSaved, onCancel,
+  rule, portfolio: target, named, clientName, holdings, onOpenCategories, onSaved, onCancel,
 }: {
   rule: PortfolioAlertRule | null;
   portfolio: AlertPortfolio;
   named: boolean;
   clientName?: string;
-  // The portfolio's holdings for the asset picker; null while they load.
+  // The portfolio's holdings for the security pickers; null while they load.
   holdings: AssetOption[] | null;
+  onOpenCategories?: () => void;
   onSaved: (saved: PortfolioAlertRule, created: boolean) => void;
   onCancel: () => void;
 }) {
   const editing = rule !== null;
-  // A policy's group-weight rules are never edited here (see renderRule), so the form only knows
-  // the two kinds it creates.
-  const initial = rule?.params.type === "group_weight" ? undefined : rule?.params;
+  const kept = rule !== null && isKept(rule);
+  const initial = rule?.params;
+  const initialWeight = initial?.type === "weight" ? initial : undefined;
+  const initialSelector = initialWeight?.selector;
   const portfolioUuid = target.uuid;
   const portfolio = clientName ? `${clientName}'s portfolio` : named ? target.name : "your portfolio";
 
-  const [type, setType] = useState<FormParams["type"]>(initial?.type ?? "portfolio_change");
+  const [type, setType] = useState<AlertParams["type"]>(initial?.type ?? "portfolio_change");
   const [direction, setDirection] = useState<AlertDirection>(initial?.type === "portfolio_change" ? initial.direction : "down");
   const [span, setSpan] = useState<AlertWindow>(initial?.type === "portfolio_change" ? initial.window : "day");
-  const [threshold, setThreshold] = useState(initial ? String(initial.thresholdPct) : "");
-  const [assetId, setAssetId] = useState(initial?.type === "asset_weight" ? initial.assetId ?? "" : "");
+  const [threshold, setThreshold] = useState(initial?.type === "portfolio_change" ? String(initial.thresholdPct) : "");
+  const [kind, setKind] = useState<WeightKind>(initialSelector?.kind ?? "asset");
+  const [assetId, setAssetId] = useState(initialSelector?.kind === "asset" ? initialSelector.assetId : "");
+  const [groupIds, setGroupIds] = useState<string[]>(initialSelector?.kind === "group" ? initialSelector.assetIds : []);
+  const [groupLabel, setGroupLabel] = useState(initialSelector?.kind === "group" ? initialSelector.label ?? "" : "");
+  const [category, setCategory] = useState<StrategyCategory>(initialSelector?.kind === "category" ? initialSelector.category : "equity");
+  const [minText, setMinText] = useState(initialWeight?.minPct != null ? String(initialWeight.minPct) : "");
+  const [maxText, setMaxText] = useState(initialWeight?.maxPct != null ? String(initialWeight.maxPct) : "");
   const [notifyEmail, setNotifyEmail] = useState(rule?.notifyEmail ?? true);
   const [notifyInApp, setNotifyInApp] = useState(rule?.notifyInApp ?? true);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const maxThreshold = type === "portfolio_change" ? 1000 : 100;
-  const thresholdNumber = Number(threshold.replace(",", "."));
-  const thresholdValid = threshold.trim() !== "" && Number.isFinite(thresholdNumber) && thresholdNumber > 0 && thresholdNumber <= maxThreshold;
-
-  // The picker lists current holdings; an edited rule may point at an asset no longer held, which
-  // still needs an option so the select doesn't silently switch it to "any asset".
+  // The pickers list current holdings; an edited rule may point at securities no longer held,
+  // which still need an option so the choice isn't silently dropped.
   const options = [...(holdings ?? [])];
-  if (assetId && !options.some((o) => o.assetId === assetId)) {
-    options.push({ assetId, label: rule?.reading?.assetName ?? "Selected asset (no longer held)" });
+  for (const id of [assetId, ...groupIds]) {
+    if (id && !options.some((o) => o.assetId === id)) {
+      options.push({ assetId: id, label: id === rule?.reading?.assetId && rule.reading.assetName ? rule.reading.assetName : `${id} (no longer held)` });
+    }
   }
   const assetLabel = options.find((o) => o.assetId === assetId)?.label;
 
-  const params: FormParams | null = !thresholdValid
-    ? null
-    : type === "portfolio_change"
-      ? { type, direction, thresholdPct: thresholdNumber, window: span }
-      : { type, thresholdPct: thresholdNumber, assetId: assetId || null };
+  // ── portfolio_change ──
+  const thresholdNumber = Number(threshold.replace(",", "."));
+  const thresholdValid = threshold.trim() !== "" && Number.isFinite(thresholdNumber) && thresholdNumber > 0 && thresholdNumber <= 1000;
+
+  // ── weight ──
+  const anyAsset = kind === "any_asset";
+  const minPct = anyAsset ? null : parsePct(minText);
+  const maxPct = parsePct(maxText);
+  const badPct = (v: number | null) => v !== null && !(Number.isFinite(v) && v > 0 && v <= 100);
+  const selector: WeightSelector | null =
+    kind === "any_asset" ? { kind }
+      : kind === "category" ? { kind, category }
+        : kind === "asset" ? (assetId ? { kind, assetId } : null)
+          : groupIds.length > 0 ? { kind, assetIds: groupIds, label: groupLabel.trim() || null } : null;
+  const weightProblem =
+    badPct(minPct) || badPct(maxPct) ? "Enter percentages above 0 and up to 100."
+      : minPct === null && maxPct === null ? null
+        : minPct !== null && maxPct !== null && minPct >= maxPct ? "The minimum must be below the maximum."
+          : groupIds.length > MAX_GROUP_ASSETS ? `A group holds at most ${MAX_GROUP_ASSETS} securities.`
+            : null;
+
+  const params: AlertParams | null =
+    type === "portfolio_change"
+      ? thresholdValid ? { type, direction, thresholdPct: thresholdNumber, window: span } : null
+      : selector && !weightProblem && (minPct !== null || maxPct !== null) ? { type, selector, minPct, maxPct } : null;
+
+  const toggleGroup = (id: string) =>
+    setGroupIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!params) return;
+    if (!params && !kept) return;
     setSaving(true);
     setFormError(null);
     try {
       if (rule === null) {
-        onSaved({ ...await alertService.createRule(portfolioUuid, { params, notifyEmail, notifyInApp }), portfolioUuid }, true);
+        onSaved({ ...await alertService.createRule(portfolioUuid, { params: params!, notifyEmail, notifyInApp }), portfolioUuid }, true);
         return;
       }
       const changes: AlertRuleUpdateRequest = {};
-      if (!sameParams(params, rule.params)) changes.params = params;
+      // A kept rule's params are its adoption's: sending them is a 409.
+      if (!kept && params && !sameParams(params, rule.params)) changes.params = params;
       if (notifyEmail !== rule.notifyEmail) changes.notifyEmail = notifyEmail;
       if (notifyInApp !== rule.notifyInApp) changes.notifyInApp = notifyInApp;
       if (Object.keys(changes).length === 0) {
@@ -474,99 +570,167 @@ function AlertForm({
     }
   };
 
+  const segmented = (items: { id: string; label: string }[], value: string, onPick: (id: string) => void, locked: boolean) => (
+    <div className="inline-flex flex-wrap gap-1 p-1 bg-white rounded-xl border border-[rgba(196,154,60,0.2)]">
+      {items.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          disabled={locked}
+          onClick={() => onPick(t.id)}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors disabled:cursor-not-allowed ${
+            value === t.id ? "bg-[#1c1917] text-white" : "text-[#78716c] hover:text-[#1c1917]"
+          } ${locked && value !== t.id ? "opacity-40" : ""}`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const pctField = (label: string, value: string, onChange: (v: string) => void, placeholder: string) => (
+    <label className="block">
+      <span className={FIELD_LABEL}>{label}</span>
+      <input type="text" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={FIELD_INPUT} />
+    </label>
+  );
+
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-[rgba(196,154,60,0.3)] bg-[#FBFAF6] p-5 md:p-6 space-y-5">
-      <h3 className="text-sm font-black text-[#1c1917]">{editing ? "Edit alert" : "New alert"}</h3>
+      <h3 className="text-sm font-black text-[#1c1917]">{kept ? "Notifications for this alert" : editing ? "Edit alert" : "New alert"}</h3>
 
-      <div>
-        <span className={FIELD_LABEL}>Alert type</span>
-        <div className="inline-flex gap-1 p-1 bg-white rounded-xl border border-[rgba(196,154,60,0.2)]">
-          {([
-            { id: "portfolio_change", label: "Portfolio change" },
-            { id: "asset_weight", label: "Asset weight" },
-          ] as const).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              disabled={editing}
-              onClick={() => setType(t.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors disabled:cursor-not-allowed ${
-                type === t.id ? "bg-[#1c1917] text-white" : "text-[#78716c] hover:text-[#1c1917]"
-              } ${editing && type !== t.id ? "opacity-40" : ""}`}
-            >
-              {t.label}
-            </button>
-          ))}
+      {kept ? (
+        <p className="text-sm text-[#1c1917] bg-white border border-[rgba(196,154,60,0.2)] rounded-xl px-4 py-3 leading-relaxed">
+          <span className="font-bold">{describeAlert(rule!, clientName).title}.</span>{" "}
+          <span className="text-[#78716c]">Its range comes from the strategy adopted on {portfolio}: it changes with the strategy.</span>
+        </p>
+      ) : (<>
+        <div>
+          <span className={FIELD_LABEL}>Alert type</span>
+          {segmented(
+            [{ id: "portfolio_change", label: "Portfolio change" }, { id: "weight", label: "Weight" }],
+            type,
+            (id) => setType(id as AlertParams["type"]),
+            editing,
+          )}
         </div>
-      </div>
 
-      {type === "portfolio_change" ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <label className="block">
-              <span className={FIELD_LABEL}>Direction</span>
-              <select value={direction} onChange={(e) => setDirection(e.target.value as AlertDirection)} className={FIELD_INPUT}>
-                <option value="down">Falls</option>
-                <option value="up">Rises</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className={FIELD_LABEL}>By at least (%)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={threshold}
-                onChange={(e) => setThreshold(e.target.value)}
-                placeholder="5"
-                className={FIELD_INPUT}
-              />
-            </label>
-            <label className="block">
-              <span className={FIELD_LABEL}>Over</span>
-              <select value={span} onChange={(e) => setSpan(e.target.value as AlertWindow)} className={FIELD_INPUT}>
-                {(Object.keys(WINDOW_LABEL) as AlertWindow[]).map((w) => (
-                  <option key={w} value={w}>{WINDOW_LABEL[w]}</option>
-                ))}
-              </select>
-            </label>
+        {type === "portfolio_change" ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <label className="block">
+                <span className={FIELD_LABEL}>Direction</span>
+                <select value={direction} onChange={(e) => setDirection(e.target.value as AlertDirection)} className={FIELD_INPUT}>
+                  <option value="down">Falls</option>
+                  <option value="up">Rises</option>
+                </select>
+              </label>
+              {pctField("By at least (%)", threshold, setThreshold, "5")}
+              <label className="block">
+                <span className={FIELD_LABEL}>Over</span>
+                <select value={span} onChange={(e) => setSpan(e.target.value as AlertWindow)} className={FIELD_INPUT}>
+                  {(Object.keys(WINDOW_LABEL) as AlertWindow[]).map((w) => (
+                    <option key={w} value={w}>{WINDOW_LABEL[w]}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="text-xs text-[#78716c]">
+              Measured on the result of {portfolio}, net of deposits and withdrawals. It isn&apos;t the time-weighted
+              return shown in the reports.
+            </p>
+            {threshold.trim() !== "" && !thresholdValid && (
+              <p className="text-xs font-bold text-rose-600">Enter a number above 0 and up to 1000.</p>
+            )}
           </div>
-          <p className="text-xs text-[#78716c]">
-            Measured on the result of {portfolio}, net of deposits and withdrawals. It isn&apos;t the time-weighted
-            return shown in the reports.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="block">
-              <span className={FIELD_LABEL}>Asset</span>
-              <select value={assetId} onChange={(e) => setAssetId(e.target.value)} className={FIELD_INPUT}>
-                <option value="">Any asset</option>
-                {options.map((o) => <option key={o.assetId} value={o.assetId}>{o.label}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className={FIELD_LABEL}>Above (% of portfolio)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={threshold}
-                onChange={(e) => setThreshold(e.target.value)}
-                placeholder="30"
-                className={FIELD_INPUT}
-              />
-            </label>
-          </div>
-          <p className="text-xs text-[#78716c]">
-            Triggers when the asset&apos;s share of {portfolio} goes above this value.
-            {holdings === null && " Loading the holdings…"}
-          </p>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <span className={FIELD_LABEL}>Watch</span>
+              {segmented(WEIGHT_KINDS, kind, (id) => setKind(id as WeightKind), false)}
+            </div>
 
-      {threshold.trim() !== "" && !thresholdValid && (
-        <p className="text-xs font-bold text-rose-600">Enter a number above 0 and up to {maxThreshold}.</p>
-      )}
+            {kind === "asset" && (
+              <label className="block sm:max-w-md">
+                <span className={FIELD_LABEL}>Security</span>
+                <select value={assetId} onChange={(e) => setAssetId(e.target.value)} className={FIELD_INPUT}>
+                  <option value="" disabled>{holdings === null ? "Loading the holdings…" : "Choose a holding…"}</option>
+                  {options.map((o) => <option key={o.assetId} value={o.assetId}>{o.label}</option>)}
+                </select>
+              </label>
+            )}
+
+            {kind === "group" && (
+              <div className="space-y-3">
+                <label className="block sm:max-w-md">
+                  <span className={FIELD_LABEL}>Group name (optional)</span>
+                  <input value={groupLabel} onChange={(e) => setGroupLabel(e.target.value)} maxLength={60} placeholder="Core" className={FIELD_INPUT} />
+                </label>
+                <div>
+                  <span className={FIELD_LABEL}>Securities, weighed together · {groupIds.length} picked</span>
+                  {holdings === null ? (
+                    <p className="text-xs text-[#78716c]">Loading the holdings…</p>
+                  ) : options.length === 0 ? (
+                    <p className="text-xs text-[#78716c]">No holdings in {portfolio} yet.</p>
+                  ) : (
+                    <ul className="max-h-56 overflow-y-auto custom-scrollbar rounded-xl border border-[rgba(196,154,60,0.2)] bg-white divide-y divide-[rgba(196,154,60,0.1)]">
+                      {options.map((o) => (
+                        <li key={o.assetId}>
+                          <label className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#1c1917] cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={groupIds.includes(o.assetId)}
+                              onChange={() => toggleGroup(o.assetId)}
+                              className="accent-[#C49A3C]"
+                            />
+                            <span className="truncate">{o.label}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {kind === "category" && (
+              <div className="space-y-2">
+                <label className="block sm:max-w-md">
+                  <span className={FIELD_LABEL}>Asset class</span>
+                  <select value={category} onChange={(e) => setCategory(e.target.value as StrategyCategory)} className={FIELD_INPUT}>
+                    {STRATEGY_CATEGORIES.map((c) => <option key={c} value={c}>{STRATEGY_CATEGORY_LABELS[c]}</option>)}
+                  </select>
+                </label>
+                <p className="text-xs text-[#78716c] leading-relaxed">
+                  The securities held in this asset class, as {clientName ? `${clientName}'s` : "your"} asset categories have them;
+                  one without a category counts in none.{" "}
+                  {onOpenCategories ? (
+                    <button type="button" onClick={onOpenCategories} className="inline-flex items-center gap-0.5 font-bold text-[#C49A3C] hover:text-[#a87f2f]">
+                      Check your asset categories <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                  ) : clientName ? "They're set under Asset categories, below." : null}
+                </p>
+              </div>
+            )}
+
+            {kind === "any_asset" && (
+              <p className="text-xs text-[#78716c]">Each holding on its own: the heaviest one is the one measured.</p>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:max-w-md">
+              {!anyAsset && pctField("Below (% of portfolio)", minText, setMinText, "Optional")}
+              {pctField("Above (% of portfolio)", maxText, setMaxText, anyAsset ? "30" : "Optional")}
+            </div>
+            {weightProblem ? (
+              <p className="text-xs font-bold text-rose-600">{weightProblem}</p>
+            ) : (
+              <p className="text-xs text-[#78716c]">
+                {anyAsset ? "Triggers when a single holding's share of the portfolio goes above this value." : "Set a minimum, a maximum, or both."}
+              </p>
+            )}
+          </div>
+        )}
+      </>)}
 
       <div>
         <span className={FIELD_LABEL}>Notify me by</span>
@@ -585,13 +749,13 @@ function AlertForm({
         )}
       </div>
 
-      {params && (
+      {params && !kept && (
         <p className="text-sm text-[#1c1917] bg-white border border-[rgba(196,154,60,0.2)] rounded-xl px-4 py-3 leading-relaxed">
           {describeParams(params, assetLabel, clientName, named ? target.name : undefined)}
         </p>
       )}
 
-      {editing && (
+      {editing && !kept && (
         <p className="text-xs text-[#78716c]">
           Changing the condition restarts the alert: its next check is a fresh starting point and can&apos;t trigger it.
         </p>
@@ -615,7 +779,7 @@ function AlertForm({
         </button>
         <button
           type="submit"
-          disabled={!params || saving}
+          disabled={(!params && !kept) || saving}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1c1917] hover:bg-[#C49A3C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}

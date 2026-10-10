@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2, Clock, Bell, BellRing } from "lucide-react";
 import type { NotificationResponse } from "../../services/notificationService";
-import { formatAlertPct, formatRange, WINDOW_LABEL } from "../../lib/alerts";
-import { categoryLabel } from "../../models/Policy";
+import { categoryLabel, formatAlertPct, formatRange, WINDOW_LABEL } from "../../lib/alerts";
 import type { AlertWindow } from "../../models/Alert";
 
 interface NotificationListProps {
@@ -79,7 +78,10 @@ function getReportName(n: NotificationResponse): string | undefined {
 // An alert firing (type ALERT_TRIGGERED). Its payload is snake_case with numbers already in %:
 // rule_type, threshold_pct, and either asset_id / asset_name / ticker / weight_pct (asset_weight)
 // or direction / window / change_pct (portfolio_change), or label / min_pct / max_pct / bound /
-// weight_pct / assets (group_weight, a portfolio policy's), plus portfolio_uuid / portfolio_name.
+// weight_pct / assets (group_weight), plus portfolio_uuid / portfolio_name. A weight rule fires as
+// one of the two praeco already told: a cap on one asset (or any) as asset_weight, anything else
+// (a group, a category, an asset's minimum) as group_weight, labelled by the group's name, the
+// category or the asset.
 // On an advisor's rule it also carries client_uuid / client_name, the client whose portfolio fired.
 const ALERT_CONFIG = {
   label: "Alert",

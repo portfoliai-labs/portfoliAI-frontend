@@ -532,7 +532,15 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
           : <FileUploader key={portfolio.uuid} portfolioUuid={portfolio.uuid} readOnly={backtest} />
       )}
       {page === "alerts" && (
-        <AlertsSettings key={portfolio.uuid} portfolios={alertPortfolios} grouped={portfolio.isAggregate ? true : undefined} />
+        <AlertsSettings
+          key={portfolio.uuid}
+          portfolios={alertPortfolios}
+          grouped={portfolio.isAggregate ? true : undefined}
+          onOpenCategories={() => {
+            const investments = investmentsOf(portfolios);
+            if (investments) onOpen(investments.uuid, "categories");
+          }}
+        />
       )}
       {page === "reports" && (
         portfolio.isAggregate ? <ReportsBrowser key="all" /> : <ReportsBrowser key={portfolio.uuid} portfolioUuid={portfolio.uuid} />
