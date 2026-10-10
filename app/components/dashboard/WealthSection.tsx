@@ -32,6 +32,8 @@ import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
 import { AdoptedStrategyView } from "./AdoptedStrategyView";
 import { adoptionService } from "../../services/adoptionService";
 import { BacktestBanner } from "./BacktestMarks";
+import { ReadOnlySimulation } from "./ReadOnlySimulation";
+import type { SharedStrategy } from "../../models/AdoptedStrategy";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { walletsSummary } from "../preview/WalletsOverview";
@@ -49,7 +51,9 @@ export type WealthView =
   // opens straight on their investments.
   | { kind: "root" }
   // A portfolio, "All portfolios" (the investments) included. A strategy's backtest is Plan's.
-  | { kind: "portfolio"; uuid: string; page: PortfolioPage }
+  // `simulation`: on its Strategy page, the advisor's strategy portfolio a shared strategy came
+  // from, opened read-only.
+  | { kind: "portfolio"; uuid: string; page: PortfolioPage; simulation?: string }
   // A wallet, or every wallet together (ALL_WALLETS); a demo account's preview.
   | { kind: "wallet"; id: string; page: WalletPage }
   // A sample real estate portfolio; a demo account's preview.
@@ -78,11 +82,13 @@ function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
     case "root":
       return top;
     case "portfolio": {
-      const v = view as { uuid?: string; page?: string };
+      const v = view as { uuid?: string; page?: string; simulation?: unknown };
       if (!portfolios.some((p) => p.uuid === v.uuid)) return top;
       // A portfolio had tabs (`tab`), then Insights as its first page, before its own page.
       const page = PORTFOLIO_PAGES.includes(v.page as PortfolioPage) ? (v.page as PortfolioPage) : "overview";
-      return { kind: "portfolio", uuid: v.uuid!, page };
+      return page === "strategy" && typeof v.simulation === "string"
+        ? { kind: "portfolio", uuid: v.uuid!, page, simulation: v.simulation }
+        : { kind: "portfolio", uuid: v.uuid!, page };
     }
     // Investments' own pages before they were the investments' (Manage / Investments / Alerts…).
     case "investments":
@@ -172,6 +178,7 @@ export function WealthSection({ onNavigate }: { onNavigate: (section: string) =>
   const portfolio = (view.kind === "portfolio" && portfolios.find((p) => p.uuid === view.uuid)) || investments;
   if (!portfolio) return null;
   const page = view.kind === "portfolio" && view.uuid === portfolio.uuid ? view.page : "overview";
+  const simulation = view.kind === "portfolio" && view.uuid === portfolio.uuid ? view.simulation : undefined;
   // A backtest is a simulation, not something owned: it's Plan's (see BacktestRedirect).
   if (isBacktest(portfolio)) {
     return <BacktestRedirect uuid={portfolio.uuid} transactions={page === "transactions"} onNavigate={onNavigate} />;
@@ -191,6 +198,8 @@ export function WealthSection({ onNavigate }: { onNavigate: (section: string) =>
       trail={trail}
       isInvestments={portfolio.uuid === investments?.uuid}
       onOpen={openPortfolio}
+      simulation={simulation}
+      onOpenSimulation={(uuid) => go({ kind: "portfolio", uuid: portfolio.uuid, page: "strategy", simulation: uuid })}
       onNavigate={onNavigate}
     />
   );
@@ -229,22 +238,28 @@ function useComparisonEntry(uuid: string) {
 }
 
 /**
- * Whether a strategy is adopted on the portfolio (GET .../adopted-strategy), for its header's way
- * to it: undefined while loading or for a backtest, which can't adopt one. `reload` after a change.
+ * Whether a strategy is adopted on the portfolio (GET .../adopted-strategy), and the strategies the
+ * user's advisor shared for it (GET .../shared-strategies: All portfolios' are its own, as it adopts its own),
+ * for its header's way to its Strategy page: undefined while loading or for a backtest, which can't
+ * adopt one. `reload` after a change.
  */
 function useHasAdoption(portfolio: Portfolio) {
   const backtest = isBacktest(portfolio);
-  const [state, setState] = useState<{ uuid: string; has: boolean } | null>(null);
+  const [state, setState] = useState<{ uuid: string; has: boolean; shared: SharedStrategy[] } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     if (backtest) return;
     let cancelled = false;
-    adoptionService.get(portfolio.uuid)
-      .then((a) => { if (!cancelled) setState({ uuid: portfolio.uuid, has: a !== null }); })
-      .catch(() => { if (!cancelled) setState({ uuid: portfolio.uuid, has: false }); });
+    Promise.all([
+      adoptionService.get(portfolio.uuid).catch(() => null),
+      adoptionService.listShared(portfolio.uuid).catch(() => [] as SharedStrategy[]),
+    ]).then(([adoption, shared]) => {
+      if (!cancelled) setState({ uuid: portfolio.uuid, has: adoption !== null, shared });
+    });
     return () => { cancelled = true; };
   }, [portfolio.uuid, backtest, reloadKey]);
-  return { hasAdoption: state?.uuid === portfolio.uuid ? state.has : undefined, reload: () => setReloadKey((k) => k + 1) };
+  const current = state?.uuid === portfolio.uuid ? state : undefined;
+  return { hasAdoption: current?.has, shared: current?.shared ?? [], reload: () => setReloadKey((k) => k + 1) };
 }
 
 /**
@@ -302,13 +317,17 @@ function useActivityCounts(portfolio: Portfolio, real: Portfolio[]) {
  * Under the header, its Insights (PerformanceSection), whose Composition opens each portfolio of
  * All portfolios. A demo account sees everything but can't change anything.
  */
-export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, onBacktestGone, onNavigate }: {
+export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, simulation, onOpenSimulation, onBacktestGone, onNavigate }: {
   portfolio: Portfolio;
   page: PortfolioPage;
   trail: Crumb[];
   // It stands for all the investments ("All portfolios", or the only portfolio).
   isInvestments: boolean;
   onOpen: (uuid: string, page?: PortfolioPage) => void;
+  // On its Strategy page: the advisor's simulation a shared strategy came from, open read-only,
+  // and the way to open one.
+  simulation?: string;
+  onOpenSimulation?: (uuid: string) => void;
   // A backtest's page (Plan's): where to go once it's deleted. Strategy by default.
   onBacktestGone?: () => void;
   onNavigate: (section: string) => void;
@@ -320,8 +339,8 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   const backtest = isBacktest(portfolio);
   const entry = useComparisonEntry(portfolio.uuid);
   const counts = useActivityCounts(portfolio, real);
-  const { hasAdoption, reload: reloadAdoption } = useHasAdoption(portfolio);
-  const strategyAction: PageAction[] = hasAdoption ? [{ label: "Strategy", onClick: () => open("strategy") }] : [];
+  const { hasAdoption, shared, reload: reloadAdoption } = useHasAdoption(portfolio);
+  const strategyAction: PageAction[] = hasAdoption || shared.length > 0 ? [{ label: "Strategy", onClick: () => open("strategy") }] : [];
   const openCategories = () => {
     const investments = investmentsOf(portfolios);
     if (investments) onOpen(investments.uuid, "categories");
@@ -525,12 +544,29 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   if (page === "portfolios") {
     return <ManagePortfolios trail={pageTrail} onOpenPortfolio={(uuid) => onOpen(uuid)} onOpenAlerts={(uuid) => onOpen(uuid, "alerts")} />;
   }
+  if (page === "strategy" && simulation) {
+    return (
+      <ReadOnlySimulation
+        portfolioUuid={simulation}
+        trail={[...pageTrail, { label: PAGE_LABELS.strategy, onClick: () => open("strategy") }]}
+        eyebrow="Your advisor's simulation"
+        notice={(
+          <ReadOnlyNote>
+            The simulation your advisor made this strategy from, shared with you to read. It can&apos;t be changed or copied.
+          </ReadOnlyNote>
+        )}
+        onNavigate={onNavigate}
+      />
+    );
+  }
   if (page === "strategy") {
     return (
       <AdoptedStrategyView
         key={portfolio.uuid}
         portfolio={portfolio}
         trail={pageTrail}
+        shared={shared}
+        onOpenSimulation={(uuid) => onOpenSimulation?.(uuid)}
         onOpenAlerts={() => open("alerts")}
         onNavigate={onNavigate}
         onChanged={reloadAdoption}

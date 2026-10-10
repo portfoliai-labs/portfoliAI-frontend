@@ -81,7 +81,7 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
     label: DISCOVER_PAGE_LABELS[page],
     view: { page },
     active: view?.page === page,
-    preview: page !== 'news',
+    preview: page === 'journal',
   }));
 
   const investorItems: NavItem[] = [
@@ -98,6 +98,8 @@ export function Sidebar({ activeSection, setActiveSection, onOpenPage, isOpen = 
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'upload', label: 'Transactions', icon: Receipt },
     { id: 'performance', label: 'Insights', icon: TrendingUp },
+    // Discover is Explore only for an advisor: the strategies catalog.
+    { id: DISCOVER_SECTION, label: 'Explore', icon: Compass },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

@@ -155,8 +155,8 @@ function DashboardPageContent() {
         if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
         return <PlanSection key={sectionVisit} onNavigate={navigate} />;
       case 'discover':
-        if (isAdvisor) return <AdvisorDashboardOverview onNavigate={navigate} />;
-        return <DiscoverSection key={sectionVisit} />;
+        // An advisor's is Explore only (see DiscoverSection).
+        return <DiscoverSection key={sectionVisit} onNavigate={navigate} />;
       case 'news':
         return <NewsPageSection />;
       case 'profile':
@@ -164,7 +164,7 @@ function DashboardPageContent() {
       case 'settings':
         return <SettingsSection />;
       case 'notifications':
-        return <NotificationsSection />;
+        return <NotificationsSection onOpenPage={openPage} />;
       default:
         return <DashboardOverview onNavigate={navigate} />;
     }
@@ -195,6 +195,7 @@ function DashboardPageContent() {
         onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         subscriptionTier={user.subscription_tier}
         onNavigate={navigate}
+        onOpenPage={openPage}
       />
 
       {/* The window scrolls the page (the header above is sticky to it), so nothing between it

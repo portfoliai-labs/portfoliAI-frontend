@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, XCircle, Loader2, Clock, Bell, BellRing } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Clock, Bell, BellRing, Target } from "lucide-react";
 import type { NotificationResponse } from "../../services/notificationService";
 import { categoryLabel, formatAlertPct, formatRange, WINDOW_LABEL } from "../../lib/alerts";
 import type { AlertWindow } from "../../models/Alert";
+import { WEALTH_SECTION } from "../../lib/dashboardNav";
+import type { WealthView } from "./WealthSection";
 
 interface NotificationListProps {
   notifications: NotificationResponse[];
   isLoading: boolean;
+  // Opens a section on one of its pages (a shared strategy's link); without it, no link.
+  onOpenPage?: (section: string, view: unknown) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,9 +133,9 @@ function getAlertSummary(n: NotificationResponse): { title: string; detail: stri
 
 // A strategy's backtest that failed for good (type STRATEGY_FAILED): its portfolio was deleted.
 // Payload: portfolio_uuid, portfolio_name and reason — "history_too_short" (what it holds has
-// under a year of prices in common over its period), "prices_unavailable" or "error".
+// under a year of prices in common), "prices_unavailable" or "error".
 const STRATEGY_FAILED_REASONS: Record<string, string> = {
-  history_too_short: "What it holds has less than a year of prices in common over that period: try a later start or other assets.",
+  history_too_short: "What it holds has less than a year of prices in common: try other assets, or ones with a longer history.",
   prices_unavailable: "The prices of what it holds couldn't be loaded.",
 };
 
@@ -141,6 +145,25 @@ function getStrategyFailedSummary(n: NotificationResponse): { title: string; det
   return {
     title: typeof p.portfolio_name === "string" ? `Backtest “${p.portfolio_name}” couldn't run` : "A backtest couldn't run",
     detail: `${reason ?? "Something went wrong while running it."} It was removed.`,
+  };
+}
+
+// An advisor shared a strategy for one of the user's portfolios (type STRATEGY_SHARED). Payload:
+// adoption_id, portfolio_uuid, portfolio_name, advisor_uuid, advisor_name. It links to that
+// portfolio's Strategy page, where the strategy is (SharedStrategyPanel).
+const STRATEGY_SHARED_CONFIG = {
+  label: "Strategy",
+  icon: <Target className="w-5 h-5 text-[#C49A3C] shrink-0" />,
+  pill: "bg-[#C49A3C]/10 text-[#8A6A28] border-[#C49A3C]/30",
+};
+
+function getStrategySharedSummary(n: NotificationResponse): { title: string; detail: string } {
+  const p = n.payload ?? {};
+  const advisor = typeof p.advisor_name === "string" && p.advisor_name ? p.advisor_name : "Your advisor";
+  const portfolio = typeof p.portfolio_name === "string" ? p.portfolio_name : "your portfolio";
+  return {
+    title: `${advisor} shared a strategy for ${portfolio}`,
+    detail: "Its targets and where the portfolio stands against them, to read.",
   };
 }
 
@@ -160,7 +183,7 @@ function formatDate(iso: string): string {
 // Shared body markup for the notifications list — used by both the desktop
 // header dropdown (NotificationPanel) and the full-page mobile view
 // (NotificationsSection), so the two stay visually and behaviorally in sync.
-export function NotificationList({ notifications, isLoading }: NotificationListProps) {
+export function NotificationList({ notifications, isLoading, onOpenPage }: NotificationListProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-10">
@@ -183,8 +206,12 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
       {notifications.map((n) => {
         const isAlert = n.type === "ALERT_TRIGGERED";
         const isStrategyFailed = n.type === "STRATEGY_FAILED";
-        const cfg = isAlert ? ALERT_CONFIG : isStrategyFailed ? STATUS_CONFIG.FAILED : getJobStatus(n);
-        const summary = isAlert ? getAlertSummary(n) : isStrategyFailed ? getStrategyFailedSummary(n) : null;
+        const isStrategyShared = n.type === "STRATEGY_SHARED";
+        const cfg = isAlert ? ALERT_CONFIG : isStrategyFailed ? STATUS_CONFIG.FAILED : isStrategyShared ? STRATEGY_SHARED_CONFIG : getJobStatus(n);
+        const summary = isAlert ? getAlertSummary(n)
+          : isStrategyFailed ? getStrategyFailedSummary(n)
+            : isStrategyShared ? getStrategySharedSummary(n)
+              : null;
         const jobId = getJobId(n);
         const documentId = getDocumentId(n);
         const portfolioUuid = getPortfolioUuid(n);
@@ -239,6 +266,15 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
                   >
                     View report
                   </Link>
+                )}
+                {isStrategyShared && portfolioUuid && onOpenPage && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenPage(WEALTH_SECTION, { kind: "portfolio", uuid: portfolioUuid, page: "strategy" } satisfies WealthView)}
+                    className="text-[10px] font-bold text-[#C49A3C] hover:text-[#a87f2f] underline underline-offset-2"
+                  >
+                    View strategy
+                  </button>
                 )}
               </div>
             </div>

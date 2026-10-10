@@ -9,6 +9,7 @@ import { useClientDefaultPortfolio } from "../../hooks/useClientDefaultPortfolio
 import { alertState } from "../../lib/alerts";
 import { AlertsSettings } from "./AlertsSettings";
 import { AssetCategoriesEditor } from "./AssetCategoriesEditor";
+import { ClientStrategySharing } from "./ClientStrategySharing";
 import { TONE_STYLES } from "./AlertGauge";
 import { UserRole } from "../../models/Advisor";
 import type { Client, ClientCreatePayload, ClientProfileUpdatePayload } from "../../models/Advisor";
@@ -310,8 +311,9 @@ function AddClientDrawer({
 }
 
 /**
- * CLIENT PANEL — one client: the alerts the advisor set on their portfolio, and below them the
- * client's language and portfolio currency. Changing the currency makes the backend recompute
+ * CLIENT PANEL — one client: the alerts the advisor set on their portfolio, the strategy adopted
+ * there and whether it's shared with the client, and below them the client's language and
+ * portfolio currency. Changing the currency makes the backend recompute
  * the client's whole portfolio history in the new currency.
  */
 function ClientPanel({
@@ -387,7 +389,10 @@ function ClientPanel({
             <Loader2 className="w-6 h-6 animate-spin text-[#C49A3C]" />
           </div>
         ) : portfolio ? (
-          <AlertsSettings portfolios={[{ uuid: portfolio.uuid, name }]} clientName={name} />
+          <>
+            <AlertsSettings portfolios={[{ uuid: portfolio.uuid, name }]} clientName={name} />
+            <ClientStrategySharing portfolioUuid={portfolio.uuid} portfolioName={portfolio.name} clientName={name} />
+          </>
         ) : (
           <p className="text-sm text-rose-500">{portfolioError ?? "Unable to load this client's portfolio."}</p>
         )}

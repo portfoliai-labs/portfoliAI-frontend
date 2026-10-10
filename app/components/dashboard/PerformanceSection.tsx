@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { portfoliosService } from "../../services/portfoliosService";
-import { STRATEGY_PROXIES, laterStart, targetLabel, type StrategyFrequency, type StrategyParams, type StrategyResponse } from "../../models/Strategy";
+import { STRATEGY_PROXIES, simulatedPeriod, targetLabel, type StrategyFrequency, type StrategyParams, type StrategyResponse } from "../../models/Strategy";
 import { exchangeLabel } from "../../models/AssetSearch";
 import { ApiError } from "../../services/apiClient";
 import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format";
@@ -3921,9 +3921,11 @@ const STRATEGY_REBALANCE_EVERY: Record<StrategyFrequency, string> = {
  * and the costs set for it. The only place they can be read again once the backtest is made.
  * Returns the three tiles, for the page's grid.
  */
-function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; currency: string }) {
+function StrategyModules({ portfolioUuid, currency: viewCurrency }: { portfolioUuid: string; currency: string }) {
   const detail = useDetail(() => portfoliosService.getStrategy(portfolioUuid), portfolioUuid, 0);
   const s: StrategyResponse | null = detail.data;
+  // Its amounts and fixed fee are in its owner's currency.
+  const currency = s?.currency ?? viewCurrency;
 
   const flow = (f: StrategyParams["contributions"] | StrategyParams["withdrawals"]) =>
     `${f.amountType === "percent_of_value" ? `${f.amount}% of value` : formatCurrency(f.amount, currency, 0)} / ${STRATEGY_EVERY[f.frequency]}`;
@@ -3934,8 +3936,6 @@ function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; c
         : r.mode === "threshold" ? `Past ${band}`
           : `${STRATEGY_REBALANCE_EVERY[r.frequency]} or past ${band}`;
   };
-  // The month it really started on, when later than the January it was asked for.
-  const started = (s: StrategyResponse) => laterStart(s)?.toLocaleDateString("en-US", { month: "short", year: "numeric" }) ?? null;
   // While it loads, or if it can't, the one module that says so.
   const body = (rows: (s: StrategyResponse) => React.ComponentProps<typeof FigRows>["rows"]) =>
     detail.loading ? <ModuleMessage>Loading the strategy…</ModuleMessage>
@@ -3963,11 +3963,9 @@ function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; c
           {body((s) => [
             {
               key: "start",
-              label: "Start",
-              value: started(s) ?? `Jan ${s.startYear}`,
-              info: started(s)
-                ? `Asked to start in January ${s.startYear}: something it holds has prices only from later, so it started on the first month everything did.`
-                : undefined,
+              label: "Period",
+              value: simulatedPeriod(s.startedOn) ?? "Not run yet",
+              info: "From the first month everything it holds has prices (at most 40 years back), up to today.",
             },
             { key: "initial", label: "Initial amount", value: formatCurrency(s.initialAmount, currency, 0) },
             { key: "add", label: "Contributions", value: s.contributions.enabled ? flow(s.contributions) : "None" },

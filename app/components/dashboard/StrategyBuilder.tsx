@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownToLine, CalendarClock, ChevronDown, Coins, History, Loader2, PiggyBank, Play, Repeat, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownToLine, ChevronDown, Coins, History, Loader2, PiggyBank, Play, Repeat, SlidersHorizontal, X } from "lucide-react";
 import { formatCurrency } from "../../lib/format";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { Toggle } from "./Toggle";
@@ -13,14 +13,14 @@ import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { ApiError } from "../../services/apiClient";
 import type { AssetSearchResult } from "../../models/AssetSearch";
 import {
-  MAX_STRATEGY_TARGETS, MAX_STRATEGY_YEARS, STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES,
+  MAX_STRATEGY_TARGETS, STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES,
   type CashFlowAmountType, type RebalanceMode, type StrategyCategory, type StrategyFrequency, type StrategyParams,
   type StrategyTarget,
 } from "../../models/Strategy";
 
 const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
 
-const CATEGORY_COLORS: Record<StrategyCategory, string> = {
+export const CATEGORY_COLORS: Record<StrategyCategory, string> = {
   equity: "#2a78d6",
   bonds: "#1baf7a",
   real_estate: "#eb6834",
@@ -30,7 +30,7 @@ const CATEGORY_COLORS: Record<StrategyCategory, string> = {
 };
 
 // The securities in a mix, in the order they were added, apart from the asset classes' colours.
-const SECURITY_COLORS = ["#C49A3C", "#0e7490", "#be185d", "#4d7c0f", "#7c3aed", "#9a3412", "#334155"];
+export const SECURITY_COLORS = ["#C49A3C", "#0e7490", "#be185d", "#4d7c0f", "#7c3aed", "#9a3412", "#334155"];
 
 type Weights = Record<StrategyCategory, number>;
 
@@ -78,31 +78,18 @@ function targetsOf(f: StrategyForm): { key: string; target: StrategyTarget }[] {
   ];
 }
 
-// The longest a strategy starting in a year can be: up to this year (at least one).
-const spanFrom = (startYear: number) => Math.max(1, new Date().getFullYear() - startYear);
-
-// A plain start: a classic mix, a lump sum plus a monthly amount, never rebalanced, run to today,
-// with only the bid-ask spread as a cost. Everything past that is an advanced setting.
+// A plain start: a classic mix, a lump sum plus a monthly amount, never rebalanced, with only the
+// bid-ask spread as a cost. Everything past that is an advanced setting.
 const DEFAULT_FORM: StrategyForm = {
   name: "",
   weights: presetWeights(PRESETS[1]),
   securities: [],
   initialAmount: 10000,
-  startYear: 2012,
-  years: spanFrom(2012),
   rebalancing: { mode: "none", frequency: "annual", thresholdPct: 5, relativeThresholdPct: 25 },
   contributions: { enabled: true, amount: 200, amountType: "fixed", frequency: "monthly", allocation: "target" },
   withdrawals: { enabled: false, amount: 4, amountType: "percent_of_value", frequency: "annual", startAfterYears: 10 },
   costs: { commissionPct: 0, fixedFee: 0, spreadPct: 0.1 },
 };
-
-// A new start keeps the length coherent: one that ran to today still does, a shorter one stays
-// as it is unless the new start leaves it too long.
-const withStart = (f: StrategyForm, startYear: number): StrategyForm => ({
-  ...f,
-  startYear,
-  years: f.years >= spanFrom(f.startYear) ? spanFrom(startYear) : Math.min(f.years, spanFrom(startYear)),
-});
 
 const FREQUENCY_OPTIONS: { value: StrategyFrequency; label: string }[] = [
   { value: "monthly", label: "Every month" },
@@ -128,20 +115,19 @@ function simpleRebalanceOf(r: StrategyForm["rebalancing"]): SimpleRebalance | nu
 
 /**
  * STRATEGY — build a portfolio strategy and backtest it, opened from Investments. The page asks
- * four plain questions first: what to hold (a ready-made mix, or weights of one's own, by asset
+ * three plain questions first: what to hold (a ready-made mix, or weights of one's own, by asset
  * class and for securities picked from the search), how much (a lump sum and an amount every
- * month), from when (it runs to today) and whether to rebalance (never, once a year, or when a
- * weight drifts). Everything else — the period's length, the rebalancing rules in detail, how
- * contributions are made, withdrawals and trading costs — is under Advanced settings, closed
- * until asked for, with a line saying what they're set to. The name fills itself from the mix and
- * the start until it's typed over.
+ * month) and whether to rebalance (never, once a year, or when a weight drifts). Everything else —
+ * the rebalancing rules in detail, how contributions are made, withdrawals and trading costs — is
+ * under Advanced settings, closed until asked for, with a line saying what they're set to. The
+ * name fills itself from the mix until it's typed over. The period isn't asked: the backend runs it
+ * from the first month everything it holds is priced (at most 40 years back) to today.
  *
  * "Run backtest" sends it to POST /v1/portfolios/strategies, which plays it on real prices (an
  * asset class through its ETF, a security as it is, see models/Strategy) into a virtual
  * portfolio: read only, kept apart from the real ones and out of the net worth (see
  * BacktestMarks). The page then opens that portfolio, whose figures come in once the backend's
- * job has generated its trades. The backend decides when it really starts: from the first month
- * everything it holds is priced. A demo account can look but not run one.
+ * job has generated its trades. A demo account can look but not run one.
  */
 export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreated: (portfolioUuid: string) => void }) {
   const { createStrategyPortfolio } = usePortfolio();
@@ -172,10 +158,6 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
   // What counts towards the limit: every asset class held, and every security picked.
   const targetCount = STRATEGY_CATEGORIES.filter((c) => form.weights[c] > 0).length + form.securities.length;
   const segments = segmentsOf(form.weights, form.securities);
-  const thisYear = new Date().getFullYear();
-  const endYear = form.startYear + form.years;
-  // Its whole span, this year's months included: the length is as long as it can be.
-  const toToday = form.years >= spanFrom(form.startYear);
   const { mode, thresholdPct, relativeThresholdPct } = form.rebalancing;
   const needsBand = mode === "threshold" || mode === "both";
   const simpleRebalance = simpleRebalanceOf(form.rebalancing);
@@ -183,7 +165,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
   const simpleContribution = form.contributions.amountType === "fixed" && form.contributions.frequency === "monthly";
   // Until it's typed over, the name says what it is.
   const mixName = preset && mixMode === "preset" ? preset.name : "Custom mix";
-  const autoName = `${mixName} from ${form.startYear}`;
+  const autoName = mixName;
   const name = form.name.trim() || autoName;
 
   const addSecurity = (asset: AssetSearchResult | null) => {
@@ -217,14 +199,10 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
     setInvalidKey(null);
     const sent = targetsOf(form);
     try {
-      const { initialAmount, startYear, rebalancing, contributions, withdrawals, costs } = form;
+      const { initialAmount, rebalancing, contributions, withdrawals, costs } = form;
       const strategy: StrategyParams = {
         targets: sent.map((s) => s.target),
         initialAmount,
-        startYear,
-        // The backend stops at January of the last year: one more takes it through this year's
-        // months, up to today's prices.
-        years: toToday ? Math.min(form.years + 1, MAX_STRATEGY_YEARS) : form.years,
         rebalancing,
         contributions,
         withdrawals,
@@ -256,12 +234,11 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
         ? `${formatCurrency(form.initialAmount, currency, 0)} + ${simpleContribution ? `${formatCurrency(form.contributions.amount, currency, 0)} a month` : "contributions"}`
         : formatCurrency(form.initialAmount, currency, 0),
     },
-    { label: "Period", value: toToday ? `${form.startYear} – today` : `${form.startYear} – ${endYear}` },
+    { label: "Period", value: "All its price history – today" },
     { label: "Rebalancing", value: SIMPLE_REBALANCE.find((o) => o.value === simpleRebalance)?.title ?? "Custom rules" },
   ];
 
   const advancedSummary = [
-    toToday ? "runs to today" : `${form.years} ${form.years === 1 ? "year" : "years"}`,
     simpleRebalance === null ? "custom rebalancing" : null,
     !simpleContribution && form.contributions.enabled ? "custom contributions" : null,
     form.withdrawals.enabled ? "withdrawals on" : "no withdrawals",
@@ -278,7 +255,8 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
         </span>
         <p className="text-xs text-sky-900/80 leading-relaxed">
           <span className="block text-[13px] font-black text-sky-950">See how a plan would have done</span>
-          Pick a mix, an amount and a start: we play it on real past prices and show you the result as a virtual portfolio.
+          Pick a mix and an amount: we play it on real past prices, from as far back as everything in it has them up to
+          today, and show you the result as a virtual portfolio.
           It&apos;s read only, kept apart from your real portfolios and never counted in your net worth.
         </p>
       </div>
@@ -458,28 +436,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
           </p>
         </Question>
 
-        <Question n={3} title="Starting when?" text="It starts in January of that year and runs up to today.">
-          <div className="@md:max-w-[calc(50%-0.5rem)]">
-            <SelectField
-              label="Start in"
-              value={String(form.startYear)}
-              // Up to last year: a backtest needs at least a year of prices.
-              options={Array.from({ length: MAX_STRATEGY_YEARS }, (_, i) => String(thisYear - MAX_STRATEGY_YEARS + i)).map((y) => ({ value: y, label: `January ${y}` }))}
-              onChange={(v) => setForm((f) => withStart(f, Number(v)))}
-            />
-          </div>
-          <p className="text-xs text-slate-500 leading-relaxed mt-3">
-            {toToday
-              ? `That's ${thisYear - form.startYear} ${thisYear - form.startYear === 1 ? "year" : "years"} of real prices, up to today.`
-              : `${form.years} ${form.years === 1 ? "year" : "years"}, to January ${endYear}: the length is set in Advanced settings.`}
-          </p>
-          <p className="text-xs text-slate-500 leading-relaxed mt-1">
-            If something it holds has prices only from later, it starts once everything does. With less than a year of prices
-            in common, it can&apos;t run.
-          </p>
-        </Question>
-
-        <Question n={4} title="Keep the mix in balance?" text="As prices move, the mix drifts. Rebalancing sells what grew too big and buys what fell behind.">
+        <Question n={3} title="Keep the mix in balance?" text="As prices move, the mix drifts. Rebalancing sells what grew too big and buys what fell behind.">
           <div className="grid grid-cols-1 @xl:grid-cols-3 gap-3">
             {SIMPLE_REBALANCE.map((o) => (
               <ChoiceCard
@@ -497,7 +454,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
         </Question>
       </div>
 
-      {/* Everything past the four questions, closed until asked for. */}
+      {/* Everything past the three questions, closed until asked for. */}
       <section className="space-y-4">
         <button
           type="button"
@@ -520,15 +477,6 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
 
         {advancedOpen && (
           <div className="space-y-3">
-            <Advanced icon={<CalendarClock className="h-4 w-4" />} title="Period" text="How long it runs from its start.">
-              <div className="grid grid-cols-1 @md:grid-cols-2 items-end gap-4">
-                <NumberField label="Length" suffix="years" value={form.years} min={1} max={spanFrom(form.startYear)} onChange={(v) => patch("years", clamp(v, 1, spanFrom(form.startYear)))} />
-                <p className="text-xs text-slate-500 leading-relaxed @md:pb-3.5">
-                  {toToday ? `Runs until today, from January ${form.startYear}.` : `From January ${form.startYear} to January ${endYear}.`}
-                </p>
-              </div>
-            </Advanced>
-
             <Advanced icon={<Repeat className="h-4 w-4" />} title="Rebalancing rules" text="When the mix is brought back to its weights.">
               <div className="grid grid-cols-2 @2xl:grid-cols-4 gap-3">
                 {([
@@ -596,7 +544,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
       </section>
 
       <div className="bg-[#1c1917] rounded-3xl p-5 md:p-7 space-y-5">
-        {/* The four answers at a glance, before it runs. */}
+        {/* The three answers at a glance, before it runs. */}
         <div className="space-y-3">
           <h3 className="text-xl font-black text-white leading-tight" style={serif}>Your strategy</h3>
           <div className="max-w-md"><WeightsBar segments={segments} /></div>
@@ -626,7 +574,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
               {isDemo
                 ? "Backtests can't be run on a demo account."
                 : valid
-                  ? "Creates a virtual portfolio and opens it. Its figures take a few minutes to come in."
+                  ? "Creates a virtual portfolio and opens it. Its figures take a few minutes to come in. With less than a year of prices in common, it can't run."
                   : problems[0]}
             </p>
             {error && <p className="text-[13px] font-bold text-rose-400">{error}</p>}
@@ -652,7 +600,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
 }
 
 /**
- * One of the four questions, a card of its own: its number, wording and a line on the left, its
+ * One of the three questions, a card of its own: its number, wording and a line on the left, its
  * answers on the right (stacked on narrow screens), centred on the heading's height when shorter.
  * The answers' grids follow their own width.
  */

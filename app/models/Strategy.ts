@@ -6,13 +6,16 @@
 // as it is, on adjusted close so distributions are in the price. The backtest is a virtual portfolio (Portfolio.isVirtual): the POST answers at once with
 // it empty, a background job then generates its transactions up to the day it was created, and
 // its history is built like any portfolio's (its /insights/* answer null or isStale until then).
-// After that it just holds: no further contributions or rebalancing.
+// The period isn't the user's: it runs from the first month everything it holds is priced (at most
+// 40 years back) to today, and keeps playing its rules (rebalancing, contributions, withdrawals)
+// every day from then on.
 //
 // Cash flows and calendar rebalancing act on the first trading day of each month, in this order:
 // contribution, withdrawal, rebalance. The drift band is checked every trading day. Amounts are in
-// the user's reference currency. Commission and fixed fee show up in the trading costs, not in the
-// returns; the spread does reduce the returns. Fund fees (TER) are already in the ETFs' prices, and
-// taxes aren't modelled.
+// the owner's reference currency (StrategyResponse.currency). Its figures are time-weighted on the
+// holdings' prices: cash flows don't move them, and neither do trading costs (commission, fixed fee,
+// spread), which show up in the trading costs: they're gross of them. Fund fees (TER) are already in
+// the ETFs' prices, and taxes aren't modelled.
 
 type StrategyCategory = "equity" | "bonds" | "real_estate" | "commodities" | "cash" | "crypto";
 type StrategyFrequency = "monthly" | "quarterly" | "semiannual" | "annual";
@@ -89,22 +92,23 @@ interface StrategyParams {
   // MAX_STRATEGY_TARGETS in all. A target at 0 isn't kept.
   targets: StrategyTarget[];
   initialAmount: number;
-  // The run starts in January of this year, or later when something it holds is priced only from
-  // later: then it starts on the first month everything is (StrategyResponse.startedOn). Under 12
-  // months of prices in common and the backtest fails (STRATEGY_FAILED, history_too_short).
-  startYear: number;
-  // 1–40; the run stops at today if that comes first.
-  years: number;
+  // Deprecated: ignored in a request, and never sent; always null in a response. The period is
+  // StrategyResponse.startedOn to today.
+  startYear?: number | null;
+  years?: number | null;
   rebalancing: StrategyRebalancing;
   contributions: StrategyContributions;
   withdrawals: StrategyWithdrawals;
   costs: StrategyCosts;
 }
 
-// GET /v1/portfolios/{p}/strategy: the strategy, with the day its backtest started trading on
-// (null until it has run).
+// GET /v1/portfolios/{p}/strategy: the strategy, with the day its backtest started trading on: the
+// first month everything it holds is priced (null until it has run). Under 12 months of prices in
+// common and the backtest fails (STRATEGY_FAILED, history_too_short).
 interface StrategyResponse extends StrategyParams {
   startedOn: string | null;
+  // The owner's reference currency, which the amounts and the fixed fee are in.
+  currency: string | null;
 }
 
 // Body of POST /v1/portfolios/strategies. `name`: 1–80 chars, unique among the user's portfolios
@@ -135,7 +139,6 @@ const STRATEGY_PROXIES: Record<StrategyCategory, string> = {
   crypto: "BTC-EUR · Bitcoin",
 };
 
-const MAX_STRATEGY_YEARS = 40;
 const MAX_STRATEGY_TARGETS = 20;
 
 /** What a target is called: its category, or its security's name (the ticker until resolved). */
@@ -143,11 +146,11 @@ function targetLabel(t: StrategyTarget): string {
   return t.kind === "category" ? STRATEGY_CATEGORY_LABELS[t.category] : t.asset.name || t.asset.ticker;
 }
 
-/** The month a backtest actually started on, when later than the January it was asked for. */
-function laterStart(s: { startYear: number; startedOn?: string | null }): Date | null {
-  if (!s.startedOn) return null;
-  const started = new Date(`${s.startedOn}T00:00:00`);
-  return started.getFullYear() > s.startYear || started.getMonth() > 0 ? started : null;
+/** "Simulated from Jan 3, 2005 to today", or null until the backtest has run. */
+function simulatedPeriod(startedOn: string | null | undefined): string | null {
+  if (!startedOn) return null;
+  const started = new Date(`${startedOn}T00:00:00`);
+  return `Simulated from ${started.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} to today`;
 }
 
 export type {
@@ -156,6 +159,6 @@ export type {
   StrategyAssetTarget, StrategyTarget, StrategyParams, StrategyResponse, StrategyPortfolioPayload,
 };
 export {
-  STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES, MAX_STRATEGY_YEARS, MAX_STRATEGY_TARGETS,
-  targetLabel, laterStart,
+  STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES, MAX_STRATEGY_TARGETS,
+  targetLabel, simulatedPeriod,
 };

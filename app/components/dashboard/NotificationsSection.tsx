@@ -8,7 +8,7 @@ import { NotificationList } from "./NotificationList";
 // Full-page notifications view. On mobile the header bell routes here instead
 // of opening NotificationPanel's dropdown, since a fixed-width absolutely
 // positioned panel has nowhere to sit without overflowing a narrow viewport.
-export function NotificationsSection() {
+export function NotificationsSection({ onOpenPage }: { onOpenPage?: (section: string, view: unknown) => void }) {
   const {
     notifications,
     isLoading,
@@ -37,7 +37,7 @@ export function NotificationsSection() {
       )}
 
       <div className="bg-white border border-[rgba(196,154,60,0.2)] rounded-[1.5rem] shadow-sm overflow-hidden">
-        <NotificationList notifications={notifications} isLoading={isLoading} />
+        <NotificationList notifications={notifications} isLoading={isLoading} onOpenPage={onOpenPage} />
       </div>
     </div>
   );

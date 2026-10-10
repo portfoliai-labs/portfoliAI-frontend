@@ -11,11 +11,12 @@ import { openBacktestPage, openPlanPage } from "../../lib/dashboardNav";
 import { formatAlertPct, formatRange } from "../../lib/alerts";
 import { exchangeLabel } from "../../models/AssetSearch";
 import { targetLabel, type StrategyTarget } from "../../models/Strategy";
-import { ruleForTarget, targetRange, type AdoptedStrategy } from "../../models/AdoptedStrategy";
+import { ruleForTarget, targetRange, type AdoptedStrategy, type SharedStrategy } from "../../models/AdoptedStrategy";
 import type { AlertRuleResponse } from "../../models/Alert";
 import type { Portfolio } from "../../models/Portfolio";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { SharedStrategyPanel } from "./SharedStrategyPanel";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 
 const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
@@ -38,11 +39,15 @@ interface Draft {
  * buy or sell. "Refine ranges" changes the targets' weights, drops targets and sets the band (PUT),
  * previewing the ranges that come out; changed rules start again with no reading. "Remove" takes
  * the adoption away with its alerts (DELETE). Without one, the way to adopt one is Plan's Strategy.
- * A demo account sees it but can't change it.
+ * Above it, read-only, the strategies the user's advisor shared for the portfolio
+ * (SharedStrategyPanel); with one of those and no adoption of their own, the way to adopt is left
+ * out. A demo account sees it but can't change it.
  */
-export function AdoptedStrategyView({ portfolio, trail, onOpenAlerts, onNavigate, onChanged }: {
+export function AdoptedStrategyView({ portfolio, trail, shared = [], onOpenSimulation, onOpenAlerts, onNavigate, onChanged }: {
   portfolio: Portfolio;
   trail: Crumb[];
+  shared?: SharedStrategy[];
+  onOpenSimulation?: (portfolioUuid: string) => void;
   onOpenAlerts: () => void;
   onNavigate: (section: string) => void;
   // After a change that may add or remove the adoption, so the page header follows.
@@ -75,6 +80,13 @@ export function AdoptedStrategyView({ portfolio, trail, onOpenAlerts, onNavigate
   }, [load]);
 
   const breadcrumb = <Breadcrumb trail={trail} current="Strategy" />;
+  const sharedPanels = shared.map((s) => (
+    <SharedStrategyPanel
+      key={s.adoptionId}
+      shared={s}
+      onOpenSimulation={(uuid) => onOpenSimulation?.(uuid)}
+    />
+  ));
 
   if (loadError) {
     return (
@@ -96,7 +108,8 @@ export function AdoptedStrategyView({ portfolio, trail, onOpenAlerts, onNavigate
     return (
       <div className="space-y-6 pb-12">
         {breadcrumb}
-        <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-white px-6 py-10 flex flex-col items-center text-center gap-2">
+        {sharedPanels}
+        {shared.length === 0 && <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-white px-6 py-10 flex flex-col items-center text-center gap-2">
           <Target className="h-6 w-6 text-slate-400" />
           <p className="text-sm font-black text-slate-900">No strategy adopted on {portfolio.name}</p>
           <p className="text-xs text-slate-500 max-w-md">
@@ -110,7 +123,7 @@ export function AdoptedStrategyView({ portfolio, trail, onOpenAlerts, onNavigate
           >
             Go to Strategy <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
-        </div>
+        </div>}
       </div>
     );
   }
@@ -194,6 +207,8 @@ export function AdoptedStrategyView({ portfolio, trail, onOpenAlerts, onNavigate
           </span>
         )}
       />
+
+      {sharedPanels}
 
       <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 md:px-7 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">

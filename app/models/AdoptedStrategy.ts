@@ -6,7 +6,8 @@
 // `source` is the adoption's (GET .../alert-rules?source=…), each matched to its target by its
 // selector. A portfolio has at most one adoption per user: adopting again replaces it (same
 // adoptionId). An advisor adopting on a client's portfolio adopts for themselves (advisorUuid set):
-// the client doesn't see it.
+// the client sees it only once the advisor shares it (PUT .../adopted-strategy/sharing), read-only,
+// as a SharedStrategy. Only an advisor's adoption on a client's portfolio can be shared.
 //
 // What it shows says where the portfolio stands against the ranges the user chose, never what to
 // buy or sell.
@@ -24,12 +25,15 @@ interface StrategyAllocation {
 
 // Body of POST. `inCategories` watches each security target as its asset category instead, its
 // weight added to the category's (models/AssetCategory): only when the user asks for it. Channels
-// left null: in-app only.
+// left null: in-app only. `sharedWithClient`: an advisor's adoption on a client's portfolio shared
+// at once (409 AdoptionNotShareableError on the owner's own); left out, it isn't, even when the
+// adoption it replaces was.
 interface AdoptStrategyPayload {
   originPortfolioUuid: string;
   inCategories: boolean;
   notifyEmail: boolean | null;
   notifyInApp: boolean | null;
+  sharedWithClient?: boolean;
 }
 
 interface AdoptedStrategy {
@@ -47,6 +51,40 @@ interface AdoptedStrategy {
   source: string;
   ruleIds: string[];
   createdAt: string;
+  updatedAt: string;
+  // Whether an advisor's is shared with the client, and since when.
+  sharedWithClient: boolean;
+  sharedAt: string | null;
+}
+
+// A held target against the portfolio (SharedStrategy.standings): the band its weight is kept in
+// and, as of the last check (evaluatedAt), its share of the portfolio and whether that's outside
+// the band; null until the first check. The drift is currentPct less target.weightPct.
+interface TargetStanding {
+  target: StrategyTarget;
+  minPct: number;
+  maxPct: number;
+  currentPct: number | null;
+  outOfBand: boolean | null;
+  evaluatedAt: string | null;
+}
+
+// GET /v1/portfolios/shared-strategies (every portfolio of the caller's) and
+// /v1/portfolios/{p}/shared-strategies (one; 403 for an advisor): a strategy the caller's advisor
+// shared for one of their portfolios, read-only, newest shared first. While it's shared, the client
+// reads `originPortfolioUuid` (the advisor's strategy portfolio, not in their list) through the
+// usual portfolio routes, but can't copy, backtest again or adopt it (403).
+interface SharedStrategy {
+  adoptionId: string;
+  portfolioUuid: string;
+  portfolioName: string;
+  advisorUuid: string;
+  // Null when the backend has no name for them.
+  advisorName: string | null;
+  originPortfolioUuid: string | null;
+  strategy: StrategyAllocation;
+  standings: TargetStanding[];
+  sharedAt: string;
   updatedAt: string;
 }
 
@@ -84,5 +122,5 @@ function ruleForTarget<R extends AlertRuleResponse>(target: StrategyTarget, rule
   });
 }
 
-export type { StrategyAllocation, AdoptStrategyPayload, AdoptedStrategy };
+export type { StrategyAllocation, AdoptStrategyPayload, AdoptedStrategy, TargetStanding, SharedStrategy };
 export { DEFAULT_BAND_PCT, targetRange, ruleForTarget };

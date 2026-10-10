@@ -82,7 +82,7 @@ interface ExposureEntryResponse {
 
 // ---------- returns ----------
 
-// `period` is "1 Month", "6 Months", "1 Year", "3 Years" or "Inception"; a horizon longer than
+// `period` is "1 Month", "6 Months", "1 Year", "3 Years", "5 Years", "10 Years" or "Inception"; a horizon longer than
 // the portfolio's history isn't returned at all. windowDays counts the calendar days it covers.
 interface HorizonEntry {
   period: string;

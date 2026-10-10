@@ -1,5 +1,5 @@
 // services/adoptionService.ts
-import type { AdoptStrategyPayload, AdoptedStrategy, StrategyAllocation } from "../models/AdoptedStrategy";
+import type { AdoptStrategyPayload, AdoptedStrategy, SharedStrategy, StrategyAllocation } from "../models/AdoptedStrategy";
 import { ApiError, apiFetch } from "./apiClient";
 
 const path = (portfolioUuid: string) => `/v1/portfolios/${portfolioUuid}/adopted-strategy`;
@@ -39,5 +39,18 @@ export const adoptionService = {
   // DELETE — the adoption, with its rules.
   async remove(portfolioUuid: string): Promise<void> {
     await apiFetch<{ status: string }>(path(portfolioUuid), { method: "DELETE" });
+  },
+
+  // PUT .../sharing — an advisor shares their adoption on a client's portfolio with the client, or
+  // stops; the client is notified (STRATEGY_SHARED) each time it starts being shared. 409
+  // AdoptionNotShareableError on the owner's own, 404 AdoptionNotFoundError without one.
+  async setShared(portfolioUuid: string, shared: boolean): Promise<AdoptedStrategy> {
+    return apiFetch<AdoptedStrategy>(`${path(portfolioUuid)}/sharing`, { method: "PUT", body: JSON.stringify({ shared }) });
+  },
+
+  // GET /v1/portfolios/shared-strategies, or /v1/portfolios/{p}/shared-strategies for one
+  // portfolio — what the caller's advisors shared with them, newest shared first.
+  async listShared(portfolioUuid?: string): Promise<SharedStrategy[]> {
+    return apiFetch<SharedStrategy[]>(portfolioUuid ? `/v1/portfolios/${portfolioUuid}/shared-strategies` : "/v1/portfolios/shared-strategies");
   },
 };

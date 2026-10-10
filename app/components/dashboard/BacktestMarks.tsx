@@ -7,9 +7,9 @@ import { portfoliosService } from "../../services/portfoliosService";
 import { useUser } from "../../context/UserContext";
 import { formatCurrency } from "../../lib/format";
 import {
-  laterStart,
+  simulatedPeriod,
   targetLabel,
-  type StrategyFrequency, type StrategyParams, type StrategyResponse,
+  type StrategyFrequency, type StrategyParams, type StrategyRebalancing, type StrategyResponse,
 } from "../../models/Strategy";
 
 /**
@@ -50,38 +50,37 @@ const FREQUENCY_LABELS: Record<StrategyFrequency, string> = {
   annual: "every year",
 };
 
-const monthYear = (d: Date) => d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+/** A strategy's rebalancing rule in a few words: "Rebalanced every year and past ±5 pts". */
+export function describeRebalancing({ mode, frequency, thresholdPct, relativeThresholdPct }: StrategyRebalancing): string {
+  const bands = [
+    thresholdPct != null ? `±${thresholdPct} pts` : null,
+    relativeThresholdPct != null ? `±${relativeThresholdPct}% of the weight` : null,
+  ].filter(Boolean).join(" or ");
+  return mode === "none" ? "Never rebalanced"
+    : mode === "calendar" ? `Rebalanced ${FREQUENCY_LABELS[frequency]}`
+      : mode === "threshold" ? `Rebalanced past ${bands}`
+        : `Rebalanced ${FREQUENCY_LABELS[frequency]} and past ${bands}`;
+}
 
 /**
- * The strategy in a few short lines: what it holds (a security by its ticker), over when, and its
- * rules. A backtest that started later than asked, because something it holds is priced only from
- * then, says both.
+ * The strategy in a few short lines: what it holds (a security by its ticker), what went in, over
+ * when (once the backtest has run), and its rules.
  */
 export function describeStrategy(s: StrategyParams & Partial<Pick<StrategyResponse, "startedOn">>, currency: string): string[] {
   const weights = s.targets
     .filter((t) => t.weightPct > 0)
     .map((t) => `${t.kind === "asset" ? t.asset.ticker : targetLabel(t)} ${t.weightPct}%`)
     .join(" · ");
-  const started = laterStart(s);
+  const period = simulatedPeriod(s.startedOn);
   const flow = (f: StrategyParams["contributions"] | StrategyParams["withdrawals"]) =>
     `${f.amountType === "percent_of_value" ? `${f.amount}% of the value` : formatCurrency(f.amount, currency, 0)} ${FREQUENCY_LABELS[f.frequency]}`;
 
-  const { mode, frequency, thresholdPct, relativeThresholdPct } = s.rebalancing;
-  const bands = [
-    thresholdPct != null ? `±${thresholdPct} pts` : null,
-    relativeThresholdPct != null ? `±${relativeThresholdPct}% of the weight` : null,
-  ].filter(Boolean).join(" or ");
-  const rebalancing =
-    mode === "none" ? "Never rebalanced"
-      : mode === "calendar" ? `Rebalanced ${FREQUENCY_LABELS[frequency]}`
-        : mode === "threshold" ? `Rebalanced past ${bands}`
-          : `Rebalanced ${FREQUENCY_LABELS[frequency]} and past ${bands}`;
+  const rebalancing = describeRebalancing(s.rebalancing);
 
   const lines = [
     weights,
-    started
-      ? `${formatCurrency(s.initialAmount, currency, 0)} invested in ${monthYear(started)} (asked for Jan ${s.startYear}), for up to ${s.years} ${s.years === 1 ? "year" : "years"}`
-      : `${formatCurrency(s.initialAmount, currency, 0)} invested in January ${s.startYear}, for up to ${s.years} ${s.years === 1 ? "year" : "years"}`,
+    `${formatCurrency(s.initialAmount, currency, 0)} invested at the start`,
+    ...(period ? [period] : []),
     rebalancing,
   ];
   if (s.contributions.enabled) lines.push(`Adds ${flow(s.contributions)}`);
@@ -96,8 +95,9 @@ export function describeStrategy(s: StrategyParams & Partial<Pick<StrategyRespon
  * `showStrategy`, the strategy it was made from (GET /v1/portfolios/{p}/strategy).
  */
 export function BacktestBanner({ portfolioUuid, showStrategy = false }: { portfolioUuid: string; showStrategy?: boolean }) {
-  // A strategy's amounts are in the user's reference currency.
-  const currency = useUser().user?.currency ?? "EUR";
+  // A strategy's amounts are in its owner's reference currency: the user's own, unless it's
+  // someone else's (shared, published).
+  const userCurrency = useUser().user?.currency ?? "EUR";
   const [strategy, setStrategy] = useState<StrategyResponse | null>(null);
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export function BacktestBanner({ portfolioUuid, showStrategy = false }: { portfo
         </p>
         {strategy && (
           <ul className="mt-2 flex flex-wrap gap-1.5">
-            {describeStrategy(strategy, currency).map((line) => (
+            {describeStrategy(strategy, strategy.currency ?? userCurrency).map((line) => (
               <li key={line} className="px-2.5 py-1 rounded-full bg-white border border-sky-200 text-[11px] font-bold text-sky-900">{line}</li>
             ))}
           </ul>
