@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, Info, Loader2, Telescope } from "lucide-react";
 import { publicationService } from "../../services/publicationService";
 import { ApiError } from "../../services/apiClient";
-import { STRATEGY_PROXIES, simulatedPeriod, targetLabel, type StrategyCosts, type StrategyTarget } from "../../models/Strategy";
+import { STRATEGY_PROXIES, simulatedPeriod, targetLabel, type StrategyCosts, type StrategyParams, type StrategyResponse, type StrategyTarget } from "../../models/Strategy";
+import { portfoliosService } from "../../services/portfoliosService";
 import {
   CRISIS_LABELS, FILTER_HORIZONS, HORIZON_LABELS, SORT_LABELS, isFigureSort,
   type CatalogPage, type CatalogSort, type FilterHorizon, type HorizonFigures, type PublishedStrategy,
@@ -418,6 +419,21 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
     return () => { cancelled = true; };
   }, [publicationId]);
 
+  // What the catalog leaves out of a strategy, from its backtest (GET /v1/portfolios/{p}/strategy,
+  // readable while it's published): the amount it started with, and the money it added or took.
+  const portfolioUuid = result?.id === publicationId ? result.strategy?.portfolioUuid ?? null : null;
+  const [params, setParams] = useState<{ uuid: string; value: StrategyResponse | null } | null>(null);
+  useEffect(() => {
+    if (!portfolioUuid) return;
+    let cancelled = false;
+    portfoliosService.getStrategy(portfolioUuid)
+      .then((v) => { if (!cancelled) setParams({ uuid: portfolioUuid, value: v }); })
+      .catch(() => { if (!cancelled) setParams({ uuid: portfolioUuid, value: null }); });
+    return () => { cancelled = true; };
+  }, [portfolioUuid]);
+  // undefined while loading, null when it couldn't be read.
+  const flows = params?.uuid === portfolioUuid ? params.value : undefined;
+
   const current = result?.id === publicationId ? result : null;
   if (!current?.strategy) {
     return (
@@ -441,6 +457,7 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
       eyebrow="Published strategy"
       title={s.portfolioName}
       banner={false}
+      strategyShown
       notice={<SimulationDisclaimer />}
       onNavigate={onNavigate}
     >
@@ -460,7 +477,7 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
                     <span className="block text-[13px] font-bold text-slate-900 truncate">{targetLabel(t)}</span>
                     <span className="block text-[11px] text-slate-500 truncate">
                       {t.kind === "asset"
-                        ? [t.asset.ticker, exchangeLabel(t.asset.exchangeMic ?? null), t.asset.isin].filter(Boolean).join(" · ")
+                        ? [t.asset.ticker, exchangeLabel(t.asset.exchangeMic ?? null), t.asset.currency, t.asset.isin].filter(Boolean).join(" · ")
                         : `Through ${STRATEGY_PROXIES[t.category]}`}
                     </span>
                   </span>
@@ -471,8 +488,11 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
           </DetailPanel>
           <DetailPanel title="Rules">
             <DetailRows rows={[
-              { label: "Rebalancing", value: describeRebalancing(s.strategy.rebalancing) },
               { label: "Period", value: period ?? "Not simulated yet" },
+              { label: "Initial amount", value: flows ? formatCurrency(flows.initialAmount, flows.currency ?? s.currency, 0) : flows === null ? "—" : "…" },
+              { label: "Contributions", value: flows ? describeFlow(flows.contributions, flows.currency ?? s.currency) : flows === null ? "—" : "…" },
+              { label: "Withdrawals", value: flows ? describeFlow(flows.withdrawals, flows.currency ?? s.currency) : flows === null ? "—" : "…" },
+              { label: "Rebalancing", value: describeRebalancing(s.strategy.rebalancing) },
             ]} />
           </DetailPanel>
           <DetailPanel title="Author's costs" note="The figures are gross of these: they aren't taken out of them.">
@@ -543,11 +563,24 @@ function StrategyDetail({ publicationId, trail, onNavigate }: { publicationId: s
             </ul>
           )}
         </DetailPanel>
-
-        <h3 className="text-xl font-black text-slate-900 leading-tight pt-2" style={serif}>The simulation in detail</h3>
       </div>
     </ReadOnlySimulation>
   );
+}
+
+const FLOW_EVERY: Record<StrategyParams["contributions"]["frequency"], string> = {
+  monthly: "month",
+  quarterly: "quarter",
+  semiannual: "6 months",
+  annual: "year",
+};
+
+/** "€500 / month", "4% of value / year", or None; a withdrawal's start when it isn't the first year. */
+function describeFlow(f: StrategyParams["contributions"] | StrategyParams["withdrawals"], currency: string) {
+  if (!f.enabled) return "None";
+  const amount = f.amountType === "percent_of_value" ? `${f.amount}% of value` : formatCurrency(f.amount, currency, 0);
+  const from = "startAfterYears" in f && f.startAfterYears > 0 ? `, from year ${f.startAfterYears + 1}` : "";
+  return `${amount} / ${FLOW_EVERY[f.frequency]}${from}`;
 }
 
 function DetailPanel({ title, badge, note, children }: { title: string; badge?: React.ReactNode; note?: string; children: React.ReactNode }) {

@@ -69,12 +69,15 @@ const TOOLTIP_STYLE: React.CSSProperties = {
  * in as they arrive. Stale modules are followed through /insights/status (see useInsights).
  */
 export function PerformanceSection({
-  portfolioUuid, isAggregate = false, backtest = false, onNavigate, trail, pageLabel = "Insights", top, onOpenPortfolio, comparison = null,
+  portfolioUuid, isAggregate = false, backtest = false, strategyShown = false, onNavigate, trail, pageLabel = "Insights", top, onOpenPortfolio, comparison = null,
 }: {
   portfolioUuid: string; isAggregate?: boolean; onNavigate?: (section: string) => void;
   // A strategy's backtest (a virtual portfolio): its header carries BacktestBanner, and before
   // its job has run it says so rather than asking for transactions.
   backtest?: boolean;
+  // A backtest whose page already says what its strategy is (a published strategy's): its
+  // Insights then leave out the strategy's own modules (StrategyModules).
+  strategyShown?: boolean;
   // The pages above this one in the investor's Portfolios ("Portfolios / Main portfolio"), where
   // this page is "Insights" and a month or a detail one level deeper, published to the Sidebar
   // (see Breadcrumb). Without it (an advisor's view of a client, which has its own header) the
@@ -261,6 +264,7 @@ export function PerformanceSection({
               onOpenPortfolio={onOpenPortfolio}
               comparison={comparison}
               backtest={backtest}
+              strategyShown={strategyShown}
             />
           </div>
         </ExploreHostContext.Provider>
@@ -4190,7 +4194,7 @@ function MonthPage({
  * correlations behind it). A month opens from Performance's detail (see PerformanceSection).
  */
 function HistoryPage({
-  insights, performance, value, portfolioUuid, onSelectMonth, isAggregate, onOpenPortfolio, comparison, backtest,
+  insights, performance, value, portfolioUuid, onSelectMonth, isAggregate, onOpenPortfolio, comparison, backtest, strategyShown,
 }: {
   insights: Insights;
   // The Performance section, already loaded, and its value (PerformanceSection checks both).
@@ -4207,6 +4211,7 @@ function HistoryPage({
   // against the benchmark, its mix, what trading cost it at the costs set for it, its risk. Its
   // gains, its month in progress, what it realized or was paid are simulated bookkeeping, left out.
   backtest: boolean;
+  strategyShown: boolean;
 }) {
   const { composition, incomeCosts, risk, timedOut } = insights;
   const currency = performance.currency;
@@ -4275,7 +4280,7 @@ function HistoryPage({
     return (
       <div className="grid grid-cols-2 lg:grid-cols-12 gap-[22px]">
         {updatingNote}
-        <StrategyModules portfolioUuid={portfolioUuid} currency={currency} />
+        {!strategyShown && <StrategyModules portfolioUuid={portfolioUuid} currency={currency} />}
         <Tile id={moduleAnchor("value")}>{valueModule}</Tile>
         <Tile span="wide" id={moduleAnchor("composition")}>{compositionModule}</Tile>
         <Tile span="narrow" id={moduleAnchor("costs")}>{tradingCosts}</Tile>

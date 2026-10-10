@@ -17,7 +17,7 @@ import type { Crumb } from "./Breadcrumb";
  * (left out with `banner` false, when the page says what the strategy is itself), and `children`
  * come under the header, hidden with it while a detail view is open.
  */
-export function ReadOnlySimulation({ portfolioUuid, trail, eyebrow, title: knownTitle, notice, banner = true, children, onNavigate }: {
+export function ReadOnlySimulation({ portfolioUuid, trail, eyebrow, title: knownTitle, notice, banner = true, strategyShown = false, children, onNavigate }: {
   portfolioUuid: string;
   trail: Crumb[];
   eyebrow: string;
@@ -25,6 +25,8 @@ export function ReadOnlySimulation({ portfolioUuid, trail, eyebrow, title: known
   title?: string;
   notice?: React.ReactNode;
   banner?: boolean;
+  // `children` say what the strategy is: its Insights leave out the strategy's own modules.
+  strategyShown?: boolean;
   children?: React.ReactNode;
   onNavigate?: (section: string) => void;
 }) {
@@ -46,6 +48,7 @@ export function ReadOnlySimulation({ portfolioUuid, trail, eyebrow, title: known
       key={portfolioUuid}
       portfolioUuid={portfolioUuid}
       backtest
+      strategyShown={strategyShown}
       trail={trail}
       pageLabel={title}
       onNavigate={onNavigate}
