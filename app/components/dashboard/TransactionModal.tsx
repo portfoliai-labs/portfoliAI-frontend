@@ -7,6 +7,8 @@ import { StandardTransaction } from "../../models/Report";
 import { validateTransactions } from "../../lib/parser";
 import type { Portfolio } from "../../models/Portfolio";
 import { PortfolioSelect } from "./PortfolioSelect";
+import { AssetPicker } from "./AssetPicker";
+import type { AssetSearchResult } from "../../models/AssetSearch";
 import { PreviewBadge } from "../preview/PreviewKit";
 import { RealEstateTransactionFields } from "../preview/RealEstateTransactionFields";
 import { useUser } from "../../context/UserContext";
@@ -166,6 +168,11 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
   // can't be saved yet (see RealEstateTransactionFields); a saved transaction is always a security.
   const [assetKind, setAssetKind] = useState<"security" | "property">("security");
   const isEdit = mode === "edit";
+  // A new transaction's security is picked from the search, which fills in ticker, ISIN and
+  // currency; typing them by hand stays possible for one the search doesn't find. A saved
+  // transaction opens on the fields it already has.
+  const [manualAsset, setManualAsset] = useState(isEdit);
+  const [pickedAsset, setPickedAsset] = useState<AssetSearchResult | null>(null);
   const isProperty = assetKind === "property";
 
   const set = <K extends keyof FormState>(key: K) => (value: string) =>
@@ -183,6 +190,27 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
       ...(dividendType === "cash" ? { quantity: "", price: "" } : {}),
     }));
 
+  const pickAsset = (asset: AssetSearchResult | null) => {
+    setPickedAsset(asset);
+    setForm(prev => ({
+      ...prev,
+      ticker: asset?.ticker ?? "",
+      isin: asset?.isin ?? "",
+      currency: asset?.currency ?? prev.currency,
+    }));
+  };
+
+  const switchToManual = () => {
+    // The picked security, if any, carries over into the fields.
+    setPickedAsset(null);
+    setManualAsset(true);
+  };
+
+  const switchToSearch = () => {
+    pickAsset(null);
+    setManualAsset(false);
+  };
+
   const showQuantityPrice = !isDividend || isStockDividend;
   const requiresQuantityPrice = form.operation === "buy" || form.operation === "sell" || isStockDividend;
   // A cash dividend has no quantity/price to derive a value from, so it's the
@@ -193,7 +221,7 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
     const foundErrors: string[] = [];
 
     if (!form.ticker.trim())
-      foundErrors.push("Ticker is required.");
+      foundErrors.push(manualAsset ? "Ticker is required." : "Pick a security.");
 
     // Blank means "not applicable" (e.g. a cash dividend) rather than 0 — only
     // parse when the user actually typed something.
@@ -345,11 +373,27 @@ export function TransactionModal({ mode, initial, onClose, onSave, onDelete, por
           </div>
         )}
 
+        <div className="space-y-1.5">
+          {manualAsset ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField label="Ticker" value={form.ticker} onChange={set("ticker")} placeholder="AAPL" required />
+              <InputField label="ISIN" value={form.isin} onChange={set("isin")} placeholder="US0378331005" />
+            </div>
+          ) : (
+            <AssetPicker value={pickedAsset} onChange={pickAsset} required />
+          )}
+          <button
+            type="button"
+            onClick={manualAsset ? switchToSearch : switchToManual}
+            className="text-[11px] font-bold text-slate-400 hover:text-blue-600 transition-colors"
+          >
+            {manualAsset ? "Search for the security instead" : "Can't find it? Enter the ticker manually"}
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InputField label="Date" type="date" value={form.date} onChange={set("date")} required />
           <InputField label="Time" type="time" value={form.time} onChange={set("time")} placeholder="Optional" />
-          <InputField label="Ticker" value={form.ticker} onChange={set("ticker")} placeholder="AAPL" required />
-          <InputField label="ISIN" value={form.isin} onChange={set("isin")} placeholder="US0378331005" />
           {showAmountField && (
             <InputField label="Amount" type="number" value={form.amount} onChange={set("amount")} placeholder="1500.00" required />
           )}
