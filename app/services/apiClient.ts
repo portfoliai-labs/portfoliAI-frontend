@@ -5,12 +5,18 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // The backend's `error_type` (e.g. "InvalidFieldError"), when it sends one.
+  errorType: string | null;
+  constructor(status: number, message: string, errorType: string | null = null) {
     super(message);
     this.status = status;
+    this.errorType = errorType;
     this.name = 'ApiError';
   }
 }
+
+const errorTypeOf = (errorData: { error_type?: unknown }) =>
+  typeof errorData.error_type === 'string' ? errorData.error_type : null;
 
 // FastAPI's `detail` field on an error response isn't always a string: a 422 validation
 // error carries an array of {loc, msg, type} objects instead. Left as-is, that array ends
@@ -61,7 +67,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   // Handle other errors
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, formatErrorDetail(errorData.detail, response.status));
+    throw new ApiError(response.status, formatErrorDetail(errorData.detail, response.status), errorTypeOf(errorData));
   }
 
   if (response.status === 204) return undefined as T;
@@ -97,7 +103,7 @@ export async function apiFetchForm<T>(endpoint: string, formData: FormData, opti
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, formatErrorDetail(errorData.detail, response.status));
+    throw new ApiError(response.status, formatErrorDetail(errorData.detail, response.status), errorTypeOf(errorData));
   }
 
   if (response.status === 204) return undefined as T;

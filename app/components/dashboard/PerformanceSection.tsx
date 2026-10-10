@@ -15,7 +15,8 @@ import {
 } from "recharts";
 import { portfolioService } from "../../services/portfolioService";
 import { portfoliosService } from "../../services/portfoliosService";
-import { STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, type StrategyFrequency, type StrategyParams } from "../../models/Strategy";
+import { STRATEGY_PROXIES, laterStart, targetLabel, type StrategyFrequency, type StrategyParams, type StrategyResponse } from "../../models/Strategy";
+import { exchangeLabel } from "../../models/AssetSearch";
 import { ApiError } from "../../services/apiClient";
 import { formatCompact, formatCurrency, formatQuantity } from "../../lib/format";
 import { toChartPoints } from "../../lib/series";
@@ -3922,7 +3923,7 @@ const STRATEGY_REBALANCE_EVERY: Record<StrategyFrequency, string> = {
  */
 function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; currency: string }) {
   const detail = useDetail(() => portfoliosService.getStrategy(portfolioUuid), portfolioUuid, 0);
-  const s: StrategyParams | null = detail.data;
+  const s: StrategyResponse | null = detail.data;
 
   const flow = (f: StrategyParams["contributions"] | StrategyParams["withdrawals"]) =>
     `${f.amountType === "percent_of_value" ? `${f.amount}% of value` : formatCurrency(f.amount, currency, 0)} / ${STRATEGY_EVERY[f.frequency]}`;
@@ -3933,8 +3934,10 @@ function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; c
         : r.mode === "threshold" ? `Past ${band}`
           : `${STRATEGY_REBALANCE_EVERY[r.frequency]} or past ${band}`;
   };
+  // The month it really started on, when later than the January it was asked for.
+  const started = (s: StrategyResponse) => laterStart(s)?.toLocaleDateString("en-US", { month: "short", year: "numeric" }) ?? null;
   // While it loads, or if it can't, the one module that says so.
-  const body = (rows: (s: StrategyParams) => React.ComponentProps<typeof FigRows>["rows"]) =>
+  const body = (rows: (s: StrategyResponse) => React.ComponentProps<typeof FigRows>["rows"]) =>
     detail.loading ? <ModuleMessage>Loading the strategy…</ModuleMessage>
       : !s ? <ModuleMessage>The strategy couldn&apos;t be loaded.</ModuleMessage>
         : <div className={MODULE_BODY}><FigRows rows={rows(s)} /></div>;
@@ -3943,15 +3946,29 @@ function StrategyModules({ portfolioUuid, currency }: { portfolioUuid: string; c
     <>
       <Tile span="narrow">
         <Module>
-          <ModuleHead title="Target Mix" desc="The weights the backtest aimed for, by category." />
-          {body((s) => STRATEGY_CATEGORIES.filter((c) => (s.weights[c] ?? 0) > 0).map((c) => ({ key: c, label: STRATEGY_CATEGORY_LABELS[c], value: `${s.weights[c]}%` })))}
+          <ModuleHead title="Target Mix" desc="The weights the backtest aimed for, by asset class and security." />
+          {body((s) => s.targets.filter((t) => t.weightPct > 0).map((t) => ({
+            key: t.kind === "asset" ? `asset:${t.asset.assetId ?? t.asset.ticker}` : t.category,
+            label: targetLabel(t),
+            value: `${t.weightPct}%`,
+            info: t.kind === "asset"
+              ? [t.asset.ticker, exchangeLabel(t.asset.exchangeMic ?? null), t.asset.currency, t.asset.isin].filter(Boolean).join(" · ")
+              : `Bought through ${STRATEGY_PROXIES[t.category]}.`,
+          })))}
         </Module>
       </Tile>
       <Tile span="narrow">
         <Module>
           <ModuleHead title="Rules" desc="When it started, what went in and out, and when it rebalanced." />
           {body((s) => [
-            { key: "start", label: "Start", value: `Jan ${s.startYear}` },
+            {
+              key: "start",
+              label: "Start",
+              value: started(s) ?? `Jan ${s.startYear}`,
+              info: started(s)
+                ? `Asked to start in January ${s.startYear}: something it holds has prices only from later, so it started on the first month everything did.`
+                : undefined,
+            },
             { key: "initial", label: "Initial amount", value: formatCurrency(s.initialAmount, currency, 0) },
             { key: "add", label: "Contributions", value: s.contributions.enabled ? flow(s.contributions) : "None" },
             {

@@ -125,6 +125,23 @@ function getAlertSummary(n: NotificationResponse): { title: string; detail: stri
   };
 }
 
+// A strategy's backtest that failed for good (type STRATEGY_FAILED): its portfolio was deleted.
+// Payload: portfolio_uuid, portfolio_name and reason — "history_too_short" (what it holds has
+// under a year of prices in common over its period), "prices_unavailable" or "error".
+const STRATEGY_FAILED_REASONS: Record<string, string> = {
+  history_too_short: "What it holds has less than a year of prices in common over that period: try a later start or other assets.",
+  prices_unavailable: "The prices of what it holds couldn't be loaded.",
+};
+
+function getStrategyFailedSummary(n: NotificationResponse): { title: string; detail: string } {
+  const p = n.payload ?? {};
+  const reason = typeof p.reason === "string" ? STRATEGY_FAILED_REASONS[p.reason] : undefined;
+  return {
+    title: typeof p.portfolio_name === "string" ? `Backtest “${p.portfolio_name}” couldn't run` : "A backtest couldn't run",
+    detail: `${reason ?? "Something went wrong while running it."} It was removed.`,
+  };
+}
+
 function formatDate(iso: string): string {
   const date = new Date(iso);
   const diffMs = Date.now() - date.getTime();
@@ -163,8 +180,9 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
     <ul className="divide-y divide-[rgba(196,154,60,0.1)]">
       {notifications.map((n) => {
         const isAlert = n.type === "ALERT_TRIGGERED";
-        const cfg = isAlert ? ALERT_CONFIG : getJobStatus(n);
-        const alertSummary = isAlert ? getAlertSummary(n) : null;
+        const isStrategyFailed = n.type === "STRATEGY_FAILED";
+        const cfg = isAlert ? ALERT_CONFIG : isStrategyFailed ? STATUS_CONFIG.FAILED : getJobStatus(n);
+        const summary = isAlert ? getAlertSummary(n) : isStrategyFailed ? getStrategyFailedSummary(n) : null;
         const jobId = getJobId(n);
         const documentId = getDocumentId(n);
         const portfolioUuid = getPortfolioUuid(n);
@@ -186,14 +204,14 @@ export function NotificationList({ notifications, isLoading }: NotificationListP
                   {isUnread && (
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C49A3C] shrink-0" />
                   )}
-                  {alertSummary ? alertSummary.title : reportName || "Report job"}
+                  {summary ? summary.title : reportName || "Report job"}
                 </span>
                 <span className="text-[10px] text-[#a8a29e] shrink-0">
                   {formatDate(n.created_at)}
                 </span>
               </div>
-              {alertSummary?.detail && (
-                <p className="text-[11px] text-[#78716c] mb-2">{alertSummary.detail}</p>
+              {summary?.detail && (
+                <p className="text-[11px] text-[#78716c] mb-2">{summary.detail}</p>
               )}
               {jobId && !documentId && !reportName && (
                 <p className="text-[11px] text-[#78716c] truncate mb-2">

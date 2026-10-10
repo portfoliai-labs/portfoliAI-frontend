@@ -2,19 +2,20 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownToLine, CalendarClock, ChevronDown, Coins, History, Loader2, PiggyBank, Play, Plus, Repeat, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownToLine, CalendarClock, ChevronDown, Coins, History, Loader2, PiggyBank, Play, Repeat, SlidersHorizontal, X } from "lucide-react";
 import { formatCurrency } from "../../lib/format";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { Toggle } from "./Toggle";
+import { AssetPicker, assetListingLine } from "./AssetPicker";
 import { usePortfolio } from "../../context/PortfolioContext";
 import { useUser } from "../../context/UserContext";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
-import { PreviewBadge } from "../preview/PreviewKit";
-import { searchAssets, type CatalogAsset } from "../../lib/mock/assets";
+import { ApiError } from "../../services/apiClient";
+import type { AssetSearchResult } from "../../models/AssetSearch";
 import {
-  MAX_STRATEGY_YEARS, STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_FIRST_YEAR, STRATEGY_PROXIES,
-  earliestStartYear,
+  MAX_STRATEGY_TARGETS, MAX_STRATEGY_YEARS, STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES,
   type CashFlowAmountType, type RebalanceMode, type StrategyCategory, type StrategyFrequency, type StrategyParams,
+  type StrategyTarget,
 } from "../../models/Strategy";
 
 const serif = { fontFamily: "'Playfair Display', Georgia, serif" } as const;
@@ -28,7 +29,16 @@ const CATEGORY_COLORS: Record<StrategyCategory, string> = {
   crypto: "#4a3aa7",
 };
 
+// The securities in a mix, in the order they were added, apart from the asset classes' colours.
+const SECURITY_COLORS = ["#C49A3C", "#0e7490", "#be185d", "#4d7c0f", "#7c3aed", "#9a3412", "#334155"];
+
 type Weights = Record<StrategyCategory, number>;
+
+// A security in the mix, bought as it is, and how much of it.
+interface SecurityPick {
+  asset: AssetSearchResult;
+  weight: number;
+}
 
 // Ready-made mixes, the first thing a strategy is: most people pick one and go.
 const PRESETS: { name: string; text: string; weights: Partial<Weights> }[] = [
@@ -44,10 +54,28 @@ const presetWeights = (preset: (typeof PRESETS)[number]) =>
 const presetOf = (weights: Weights) =>
   PRESETS.find((p) => STRATEGY_CATEGORIES.every((c) => (p.weights[c] ?? 0) === weights[c])) ?? null;
 
-// The form: the API's StrategyParams, with every category's weight present (0 = not held).
-interface StrategyForm extends Omit<StrategyParams, "weights"> {
+// The form: the API's StrategyParams, its targets split into every category's weight (0 = not
+// held) and the securities picked.
+interface StrategyForm extends Omit<StrategyParams, "targets"> {
   name: string;
   weights: Weights;
+  securities: SecurityPick[];
+}
+
+const securityKey = (asset: Pick<AssetSearchResult, "ticker">) => `asset:${asset.ticker}`;
+
+/** The targets the form sends, each with the key of the row it comes from. */
+function targetsOf(f: StrategyForm): { key: string; target: StrategyTarget }[] {
+  return [
+    ...STRATEGY_CATEGORIES.filter((c) => f.weights[c] > 0).map((c) => ({
+      key: c as string,
+      target: { kind: "category", category: c, weightPct: f.weights[c] } as StrategyTarget,
+    })),
+    ...f.securities.filter((s) => s.weight > 0).map((s) => ({
+      key: securityKey(s.asset),
+      target: { kind: "asset", asset: { ticker: s.asset.ticker, isin: s.asset.isin }, weightPct: s.weight } as StrategyTarget,
+    })),
+  ];
 }
 
 // The longest a strategy starting in a year can be: up to this year (at least one).
@@ -58,6 +86,7 @@ const spanFrom = (startYear: number) => Math.max(1, new Date().getFullYear() - s
 const DEFAULT_FORM: StrategyForm = {
   name: "",
   weights: presetWeights(PRESETS[1]),
+  securities: [],
   initialAmount: 10000,
   startYear: 2012,
   years: spanFrom(2012),
@@ -99,48 +128,50 @@ function simpleRebalanceOf(r: StrategyForm["rebalancing"]): SimpleRebalance | nu
 
 /**
  * STRATEGY — build a portfolio strategy and backtest it, opened from Investments. The page asks
- * four plain questions first: what to hold (a ready-made mix, your own weights or — a preview for
- * demo accounts — assets picked from a search, see AssetPicker), how much (a
- * lump sum and an amount every month), from when (it runs to today) and whether to rebalance
- * (never, once a year, or when a weight drifts). Everything else — the period's length, the
- * rebalancing rules in detail, how contributions are made, withdrawals and trading costs — is
- * under Advanced settings, closed until asked for, with a line saying what they're set to. The
- * name fills itself from the mix and the start until it's typed over.
+ * four plain questions first: what to hold (a ready-made mix, or weights of one's own, by asset
+ * class and for securities picked from the search), how much (a lump sum and an amount every
+ * month), from when (it runs to today) and whether to rebalance (never, once a year, or when a
+ * weight drifts). Everything else — the period's length, the rebalancing rules in detail, how
+ * contributions are made, withdrawals and trading costs — is under Advanced settings, closed
+ * until asked for, with a line saying what they're set to. The name fills itself from the mix and
+ * the start until it's typed over.
  *
- * "Run backtest" sends it to POST /v1/portfolios/strategies, which plays it on real prices (one
- * ETF per category, see models/Strategy) into a virtual portfolio: read only, kept apart from the
- * real ones and out of the net worth (see BacktestMarks). The page then opens that portfolio,
- * whose figures come in once the backend's job has generated its trades. A demo account can look
- * but not run one.
+ * "Run backtest" sends it to POST /v1/portfolios/strategies, which plays it on real prices (an
+ * asset class through its ETF, a security as it is, see models/Strategy) into a virtual
+ * portfolio: read only, kept apart from the real ones and out of the net worth (see
+ * BacktestMarks). The page then opens that portfolio, whose figures come in once the backend's
+ * job has generated its trades. The backend decides when it really starts: from the first month
+ * everything it holds is priced. A demo account can look but not run one.
  */
 export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreated: (portfolioUuid: string) => void }) {
   const { createStrategyPortfolio } = usePortfolio();
   const { user, isDemo } = useUser();
   const currency = user?.currency ?? "EUR";
   const [form, setForm] = useState<StrategyForm>(DEFAULT_FORM);
-  // How the mix is made: a ready-made one, weights of one's own, or (a demo preview) picked assets.
-  const [mixMode, setMixMode] = useState<"preset" | "custom" | "assets">("preset");
-  const [picks, setPicks] = useState<AssetPick[]>([]);
+  // How the mix is made: a ready-made one, or weights of one's own.
+  const [mixMode, setMixMode] = useState<"preset" | "custom">("preset");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The row of the target the backend refused (a security it can't price), until it changes.
+  const [invalidKey, setInvalidKey] = useState<string | null>(null);
 
   const patch = <K extends keyof StrategyForm>(key: K, value: Partial<StrategyForm[K]> | StrategyForm[K]) =>
     setForm((f) => ({ ...f, [key]: typeof value === "object" && !Array.isArray(value) ? { ...(f[key] as object), ...value } : value }));
-  // New weights can hold a category with a shorter history: the start moves up to where it begins.
-  const setWeights = (weights: Weights) =>
-    setForm((f) => withStart({ ...f, weights }, Math.max(f.startYear, earliestStartYear(weights))));
-
-  const preset = presetOf(form.weights);
-  // Own weights: opened by Custom, or when the weights match no ready-made mix.
-  const showWeights = mixMode === "custom" || (mixMode === "preset" && preset === null);
-  // Picked assets decide the categories' weights: each asset's weight goes to its category.
-  const setPicksAndWeights = (next: AssetPick[]) => {
-    setPicks(next);
-    setWeights(Object.fromEntries(STRATEGY_CATEGORIES.map((c) => [c, next.filter((p) => p.asset.category === c).reduce((s, p) => s + p.weight, 0)])) as Weights);
+  const setWeights = (weights: Weights) => setForm((f) => ({ ...f, weights }));
+  const setSecurities = (securities: SecurityPick[]) => {
+    setForm((f) => ({ ...f, securities }));
+    setInvalidKey(null);
   };
-  const sum = STRATEGY_CATEGORIES.reduce((s, c) => s + form.weights[c], 0);
-  const firstYear = earliestStartYear(form.weights);
+
+  // A ready-made mix holds asset classes only.
+  const preset = form.securities.length === 0 ? presetOf(form.weights) : null;
+  // Own weights: opened by Custom, or when the weights match no ready-made mix.
+  const showWeights = mixMode === "custom" || preset === null;
+  const sum = STRATEGY_CATEGORIES.reduce((s, c) => s + form.weights[c], 0) + form.securities.reduce((s, p) => s + p.weight, 0);
+  // What counts towards the limit: every asset class held, and every security picked.
+  const targetCount = STRATEGY_CATEGORIES.filter((c) => form.weights[c] > 0).length + form.securities.length;
+  const segments = segmentsOf(form.weights, form.securities);
   const thisYear = new Date().getFullYear();
   const endYear = form.startYear + form.years;
   // Its whole span, this year's months included: the length is as long as it can be.
@@ -151,12 +182,27 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
   // The simple view's monthly amount: a fixed sum every month. Anything else is set in Advanced.
   const simpleContribution = form.contributions.amountType === "fixed" && form.contributions.frequency === "monthly";
   // Until it's typed over, the name says what it is.
-  const autoName = `${mixMode === "assets" ? "My assets" : mixMode === "preset" && preset ? preset.name : "Custom mix"} from ${form.startYear}`;
+  const mixName = preset && mixMode === "preset" ? preset.name : "Custom mix";
+  const autoName = `${mixName} from ${form.startYear}`;
   const name = form.name.trim() || autoName;
 
+  const addSecurity = (asset: AssetSearchResult | null) => {
+    // A new security takes what's left of the 100%.
+    if (asset) setSecurities([...form.securities, { asset, weight: Math.max(0, 100 - sum) }]);
+  };
+
+  const scaleTo100 = () => {
+    const scaled = normalize([...STRATEGY_CATEGORIES.map((c) => form.weights[c]), ...form.securities.map((s) => s.weight)]);
+    setForm((f) => ({
+      ...f,
+      weights: Object.fromEntries(STRATEGY_CATEGORIES.map((c, i) => [c, scaled[i]])) as Weights,
+      securities: f.securities.map((s, i) => ({ ...s, weight: scaled[STRATEGY_CATEGORIES.length + i] })),
+    }));
+  };
+
   const problems = [
-    mixMode === "assets" && picks.length === 0 && "Pick at least one asset.",
     sum !== 100 && "The weights must add up to 100%.",
+    targetCount > MAX_STRATEGY_TARGETS && `A strategy holds at most ${MAX_STRATEGY_TARGETS} asset classes and securities.`,
     !(form.initialAmount > 0) && "The starting amount must be more than 0.",
     needsBand && thresholdPct == null && relativeThresholdPct == null && "Rebalancing on drift needs at least one band.",
     form.contributions.enabled && form.contributions.amountType === "percent_of_value" && form.contributions.amount > 100 && "A contribution can't be more than 100% of the value.",
@@ -168,26 +214,42 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
     if (!valid || isDemo) return;
     setSubmitting(true);
     setError(null);
+    setInvalidKey(null);
+    const sent = targetsOf(form);
     try {
-      const { weights, ...rest } = form;
+      const { initialAmount, startYear, rebalancing, contributions, withdrawals, costs } = form;
       const strategy: StrategyParams = {
-        ...rest,
+        targets: sent.map((s) => s.target),
+        initialAmount,
+        startYear,
         // The backend stops at January of the last year: one more takes it through this year's
         // months, up to today's prices.
         years: toToday ? Math.min(form.years + 1, MAX_STRATEGY_YEARS) : form.years,
-        weights: Object.fromEntries(STRATEGY_CATEGORIES.filter((c) => weights[c] > 0).map((c) => [c, weights[c]])),
+        rebalancing,
+        contributions,
+        withdrawals,
+        costs,
       };
-      delete (strategy as Partial<StrategyForm>).name;
       const created = await createStrategyPortfolio({ name, strategy });
       onCreated(created.uuid);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to run this backtest.");
+      // A security the backend can't resolve comes back as the target it was sent as.
+      const index = err instanceof ApiError && err.errorType === "InvalidFieldError"
+        ? Number(err.message.match(/strategy\.targets\.(\d+)/)?.[1])
+        : NaN;
+      const refused = Number.isInteger(index) ? sent[index] : undefined;
+      if (refused?.target.kind === "asset") {
+        setInvalidKey(refused.key);
+        setError(`${refused.target.asset.ticker} can't be priced for a backtest: remove it or pick another listing.`);
+      } else {
+        setError(err instanceof Error ? err.message : "Unable to run this backtest.");
+      }
       setSubmitting(false);
     }
   };
 
   const recap = [
-    { label: "Mix", value: mixMode === "assets" ? `${picks.length} ${picks.length === 1 ? "asset" : "assets"}` : mixMode === "preset" && preset ? preset.name : "Custom mix" },
+    { label: "Mix", value: mixName },
     {
       label: "Invested",
       value: form.contributions.enabled
@@ -230,87 +292,140 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
                 selected={mixMode === "preset" && preset?.name === p.name}
                 title={p.name}
                 text={p.text}
-                onClick={() => { setWeights(presetWeights(p)); setMixMode("preset"); }}
+                onClick={() => { setForm((f) => ({ ...f, weights: presetWeights(p), securities: [] })); setInvalidKey(null); setMixMode("preset"); }}
               >
-                <WeightsBar weights={presetWeights(p)} />
-                <WeightsLegend weights={presetWeights(p)} />
+                <WeightsBar segments={segmentsOf(presetWeights(p))} />
+                <WeightsLegend segments={segmentsOf(presetWeights(p))} />
               </ChoiceCard>
             ))}
             <ChoiceCard
               selected={showWeights}
               title="Custom"
-              text="Choose how much goes into each asset class."
+              text="Your own weights, by asset class or for specific securities."
               onClick={() => setMixMode("custom")}
             >
-              <WeightsBar weights={form.weights} />
-              {showWeights && <WeightsLegend weights={form.weights} />}
+              <WeightsBar segments={segments} />
+              {showWeights && <WeightsLegend segments={segments} />}
             </ChoiceCard>
-            {/* Demo only for now: a backtest still trades one ETF per asset class. */}
-            {isDemo && (
-              <ChoiceCard
-                selected={mixMode === "assets"}
-                className="@md:col-span-2 @2xl:col-span-3"
-                title="Pick assets"
-                badge={<PreviewBadge label="Preview" />}
-                text="Search stocks, ETFs, bonds or crypto: each counts towards its asset class."
-                onClick={() => { setMixMode("assets"); setPicksAndWeights(picks); }}
-              >
-                <WeightsBar weights={mixMode === "assets" ? form.weights : EMPTY_WEIGHTS} />
-              </ChoiceCard>
-            )}
           </div>
 
-          {mixMode === "assets" && (
-            <AssetPicker picks={picks} onChange={setPicksAndWeights} weights={form.weights} />
-          )}
-
           {showWeights && (
-            <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200/70 p-4 md:p-5 space-y-4">
-              <p className="text-[13px] font-black text-slate-900">Your own weights</p>
-              <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-4">
-                {STRATEGY_CATEGORIES.map((c) => (
-                  <div key={c}>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="flex items-center gap-2 text-[13px] font-bold text-slate-700">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: CATEGORY_COLORS[c] }} />{STRATEGY_CATEGORY_LABELS[c]}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={form.weights[c]}
-                          onChange={(e) => setWeights({ ...form.weights, [c]: clamp(Number(e.target.value), 0, 100) })}
-                          aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight`}
-                          className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
-                        />
-                        <span className="text-xs font-bold text-slate-400">%</span>
-                      </span>
+            <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200/70 p-4 md:p-5 space-y-5">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[13px] font-black text-slate-900">Asset classes</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Each one bought through a single ETF.</p>
+                </div>
+                <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-4">
+                  {STRATEGY_CATEGORIES.map((c) => (
+                    <div key={c}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2 text-[13px] font-bold text-slate-700">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: CATEGORY_COLORS[c] }} />{STRATEGY_CATEGORY_LABELS[c]}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={form.weights[c]}
+                            onChange={(e) => setWeights({ ...form.weights, [c]: clamp(Number(e.target.value), 0, 100) })}
+                            aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight`}
+                            className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
+                          />
+                          <span className="text-xs font-bold text-slate-400">%</span>
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={form.weights[c]}
+                        onChange={(e) => setWeights({ ...form.weights, [c]: Number(e.target.value) })}
+                        aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight slider`}
+                        className="w-full mt-1.5 accent-[#C49A3C]"
+                      />
+                      <p className="text-[11px] font-semibold text-slate-400">{STRATEGY_PROXIES[c]}</p>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={form.weights[c]}
-                      onChange={(e) => setWeights({ ...form.weights, [c]: Number(e.target.value) })}
-                      aria-label={`${STRATEGY_CATEGORY_LABELS[c]} weight slider`}
-                      className="w-full mt-1.5 accent-[#C49A3C]"
-                    />
-                    <p className="text-[11px] font-semibold text-slate-400">
-                      {STRATEGY_PROXIES[c]} · prices from {STRATEGY_FIRST_YEAR[c]}
-                    </p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
+              <div className="space-y-3 pt-5 border-t border-slate-200/70">
+                <div>
+                  <p className="text-[13px] font-black text-slate-900">Securities</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">A stock, ETF, fund or crypto bought as it is.</p>
+                </div>
+                {form.securities.length > 0 && (
+                  <ul className="divide-y divide-slate-100 rounded-xl bg-white border border-slate-200/70 px-3">
+                    {form.securities.map((p, i) => {
+                      const key = securityKey(p.asset);
+                      const refused = key === invalidKey;
+                      return (
+                        <li key={key} className={`py-2.5 ${refused ? "-mx-3 px-3 bg-rose-50/60" : ""}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="flex items-center gap-2.5 min-w-0">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: SECURITY_COLORS[i % SECURITY_COLORS.length] }} />
+                              <span className="min-w-0">
+                                <span className="block text-[13px] font-black text-slate-900 truncate">{p.asset.name}</span>
+                                <span className="block text-[11px] font-semibold text-slate-500 truncate">{assetListingLine(p.asset)}</span>
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={p.weight}
+                                onChange={(e) => setSecurities(form.securities.map((x) => (x === p ? { ...x, weight: clamp(Number(e.target.value), 0, 100) } : x)))}
+                                aria-label={`${p.asset.ticker} weight`}
+                                className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
+                              />
+                              <span className="text-xs font-bold text-slate-400">%</span>
+                              <button type="button" onClick={() => setSecurities(form.securities.filter((x) => x !== p))} aria-label={`Remove ${p.asset.ticker}`} className="ml-1 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </span>
+                          </div>
+                          {refused && (
+                            <p className="text-[11px] font-bold text-rose-600 mt-1.5">
+                              This listing can&apos;t be priced for a backtest: remove it or pick another one.
+                            </p>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {targetCount < MAX_STRATEGY_TARGETS ? (
+                  <AssetPicker
+                    value={null}
+                    onChange={addSecurity}
+                    label="Add a security"
+                    excludeTickers={form.securities.map((s) => s.asset.ticker)}
+                    excludeIsins={form.securities.flatMap((s) => (s.asset.isin ? [s.asset.isin] : []))}
+                  />
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    That&apos;s {MAX_STRATEGY_TARGETS} asset classes and securities, the most a strategy holds.
+                  </p>
+                )}
+              </div>
+
               <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-2.5 ${sum === 100 ? "bg-emerald-50" : "bg-amber-50"}`}>
                 <span className={`text-sm font-black tabular-nums ${sum === 100 ? "text-emerald-700" : "text-amber-700"}`}>
                   Total {sum}% {sum === 100 ? "✓" : sum > 100 ? `— ${sum - 100} points too many` : `— ${100 - sum} points left`}
                 </span>
-                {sum !== 100 && sum > 0 && (
-                  <button type="button" onClick={() => setWeights(normalize(form.weights))} className="text-xs font-bold text-amber-800 underline underline-offset-2">
-                    Scale to 100%
-                  </button>
-                )}
+                <span className="flex items-center gap-4">
+                  {sum !== 100 && sum > 0 && (
+                    <button type="button" onClick={scaleTo100} className="text-xs font-bold text-amber-800 underline underline-offset-2">
+                      Scale to 100%
+                    </button>
+                  )}
+                  <span className={`text-xs font-bold tabular-nums ${targetCount > MAX_STRATEGY_TARGETS ? "text-rose-600" : "text-slate-500"}`}>
+                    {targetCount} / {MAX_STRATEGY_TARGETS} held
+                  </span>
+                </span>
               </div>
             </div>
           )}
@@ -348,7 +463,8 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
             <SelectField
               label="Start in"
               value={String(form.startYear)}
-              options={Array.from({ length: thisYear - firstYear + 1 }, (_, i) => String(firstYear + i)).map((y) => ({ value: y, label: `January ${y}` }))}
+              // Up to last year: a backtest needs at least a year of prices.
+              options={Array.from({ length: MAX_STRATEGY_YEARS }, (_, i) => String(thisYear - MAX_STRATEGY_YEARS + i)).map((y) => ({ value: y, label: `January ${y}` }))}
               onChange={(v) => setForm((f) => withStart(f, Number(v)))}
             />
           </div>
@@ -357,9 +473,10 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
               ? `That's ${thisYear - form.startYear} ${thisYear - form.startYear === 1 ? "year" : "years"} of real prices, up to today.`
               : `${form.years} ${form.years === 1 ? "year" : "years"}, to January ${endYear}: the length is set in Advanced settings.`}
           </p>
-          {firstYear > 2008 && (
-            <p className="text-xs text-slate-500 leading-relaxed mt-1">Can&apos;t start before {firstYear}: that&apos;s where the price history of what it holds begins.</p>
-          )}
+          <p className="text-xs text-slate-500 leading-relaxed mt-1">
+            If something it holds has prices only from later, it starts once everything does. With less than a year of prices
+            in common, it can&apos;t run.
+          </p>
         </Question>
 
         <Question n={4} title="Keep the mix in balance?" text="As prices move, the mix drifts. Rebalancing sells what grew too big and buys what fell behind.">
@@ -482,7 +599,7 @@ export function StrategyBuilder({ trail, onCreated }: { trail: Crumb[]; onCreate
         {/* The four answers at a glance, before it runs. */}
         <div className="space-y-3">
           <h3 className="text-xl font-black text-white leading-tight" style={serif}>Your strategy</h3>
-          <div className="max-w-md"><WeightsBar weights={form.weights} /></div>
+          <div className="max-w-md"><WeightsBar segments={segments} /></div>
           <ul className="flex flex-wrap gap-2">
             {recap.map((r) => (
               <li key={r.label} className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">
@@ -602,149 +719,44 @@ function ChoiceCard({ selected, title, badge, text, onClick, className = "", chi
   );
 }
 
-/** A mix's asset classes with their share, under its bar: "Equity 60% · Bonds 40%". */
-function WeightsLegend({ weights }: { weights: Weights }) {
-  const held = STRATEGY_CATEGORIES.filter((c) => weights[c] > 0);
+// One slice of a mix: an asset class or a security, with its share and colour.
+interface Segment {
+  key: string;
+  label: string;
+  pct: number;
+  color: string;
+}
+
+/** A mix as slices: its asset classes, then its securities in the order they were added. */
+function segmentsOf(weights: Weights, securities: SecurityPick[] = []): Segment[] {
+  return [
+    ...STRATEGY_CATEGORIES.map((c) => ({ key: c as string, label: STRATEGY_CATEGORY_LABELS[c], pct: weights[c], color: CATEGORY_COLORS[c] })),
+    ...securities.map((s, i) => ({ key: securityKey(s.asset), label: s.asset.ticker, pct: s.weight, color: SECURITY_COLORS[i % SECURITY_COLORS.length] })),
+  ];
+}
+
+/** A mix's slices with their share, under its bar: "Equity 60% · VWCE.DE 40%". */
+function WeightsLegend({ segments }: { segments: Segment[] }) {
+  const held = segments.filter((s) => s.pct > 0);
   if (held.length === 0) return null;
   return (
     <span className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] font-bold text-slate-500 tabular-nums">
-      {held.map((c) => (
-        <span key={c} className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: CATEGORY_COLORS[c] }} />
-          {STRATEGY_CATEGORY_LABELS[c]} {weights[c]}%
+      {held.map((s) => (
+        <span key={s.key} className="flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
+          {s.label} {s.pct}%
         </span>
       ))}
     </span>
   );
 }
 
-const EMPTY_WEIGHTS = Object.fromEntries(STRATEGY_CATEGORIES.map((c) => [c, 0])) as Weights;
-
-// One asset picked for the mix, and how much of it.
-interface AssetPick {
-  asset: CatalogAsset;
-  weight: number;
-}
-
-/**
- * ASSET PICKER (preview, demo accounts) — the mix made of assets rather than asset classes: a
- * search over a sample catalogue (lib/mock/assets), each result showing its asset class, then the
- * picked assets with their weight. What goes into each asset class is the sum of its assets'
- * weights, shown on the bar under them; the backtest still trades one ETF per class.
- */
-function AssetPicker({ picks, onChange, weights }: { picks: AssetPick[]; onChange: (picks: AssetPick[]) => void; weights: Weights }) {
-  const [query, setQuery] = useState("");
-  const picked = new Set(picks.map((p) => p.asset.ticker));
-  const results = searchAssets(query, picked);
-  const total = picks.reduce((s, p) => s + p.weight, 0);
-
-  const add = (asset: CatalogAsset) => {
-    // A new asset takes what's left of the 100%.
-    onChange([...picks, { asset, weight: Math.max(0, 100 - total) }]);
-    setQuery("");
-  };
-
-  return (
-    <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200/70 p-4 md:p-5 space-y-4">
-      <p className="text-[13px] font-black text-slate-900">Your assets</p>
-      <div className="relative">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or ticker — e.g. VWCE, Apple, gold, Bitcoin"
-          aria-label="Search assets"
-          className="w-full h-11 pl-10 pr-3.5 rounded-xl bg-white border border-slate-200 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#C49A3C]/60 focus:ring-4 focus:ring-[#C49A3C]/10"
-        />
-        {results.length > 0 && (
-          <ul className="absolute z-20 left-0 right-0 mt-1.5 p-1.5 bg-white rounded-xl border border-slate-200 shadow-xl">
-            {results.map((a) => (
-              <li key={a.ticker}>
-                <button
-                  type="button"
-                  onClick={() => add(a)}
-                  className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left hover:bg-slate-50"
-                >
-                  <span className="min-w-0">
-                    <span className="text-[13px] font-black text-slate-900">{a.ticker}</span>
-                    <span className="text-xs text-slate-500"> · {a.name}</span>
-                  </span>
-                  <span className="flex items-center gap-2 shrink-0">
-                    <CategoryChip category={a.category} />
-                    <Plus className="h-4 w-4 text-slate-400" />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {query.trim() !== "" && results.length === 0 && (
-          <p className="text-xs text-slate-400 mt-2">Nothing in the sample catalogue matches &ldquo;{query}&rdquo;.</p>
-        )}
-      </div>
-
-      {picks.length === 0 ? (
-        <p className="text-sm text-slate-400">Search for an asset above to add it to the mix.</p>
-      ) : (
-        <ul className="divide-y divide-slate-100 rounded-xl bg-white border border-slate-200/70 px-3">
-          {picks.map((p) => (
-            <li key={p.asset.ticker} className="flex items-center justify-between gap-3 py-2.5">
-              <span className="min-w-0">
-                <span className="block text-[13px] font-black text-slate-900">{p.asset.ticker}</span>
-                <span className="block text-xs text-slate-500 truncate">{p.asset.name} · {p.asset.kind}</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <CategoryChip category={p.asset.category} />
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={p.weight}
-                  onChange={(e) => onChange(picks.map((x) => (x === p ? { ...x, weight: clamp(Number(e.target.value), 0, 100) } : x)))}
-                  aria-label={`${p.asset.ticker} weight`}
-                  className="w-16 h-8 px-2 rounded-lg bg-white border border-slate-200 text-right text-sm font-black tabular-nums text-slate-900 outline-none focus:border-[#C49A3C]/60"
-                />
-                <span className="text-xs font-bold text-slate-400">%</span>
-                <button type="button" onClick={() => onChange(picks.filter((x) => x !== p))} aria-label={`Remove ${p.asset.ticker}`} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50">
-                  <X className="h-4 w-4" />
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {picks.length > 0 && (
-        <div className="space-y-2">
-          <WeightsBar weights={weights} />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <WeightsLegend weights={weights} />
-            <span className={`text-xs font-black tabular-nums ${total === 100 ? "text-emerald-700" : "text-amber-700"}`}>
-              Total {total}%{total === 100 ? " ✓" : ""}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** An asset class as a small coloured pill. */
-function CategoryChip({ category }: { category: StrategyCategory }) {
-  const color = CATEGORY_COLORS[category];
-  return (
-    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap" style={{ background: `${color}14`, color }}>
-      {STRATEGY_CATEGORY_LABELS[category]}
-    </span>
-  );
-}
-
-/** A mix as one thin bar, each asset class in its colour. */
-function WeightsBar({ weights }: { weights: Weights }) {
+/** A mix as one thin bar, each slice in its colour. */
+function WeightsBar({ segments }: { segments: Segment[] }) {
   return (
     <span className="flex h-1.5 rounded-full overflow-hidden bg-slate-100">
-      {STRATEGY_CATEGORIES.map((c) => (
-        <span key={c} style={{ width: `${Math.min(weights[c], 100)}%`, background: CATEGORY_COLORS[c] }} />
+      {segments.map((s) => (
+        <span key={s.key} style={{ width: `${Math.min(s.pct, 100)}%`, background: s.color }} />
       ))}
     </span>
   );
@@ -848,15 +860,15 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 
-function normalize(weights: Weights): Weights {
-  const sum = STRATEGY_CATEGORIES.reduce((s, c) => s + weights[c], 0);
-  const scaled = STRATEGY_CATEGORIES.map((c) => ({ c, v: Math.floor((weights[c] / sum) * 100) }));
-  // Hand the rounding leftovers to the largest weights so the total is exactly 100.
-  let left = 100 - scaled.reduce((s, x) => s + x.v, 0);
-  for (const x of [...scaled].sort((a, b) => weights[b.c] - weights[a.c])) {
+/** Scales weights to add up to exactly 100, the rounding leftovers going to the largest. */
+function normalize(weights: number[]): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  const scaled = weights.map((w) => Math.floor((w / sum) * 100));
+  let left = 100 - scaled.reduce((s, v) => s + v, 0);
+  for (const i of weights.map((_, i) => i).sort((a, b) => weights[b] - weights[a])) {
     if (left <= 0) break;
-    x.v += 1;
+    scaled[i] += 1;
     left -= 1;
   }
-  return Object.fromEntries(scaled.map((x) => [x.c, x.v])) as Weights;
+  return scaled;
 }

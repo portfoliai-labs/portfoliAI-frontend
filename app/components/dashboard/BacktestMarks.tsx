@@ -7,8 +7,9 @@ import { portfoliosService } from "../../services/portfoliosService";
 import { useUser } from "../../context/UserContext";
 import { formatCurrency } from "../../lib/format";
 import {
-  STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS,
-  type StrategyFrequency, type StrategyParams,
+  laterStart,
+  targetLabel,
+  type StrategyFrequency, type StrategyParams, type StrategyResponse,
 } from "../../models/Strategy";
 
 /**
@@ -49,12 +50,19 @@ const FREQUENCY_LABELS: Record<StrategyFrequency, string> = {
   annual: "every year",
 };
 
-/** The strategy in a few short lines: what it holds, over when, and its rules. */
-export function describeStrategy(s: StrategyParams, currency: string): string[] {
-  const weights = STRATEGY_CATEGORIES
-    .filter((c) => (s.weights[c] ?? 0) > 0)
-    .map((c) => `${STRATEGY_CATEGORY_LABELS[c]} ${s.weights[c]}%`)
+const monthYear = (d: Date) => d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+/**
+ * The strategy in a few short lines: what it holds (a security by its ticker), over when, and its
+ * rules. A backtest that started later than asked, because something it holds is priced only from
+ * then, says both.
+ */
+export function describeStrategy(s: StrategyParams & Partial<Pick<StrategyResponse, "startedOn">>, currency: string): string[] {
+  const weights = s.targets
+    .filter((t) => t.weightPct > 0)
+    .map((t) => `${t.kind === "asset" ? t.asset.ticker : targetLabel(t)} ${t.weightPct}%`)
     .join(" · ");
+  const started = laterStart(s);
   const flow = (f: StrategyParams["contributions"] | StrategyParams["withdrawals"]) =>
     `${f.amountType === "percent_of_value" ? `${f.amount}% of the value` : formatCurrency(f.amount, currency, 0)} ${FREQUENCY_LABELS[f.frequency]}`;
 
@@ -71,7 +79,9 @@ export function describeStrategy(s: StrategyParams, currency: string): string[] 
 
   const lines = [
     weights,
-    `${formatCurrency(s.initialAmount, currency, 0)} invested in January ${s.startYear}, for up to ${s.years} ${s.years === 1 ? "year" : "years"}`,
+    started
+      ? `${formatCurrency(s.initialAmount, currency, 0)} invested in ${monthYear(started)} (asked for Jan ${s.startYear}), for up to ${s.years} ${s.years === 1 ? "year" : "years"}`
+      : `${formatCurrency(s.initialAmount, currency, 0)} invested in January ${s.startYear}, for up to ${s.years} ${s.years === 1 ? "year" : "years"}`,
     rebalancing,
   ];
   if (s.contributions.enabled) lines.push(`Adds ${flow(s.contributions)}`);
@@ -88,7 +98,7 @@ export function describeStrategy(s: StrategyParams, currency: string): string[] 
 export function BacktestBanner({ portfolioUuid, showStrategy = false }: { portfolioUuid: string; showStrategy?: boolean }) {
   // A strategy's amounts are in the user's reference currency.
   const currency = useUser().user?.currency ?? "EUR";
-  const [strategy, setStrategy] = useState<StrategyParams | null>(null);
+  const [strategy, setStrategy] = useState<StrategyResponse | null>(null);
 
   useEffect(() => {
     if (!showStrategy) return;

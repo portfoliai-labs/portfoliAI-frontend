@@ -17,17 +17,19 @@ export function assetListingLine(asset: Pick<AssetSearchResult, "ticker" | "exch
 /**
  * ASSET PICKER — finds a security the backend can price (GET /v1/asset-search) by name, ticker
  * or ISIN, and picks one of its listings. Searches as the user types, once they pause; once
- * picked, the field shows the security with a button to pick another. `excludeTickers` are
- * listed but can't be picked (e.g. the securities a strategy already holds).
+ * picked, the field shows the security with a button to pick another. Listings in
+ * `excludeTickers`, or of an ISIN in `excludeIsins`, are listed but can't be picked (e.g. the
+ * securities a strategy already holds).
  */
 export function AssetPicker({
-  value, onChange, label = "Security", placeholder = "Name, ticker or ISIN", excludeTickers = [], required = false, autoFocus = false,
+  value, onChange, label = "Security", placeholder = "Name, ticker or ISIN", excludeTickers = [], excludeIsins = [], required = false, autoFocus = false,
 }: {
   value: AssetSearchResult | null;
   onChange: (asset: AssetSearchResult | null) => void;
   label?: string;
   placeholder?: string;
   excludeTickers?: string[];
+  excludeIsins?: string[];
   required?: boolean;
   autoFocus?: boolean;
 }) {
@@ -41,6 +43,7 @@ export function AssetPicker({
   const [active, setActive] = useState(-1);
 
   const isSearchable = query.trim().length >= ASSET_SEARCH_MIN_LENGTH;
+  const isTaken = (r: AssetSearchResult) => excludeTickers.includes(r.ticker) || (r.isin != null && excludeIsins.includes(r.isin));
 
   useEffect(() => {
     if (query.trim().length < ASSET_SEARCH_MIN_LENGTH) return;
@@ -51,7 +54,7 @@ export function AssetPicker({
         const found = await assetSearchService.search(query, controller.signal);
         if (controller.signal.aborted) return;
         setResults(found);
-        setActive(found.findIndex((r) => !excludeTickers.includes(r.ticker)));
+        setActive(found.findIndex((r) => !isTaken(r)));
         setStatus("done");
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -64,7 +67,7 @@ export function AssetPicker({
       clearTimeout(timer);
       controller.abort();
     };
-    // excludeTickers only seeds the highlighted row: it isn't a reason to search again.
+    // The exclusions only seed the highlighted row: it isn't a reason to search again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
@@ -82,7 +85,7 @@ export function AssetPicker({
   };
 
   const pick = (asset: AssetSearchResult) => {
-    if (excludeTickers.includes(asset.ticker)) return;
+    if (isTaken(asset)) return;
     onChange(asset);
     setOpen(false);
     setQuery("");
@@ -101,7 +104,7 @@ export function AssetPicker({
     let next = active;
     for (let i = 0; i < results.length; i++) {
       next = (next + step + results.length) % results.length;
-      if (!excludeTickers.includes(results[next].ticker)) break;
+      if (!isTaken(results[next])) break;
     }
     setActive(next);
   };
@@ -207,7 +210,7 @@ export function AssetPicker({
           ) : (
             <ul id={listId} role="listbox" className="max-h-72 overflow-y-auto custom-scrollbar py-1">
               {results.map((r, i) => {
-                const taken = excludeTickers.includes(r.ticker);
+                const taken = isTaken(r);
                 return (
                   <li
                     key={`${r.ticker}-${r.exchangeMic ?? ""}`}

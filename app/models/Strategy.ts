@@ -1,9 +1,9 @@
 // models/Strategy.ts
 // Matches StrategyParams (the `strategy` of POST /v1/portfolios/strategies, and what GET
 // /v1/portfolios/{p}/strategy returns): the rules a strategy's backtest plays month by month on
-// real prices — one listed proxy per macro category (equity SWDA, bonds XGLE, real estate IWDP,
-// commodities EXXY, cash XEON, crypto BTC-EUR), on adjusted close so distributions are in the
-// price. The backtest is a virtual portfolio (Portfolio.isVirtual): the POST answers at once with
+// real prices: its targets, each a macro category bought through its listed proxy (equity SWDA,
+// bonds XGLE, real estate IWDP, commodities EXXY, cash XEON, crypto BTC-EUR) or a security bought
+// as it is, on adjusted close so distributions are in the price. The backtest is a virtual portfolio (Portfolio.isVirtual): the POST answers at once with
 // it empty, a background job then generates its transactions up to the day it was created, and
 // its history is built like any portfolio's (its /insights/* answer null or isStale until then).
 // After that it just holds: no further contributions or rebalancing.
@@ -57,12 +57,41 @@ interface StrategyCosts {
   spreadPct: number;
 }
 
+// A security a strategy buys as it is, picked with the asset search (models/AssetSearch). A
+// request sends its ticker and isin; the backend answers with the listing it resolved, keyed by
+// assetId (the ISIN when there is one, the ticker otherwise). One it can't resolve is a 422
+// InvalidFieldError naming the target (e.g. `strategy.targets.1.asset`).
+interface StrategyAsset {
+  ticker: string;
+  isin: string | null;
+  assetId?: string;
+  exchangeMic?: string | null;
+  currency?: string | null;
+  name?: string | null;
+}
+
+interface StrategyCategoryTarget {
+  kind: "category";
+  category: StrategyCategory;
+  weightPct: number;
+}
+
+interface StrategyAssetTarget {
+  kind: "asset";
+  asset: StrategyAsset;
+  weightPct: number;
+}
+
+type StrategyTarget = StrategyCategoryTarget | StrategyAssetTarget;
+
 interface StrategyParams {
-  // Percent of the portfolio, summing to 100; a category at 0 or left out isn't held.
-  weights: Partial<Record<StrategyCategory, number>>;
+  // Percent of the portfolio, summing to 100; each category or security at most once, at most
+  // MAX_STRATEGY_TARGETS in all. A target at 0 isn't kept.
+  targets: StrategyTarget[];
   initialAmount: number;
-  // The run starts in January of this year: not before STRATEGY_FIRST_YEAR of any held category,
-  // nor in the future.
+  // The run starts in January of this year, or later when something it holds is priced only from
+  // later: then it starts on the first month everything is (StrategyResponse.startedOn). Under 12
+  // months of prices in common and the backtest fails (STRATEGY_FAILED, history_too_short).
   startYear: number;
   // 1–40; the run stops at today if that comes first.
   years: number;
@@ -70,6 +99,12 @@ interface StrategyParams {
   contributions: StrategyContributions;
   withdrawals: StrategyWithdrawals;
   costs: StrategyCosts;
+}
+
+// GET /v1/portfolios/{p}/strategy: the strategy, with the day its backtest started trading on
+// (null until it has run).
+interface StrategyResponse extends StrategyParams {
+  startedOn: string | null;
 }
 
 // Body of POST /v1/portfolios/strategies. `name`: 1–80 chars, unique among the user's portfolios
@@ -90,16 +125,6 @@ const STRATEGY_CATEGORY_LABELS: Record<StrategyCategory, string> = {
   crypto: "Crypto",
 };
 
-// The first January each category's proxy has a full month of prices behind.
-const STRATEGY_FIRST_YEAR: Record<StrategyCategory, number> = {
-  equity: 2010,
-  bonds: 2008,
-  real_estate: 2008,
-  commodities: 2008,
-  cash: 2008,
-  crypto: 2015,
-};
-
 // The listed instrument each category is traded through.
 const STRATEGY_PROXIES: Record<StrategyCategory, string> = {
   equity: "SWDA · iShares Core MSCI World",
@@ -111,18 +136,26 @@ const STRATEGY_PROXIES: Record<StrategyCategory, string> = {
 };
 
 const MAX_STRATEGY_YEARS = 40;
+const MAX_STRATEGY_TARGETS = 20;
 
-/** The earliest year a strategy holding these weights can start in. */
-function earliestStartYear(weights: StrategyParams["weights"]): number {
-  const held = STRATEGY_CATEGORIES.filter((c) => (weights[c] ?? 0) > 0);
-  return Math.max(Math.min(...Object.values(STRATEGY_FIRST_YEAR)), ...held.map((c) => STRATEGY_FIRST_YEAR[c]));
+/** What a target is called: its category, or its security's name (the ticker until resolved). */
+function targetLabel(t: StrategyTarget): string {
+  return t.kind === "category" ? STRATEGY_CATEGORY_LABELS[t.category] : t.asset.name || t.asset.ticker;
+}
+
+/** The month a backtest actually started on, when later than the January it was asked for. */
+function laterStart(s: { startYear: number; startedOn?: string | null }): Date | null {
+  if (!s.startedOn) return null;
+  const started = new Date(`${s.startedOn}T00:00:00`);
+  return started.getFullYear() > s.startYear || started.getMonth() > 0 ? started : null;
 }
 
 export type {
   StrategyCategory, StrategyFrequency, RebalanceMode, CashFlowAmountType, StrategyRebalancing,
-  StrategyContributions, StrategyWithdrawals, StrategyCosts, StrategyParams, StrategyPortfolioPayload,
+  StrategyContributions, StrategyWithdrawals, StrategyCosts, StrategyAsset, StrategyCategoryTarget,
+  StrategyAssetTarget, StrategyTarget, StrategyParams, StrategyResponse, StrategyPortfolioPayload,
 };
 export {
-  STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_FIRST_YEAR, STRATEGY_PROXIES, MAX_STRATEGY_YEARS,
-  earliestStartYear,
+  STRATEGY_CATEGORIES, STRATEGY_CATEGORY_LABELS, STRATEGY_PROXIES, MAX_STRATEGY_YEARS, MAX_STRATEGY_TARGETS,
+  targetLabel, laterStart,
 };
