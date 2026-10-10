@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, Loader2, X, Check, Users, ChevronRight, Info, AlertTriangle, BellRing } from "lucide-react";
+import { Plus, Trash2, Loader2, X, Check, Users, ChevronDown, ChevronRight, Info, AlertTriangle, BellRing } from "lucide-react";
 import { advisorService } from "../../services/advisorService";
 import { useClientAlertRules } from "../../hooks/useAlertRules";
 import { useClientDefaultPortfolio } from "../../hooks/useClientDefaultPortfolio";
 import { alertState } from "../../lib/alerts";
 import { AlertsSettings } from "./AlertsSettings";
+import { AssetCategoriesEditor } from "./AssetCategoriesEditor";
 import { TONE_STYLES } from "./AlertGauge";
 import { UserRole } from "../../models/Advisor";
 import type { Client, ClientCreatePayload, ClientProfileUpdatePayload } from "../../models/Advisor";
@@ -328,6 +329,7 @@ function ClientPanel({
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const name = clientDisplayName(client);
   const dirty = form.currency !== (client.currency ?? "EUR") || form.language !== (client.language ?? "it");
   const { portfolio, loading: portfolioLoading, error: portfolioError } = useClientDefaultPortfolio(client.uuid);
@@ -389,6 +391,28 @@ function ClientPanel({
         ) : (
           <p className="text-sm text-rose-500">{portfolioError ?? "Unable to load this client's portfolio."}</p>
         )}
+
+        <div className="bg-white rounded-[2rem] border border-[rgba(196,154,60,0.2)] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setCategoriesOpen((o) => !o)}
+            aria-expanded={categoriesOpen}
+            className="w-full flex items-center justify-between gap-4 p-6 text-left"
+          >
+            <span>
+              <span className="block text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Asset categories</span>
+              <span className="block text-xs text-[#78716c] mt-1">
+                The category each of {name}&apos;s securities counts in for category alerts. Your corrections are the client&apos;s.
+              </span>
+            </span>
+            <ChevronDown className={`w-4 h-4 text-[#78716c] shrink-0 transition-transform ${categoriesOpen ? "rotate-180" : ""}`} />
+          </button>
+          {categoriesOpen && (
+            <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+              <AssetCategoriesEditor clientUuid={client.uuid} />
+            </div>
+          )}
+        </div>
 
         <div className="bg-white p-6 rounded-[2rem] border border-[rgba(196,154,60,0.2)] space-y-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#C49A3C]">Client settings</p>

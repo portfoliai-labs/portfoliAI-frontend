@@ -24,6 +24,7 @@ import { AlertsSettings } from "./AlertsSettings";
 import { ReportsBrowser } from "./ReportsBrowser";
 import { ComparisonView, initialCompareSelection, rememberCompareSelection, MAX_COMPARED } from "./ComparisonView";
 import { ManagePortfolios } from "./ManagePortfolios";
+import { AssetCategoriesEditor } from "./AssetCategoriesEditor";
 import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { RenamePortfolioDialog } from "./RenamePortfolioDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -39,7 +40,7 @@ import {
 import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
 
 // A portfolio's pages: its own (overview), and those its header leads to.
-export type PortfolioPage = "overview" | "transactions" | "alerts" | "reports" | "compare" | "portfolios";
+export type PortfolioPage = "overview" | "transactions" | "alerts" | "reports" | "compare" | "portfolios" | "categories";
 
 export type WealthView =
   // Everything the user owns: investments and wallets. A demo account's preview: anyone else
@@ -53,13 +54,14 @@ export type WealthView =
   | { kind: "realEstate"; page: RealEstatePage };
 
 const SECTION = WEALTH_SECTION;
-const PORTFOLIO_PAGES: PortfolioPage[] = ["overview", "transactions", "alerts", "reports", "compare", "portfolios"];
+const PORTFOLIO_PAGES: PortfolioPage[] = ["overview", "transactions", "alerts", "reports", "compare", "portfolios", "categories"];
 const PAGE_LABELS: Record<Exclude<PortfolioPage, "overview">, string> = {
   transactions: "Transactions",
   alerts: "Alerts",
   reports: "Reports",
   compare: "Compare",
   portfolios: "Manage portfolios",
+  categories: "Asset categories",
 };
 
 /**
@@ -336,14 +338,17 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
           { label: "Manage portfolios", primary: true, onClick: () => open("portfolios") },
           ...(addsPortfolios ? [{ label: "New portfolio", onClick: () => setDialog("new") }] : []),
           ...(real.length > 1 ? [{ label: "Compare", onClick: () => open("compare") }] : []),
+          { label: "Asset categories", onClick: () => open("categories") },
         ]
       : [
           // Its activity pages: what's there, and where to add to it.
           { label: "Transactions", primary: true, plus: false, onClick: () => open("transactions") },
           { label: "Alerts", onClick: () => open("alerts") },
           { label: "Reports", onClick: () => open("reports") },
-          // The only portfolio stands for the investments: the way to a second one is here.
+          // The only portfolio stands for the investments: the way to a second one is here, and to
+          // the categories of everything held.
           ...(addsPortfolios ? [{ label: "New portfolio", onClick: () => setDialog("new") }] : []),
+          ...(isInvestments ? [{ label: "Asset categories", onClick: () => open("categories") }] : []),
           { label: "Rename", onClick: () => setDialog("rename"), ...demo },
           {
             label: "Delete portfolio",
@@ -490,6 +495,20 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   }
   if (page === "portfolios") {
     return <ManagePortfolios trail={pageTrail} onOpenPortfolio={(uuid) => onOpen(uuid)} onOpenAlerts={(uuid) => onOpen(uuid, "alerts")} />;
+  }
+  // The user's, whichever portfolio it's opened from: a correction holds in all of them.
+  if (page === "categories") {
+    return (
+      <div className="space-y-6 pb-12">
+        <Breadcrumb trail={pageTrail} current={PAGE_LABELS.categories} />
+        <p className="text-[13px] text-slate-500 leading-relaxed max-w-3xl">
+          The category each of your securities counts in, across all your portfolios: alerts on a category, and adopting a
+          strategy by category, weigh a portfolio by it. Each one comes with a suggestion; a category you pick replaces it
+          everywhere, until you restore it.
+        </p>
+        <AssetCategoriesEditor />
+      </div>
+    );
   }
 
   // Transactions, Alerts, Reports: on this portfolio. The way between them is the header's,
