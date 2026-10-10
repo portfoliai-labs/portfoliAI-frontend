@@ -27,8 +27,8 @@ const createdLabel = (iso: string) =>
  * create one. The real portfolios first, the default leading (it can't be deleted: the backend
  * answers 409), then the strategies' backtests. "All portfolios" isn't listed: it's built from the
  * others and can be neither renamed nor deleted, which a line under the list says. Values come
- * from GET /v1/portfolios/comparison, like the hub's. A real portfolio's row counts its alerts (a
- * policy's included) and leads to them (`onOpenAlerts`: its Alerts tab). Backtests are adopted
+ * from GET /v1/portfolios/comparison, like the hub's. A real portfolio's row counts its alerts (an
+ * adopted strategy's included) and leads to them (`onOpenAlerts`: its Alerts tab). Backtests are adopted
  * from Plan / Strategy. A demo account sees the list but can't change anything.
  */
 export function ManagePortfolios({ trail, onOpenPortfolio, onOpenAlerts }: {

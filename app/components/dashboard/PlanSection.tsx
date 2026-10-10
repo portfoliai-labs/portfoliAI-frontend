@@ -8,7 +8,7 @@ import { useUser } from "../../context/UserContext";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 import { PLAN_SECTION, openPortfolioPage } from "../../lib/dashboardNav";
 import { PortfolioNode } from "./WealthSection";
-import { isBacktest, type Portfolio } from "../../models/Portfolio";
+import { investmentsOf, isBacktest, type Portfolio } from "../../models/Portfolio";
 import { Breadcrumb, type Crumb } from "./Breadcrumb";
 import { StrategyBuilder } from "./StrategyBuilder";
 import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
@@ -47,9 +47,9 @@ const createdLabel = (iso: string) =>
  * PLAN SECTION — where the user is heading, and how they mean to invest to get there: their
  * investor profile (the start of an investor policy statement), their goals and a retirement
  * simulation, all previews for a demo account for now, and Strategy, which backtests a strategy
- * into a virtual portfolio (StrategyBuilder) and adopts one (AdoptStrategyDialog): a new, empty
- * portfolio in Investments carrying the strategy's weights as a policy, each range one of its
- * alerts. For a demo account a strip at the top of each page shows how they chain together. Every
+ * into a virtual portfolio (StrategyBuilder) and adopts one on a portfolio in Wealth
+ * (AdoptStrategyDialog): each of its targets a range there, with an alert saying where the
+ * portfolio stands against it. For a demo account a strip at the top of each page shows how they chain together. Every
  * page is a browser history entry (see lib/dashboardHistory).
  */
 export function PlanSection({ onNavigate }: { onNavigate: (section: string) => void }) {
@@ -225,8 +225,9 @@ function RetirementPreview() {
 
 /**
  * STRATEGY — the backtests the user made, each to open (its page, under Strategy) or adopt, and the
- * way to a new one (StrategyBuilder). Adopting names a new portfolio and opens it on its Alerts,
- * where the strategy's ranges are. A demo account sees the backtests but can't create or adopt.
+ * way to a new one (StrategyBuilder). Adopting puts the strategy on a portfolio the user picks (or
+ * a new one) and opens that portfolio's Strategy page, where its ranges are. A demo account sees
+ * the backtests but can't create or adopt.
  */
 function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen: (uuid: string) => void; onNavigate: (section: string) => void }) {
   const { portfolios } = usePortfolio();
@@ -250,8 +251,8 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
         }
       />
       <p className="text-[13px] text-slate-500 leading-relaxed max-w-2xl">
-        Backtest how you would invest on historical prices. When one fits, adopt it: a new, empty portfolio in Wealth,
-        with the strategy&apos;s weights kept as ranges, each one an alert.
+        Backtest how you would invest on historical prices. When one fits, adopt it on one of your portfolios: each of its
+        targets becomes a range, and an alert says where the portfolio stands against it.
       </p>
 
       {backtests.length === 0 ? (
@@ -287,7 +288,7 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
                   type="button"
                   onClick={() => setAdopting(p)}
                   disabled={isDemo}
-                  title={isDemo ? DEMO_DISABLED_TITLE : "A new, empty portfolio with this strategy's weights as ranges"}
+                  title={isDemo ? DEMO_DISABLED_TITLE : "Keep one of your portfolios in this strategy's ranges"}
                   className="flex items-center gap-1.5 min-h-10 px-4 rounded-xl bg-sky-700 text-white text-xs font-bold hover:bg-sky-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Target className="h-3.5 w-3.5" /> Adopt this strategy
@@ -305,7 +306,12 @@ function StrategyPage({ onNew, onOpen, onNavigate }: { onNew: () => void; onOpen
           onClose={() => setAdopting(null)}
           onAdopted={(uuid) => {
             setAdopting(null);
-            openPortfolioPage(onNavigate, uuid, "alerts");
+            openPortfolioPage(onNavigate, uuid, "strategy");
+          }}
+          onOpenCategories={() => {
+            setAdopting(null);
+            const investments = investmentsOf(portfolios);
+            if (investments) openPortfolioPage(onNavigate, investments.uuid, "categories");
           }}
         />
       )}

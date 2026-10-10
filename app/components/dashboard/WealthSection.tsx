@@ -14,7 +14,7 @@ import { CATEGORICAL_PALETTE, portfolioColorMap } from "../../lib/chartColors";
 import { formatCurrency } from "../../lib/format";
 import { pushDashboardEntry, readDashboardEntry } from "../../lib/dashboardHistory";
 import { PLAN_SECTION, WEALTH_SECTION, openPlanPage } from "../../lib/dashboardNav";
-import { isBacktest, type Portfolio } from "../../models/Portfolio";
+import { investmentsOf, isBacktest, type Portfolio } from "../../models/Portfolio";
 import type { PortfolioComparisonEntry } from "../../models/PortfolioData";
 import { PerformanceSection, Module, ModuleHead, MODULE_BODY, Figs, Fig, HBars } from "./PerformanceSection";
 import { PageHeader, type PageAction, type PageCounter, type PageFigure } from "./PageHeader";
@@ -29,6 +29,8 @@ import { NewPortfolioDialog } from "./NewPortfolioDialog";
 import { RenamePortfolioDialog } from "./RenamePortfolioDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AdoptStrategyDialog } from "./AdoptStrategyDialog";
+import { AdoptedStrategyView } from "./AdoptedStrategyView";
+import { adoptionService } from "../../services/adoptionService";
 import { BacktestBanner } from "./BacktestMarks";
 import { DEMO_DISABLED_TITLE } from "../preview/DemoBanner";
 import { PreviewBadge } from "../preview/PreviewKit";
@@ -40,7 +42,7 @@ import {
 import { RealEstatePortfolio, type RealEstatePage } from "../preview/RealEstatePortfolio";
 
 // A portfolio's pages: its own (overview), and those its header leads to.
-export type PortfolioPage = "overview" | "transactions" | "alerts" | "reports" | "compare" | "portfolios" | "categories";
+export type PortfolioPage = "overview" | "transactions" | "alerts" | "reports" | "compare" | "portfolios" | "categories" | "strategy";
 
 export type WealthView =
   // Everything the user owns: investments and wallets. A demo account's preview: anyone else
@@ -54,7 +56,7 @@ export type WealthView =
   | { kind: "realEstate"; page: RealEstatePage };
 
 const SECTION = WEALTH_SECTION;
-const PORTFOLIO_PAGES: PortfolioPage[] = ["overview", "transactions", "alerts", "reports", "compare", "portfolios", "categories"];
+const PORTFOLIO_PAGES: PortfolioPage[] = ["overview", "transactions", "alerts", "reports", "compare", "portfolios", "categories", "strategy"];
 const PAGE_LABELS: Record<Exclude<PortfolioPage, "overview">, string> = {
   transactions: "Transactions",
   alerts: "Alerts",
@@ -62,14 +64,8 @@ const PAGE_LABELS: Record<Exclude<PortfolioPage, "overview">, string> = {
   compare: "Compare",
   portfolios: "Manage portfolios",
   categories: "Asset categories",
+  strategy: "Strategy",
 };
-
-/**
- * The portfolio that stands for all the investments: "All portfolios" while there are two or
- * more, otherwise the only real one (the default).
- */
-const investmentsOf = (portfolios: Portfolio[]): Portfolio | undefined =>
-  portfolios.find((p) => p.isAggregate) ?? portfolios.find((p) => p.isDefault) ?? portfolios.find((p) => !p.isVirtual);
 
 /** The page the current history entry was on, read for this account. */
 function viewFromHistory(isDemo: boolean, portfolios: Portfolio[]): WealthView {
@@ -233,6 +229,25 @@ function useComparisonEntry(uuid: string) {
 }
 
 /**
+ * Whether a strategy is adopted on the portfolio (GET .../adopted-strategy), for its header's way
+ * to it: undefined while loading or for a backtest, which can't adopt one. `reload` after a change.
+ */
+function useHasAdoption(portfolio: Portfolio) {
+  const backtest = isBacktest(portfolio);
+  const [state, setState] = useState<{ uuid: string; has: boolean } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    if (backtest) return;
+    let cancelled = false;
+    adoptionService.get(portfolio.uuid)
+      .then((a) => { if (!cancelled) setState({ uuid: portfolio.uuid, has: a !== null }); })
+      .catch(() => { if (!cancelled) setState({ uuid: portfolio.uuid, has: false }); });
+    return () => { cancelled = true; };
+  }, [portfolio.uuid, backtest, reloadKey]);
+  return { hasAdoption: state?.uuid === portfolio.uuid ? state.has : undefined, reload: () => setReloadKey((k) => k + 1) };
+}
+
+/**
  * How much activity a portfolio has, for its header's counters: its transactions (All portfolios'
  * read every portfolio's), its alert rules and theirs (All portfolios' own, then every
  * portfolio's) and its reports (every real portfolio's on All portfolios, which takes none).
@@ -305,6 +320,12 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   const backtest = isBacktest(portfolio);
   const entry = useComparisonEntry(portfolio.uuid);
   const counts = useActivityCounts(portfolio, real);
+  const { hasAdoption, reload: reloadAdoption } = useHasAdoption(portfolio);
+  const strategyAction: PageAction[] = hasAdoption ? [{ label: "Strategy", onClick: () => open("strategy") }] : [];
+  const openCategories = () => {
+    const investments = investmentsOf(portfolios);
+    if (investments) onOpen(investments.uuid, "categories");
+  };
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | "adopt" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selection, setSelection] = useState<string[]>(() => initialCompareSelection(portfolios, null));
@@ -338,12 +359,14 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
           { label: "Manage portfolios", primary: true, onClick: () => open("portfolios") },
           ...(addsPortfolios ? [{ label: "New portfolio", onClick: () => setDialog("new") }] : []),
           ...(real.length > 1 ? [{ label: "Compare", onClick: () => open("compare") }] : []),
+          ...strategyAction,
           { label: "Asset categories", onClick: () => open("categories") },
         ]
       : [
           // Its activity pages: what's there, and where to add to it.
           { label: "Transactions", primary: true, plus: false, onClick: () => open("transactions") },
           { label: "Alerts", onClick: () => open("alerts") },
+          ...strategyAction,
           { label: "Reports", onClick: () => open("reports") },
           // The only portfolio stands for the investments: the way to a second one is here, and to
           // the categories of everything held.
@@ -440,7 +463,11 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
           onClose={() => setDialog(null)}
           onAdopted={(uuid) => {
             setDialog(null);
-            onOpen(uuid, "alerts");
+            onOpen(uuid, "strategy");
+          }}
+          onOpenCategories={() => {
+            setDialog(null);
+            openCategories();
           }}
         />
       )}
@@ -496,6 +523,18 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
   if (page === "portfolios") {
     return <ManagePortfolios trail={pageTrail} onOpenPortfolio={(uuid) => onOpen(uuid)} onOpenAlerts={(uuid) => onOpen(uuid, "alerts")} />;
   }
+  if (page === "strategy") {
+    return (
+      <AdoptedStrategyView
+        key={portfolio.uuid}
+        portfolio={portfolio}
+        trail={pageTrail}
+        onOpenAlerts={() => open("alerts")}
+        onNavigate={onNavigate}
+        onChanged={reloadAdoption}
+      />
+    );
+  }
   // The user's, whichever portfolio it's opened from: a correction holds in all of them.
   if (page === "categories") {
     return (
@@ -536,10 +575,8 @@ export function PortfolioNode({ portfolio, page, trail, isInvestments, onOpen, o
           key={portfolio.uuid}
           portfolios={alertPortfolios}
           grouped={portfolio.isAggregate ? true : undefined}
-          onOpenCategories={() => {
-            const investments = investmentsOf(portfolios);
-            if (investments) onOpen(investments.uuid, "categories");
-          }}
+          onOpenCategories={openCategories}
+          onOpenAdoption={(uuid) => onOpen(uuid, "strategy")}
         />
       )}
       {page === "reports" && (

@@ -41,5 +41,9 @@ export const openWalletPage = (onNavigate: Navigate, id: string, page: WalletPag
 export const openPlanPage = (onNavigate: Navigate, page: Exclude<PlanPage, "backtest">) =>
   openSectionView(onNavigate, PLAN_SECTION, { page });
 
+/** A backtest's page, under Plan's Strategy. */
+export const openBacktestPage = (onNavigate: Navigate, portfolioUuid: string) =>
+  openSectionView(onNavigate, PLAN_SECTION, { page: "backtest", uuid: portfolioUuid, sub: "overview" });
+
 export const openDiscoverView = (onNavigate: Navigate, view: DiscoverView) =>
   openSectionView(onNavigate, DISCOVER_SECTION, view);

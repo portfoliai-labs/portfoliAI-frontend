@@ -74,11 +74,13 @@ const formatDate = (iso: string) =>
 // `grouped`: the per-portfolio card even for a single portfolio, so it's named (one portfolio's
 // alerts, opened from Manage portfolios). `onOpenCategories`: the user's asset categories, which
 // a category alert weighs by (an advisor's are further down the client's panel).
-export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, onOpenCategories }: {
+// `onOpenAdoption`: a portfolio's adopted strategy, where its kept rules' ranges are changed.
+export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, onOpenCategories, onOpenAdoption }: {
   portfolios: AlertPortfolio[];
   clientName?: string;
   grouped?: boolean;
   onOpenCategories?: () => void;
+  onOpenAdoption?: (portfolioUuid: string) => void;
 }) {
   const uuids = portfolios.map((p) => p.uuid);
   const { rules, setRules, loading, error, reload } = usePortfoliosAlertRules(uuids);
@@ -354,7 +356,9 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, 
               ) : manual.length > 0 && (
                 <ul className="px-6 md:px-8 border-t border-[rgba(196,154,60,0.12)] divide-y divide-[rgba(196,154,60,0.1)]">{manual.map(renderRule)}</ul>
               )}
-              {kept.length > 0 && <KeptRules className="px-6 md:px-8">{kept.map(renderRule)}</KeptRules>}
+              {kept.length > 0 && (
+                <KeptRules className="px-6 md:px-8" onOpen={onOpenAdoption && (() => onOpenAdoption(p.uuid))}>{kept.map(renderRule)}</KeptRules>
+              )}
             </PortfolioGroupCard>
           );
         })}
@@ -408,7 +412,9 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, 
             {manualOf(only.uuid).length > 0 && (
               <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{manualOf(only.uuid).map(renderRule)}</ul>
             )}
-            {keptOf(only.uuid).length > 0 && <KeptRules>{keptOf(only.uuid).map(renderRule)}</KeptRules>}
+            {keptOf(only.uuid).length > 0 && (
+              <KeptRules onOpen={onOpenAdoption && (() => onOpenAdoption(only.uuid))}>{keptOf(only.uuid).map(renderRule)}</KeptRules>
+            )}
           </>
         ))}
       </div>
@@ -422,7 +428,7 @@ export function AlertsSettings({ portfolios, clientName, grouped: forceGrouped, 
  * The rules an adopted strategy keeps, under the ones made by hand: a heading saying where their
  * ranges come from, then the rows.
  */
-function KeptRules({ className = "", children }: { className?: string; children: React.ReactNode }) {
+function KeptRules({ className = "", onOpen, children }: { className?: string; onOpen?: () => void; children: React.ReactNode }) {
   return (
     <div className={`border-t border-[rgba(196,154,60,0.12)] ${className}`}>
       <div className="flex items-start gap-3 pt-5">
@@ -433,6 +439,11 @@ function KeptRules({ className = "", children }: { className?: string; children:
             One range per target of the strategy adopted on this portfolio. They change with the strategy: here you can turn
             them off or choose how you&apos;re told.
           </p>
+          {onOpen && (
+            <button type="button" onClick={onOpen} className="mt-1 inline-flex items-center gap-0.5 text-xs font-bold text-[#C49A3C] hover:text-[#a87f2f]">
+              See or refine the strategy <ArrowUpRight className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
       <ul className="divide-y divide-[rgba(196,154,60,0.1)]">{children}</ul>

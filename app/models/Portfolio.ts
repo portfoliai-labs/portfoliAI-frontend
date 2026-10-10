@@ -32,6 +32,13 @@ interface Portfolio {
 /** A strategy's backtest: virtual, and not the aggregate. */
 const isBacktest = (p: Pick<Portfolio, "isVirtual" | "isAggregate">) => p.isVirtual && !p.isAggregate;
 
+/**
+ * The portfolio that stands for all the investments: "All portfolios" while there are two or
+ * more, otherwise the only real one (the default).
+ */
+const investmentsOf = (portfolios: Portfolio[]): Portfolio | undefined =>
+  portfolios.find((p) => p.isAggregate) ?? portfolios.find((p) => p.isDefault) ?? portfolios.find((p) => !p.isVirtual);
+
 // A single day's snapshot of the portfolio's live state in one currency — unlike the rest of
 // this file, these figures DO come from current market prices (totalMarketValue, totalUnrealizedPnl),
 // not just recorded transactions. One entry per currency per day.
@@ -99,4 +106,4 @@ interface TodayDashboard {
 }
 
 export type { Portfolio, PortfolioSnapshot, DailyValueChange, TodayDashboard };
-export { isBacktest };
+export { isBacktest, investmentsOf };
